@@ -2745,6 +2745,7 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         participation_exclusion_reason,
         plan_gemma_replay,
         replay_binding_payload,
+        replay_usable_input_tokens,
         _neighbor_row_matches_wanted,
         _light_row_from_neighbor_raw,
         _norm_rfc,
@@ -3128,6 +3129,36 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         checks,
         problems,
         detail=_greet,
+    )
+    _member_thanks = classify_review_authorship(
+        lead="Thank you for being a member.",
+        from_trusted=True,
+    )
+    _member_plus = classify_review_authorship(
+        lead=(
+            "Thank you for being a member.\n"
+            "This is an automated notification. Do not reply to this email."
+        ),
+        from_trusted=True,
+    )
+    _member_personal = classify_review_authorship(
+        lead="Thank you for being a member. I miss you — picked this for Friday.",
+        from_trusted=True,
+    )
+    _check(
+        "review_membership_thanks_is_not_personal_speech",
+        _member_thanks["peggy_personal"] is False
+        and _member_thanks["kind"] == "service_generated"
+        and _member_plus["peggy_personal"] is False
+        and _member_plus["kind"] == "service_generated"
+        and _member_personal["peggy_personal"] is True,
+        checks,
+        problems,
+        detail={
+            "thanks": _member_thanks,
+            "plus": _member_plus,
+            "personal": _member_personal,
+        },
     )
     _check(
         "review_service_only_and_unresolved_packets_are_excluded",
@@ -4301,8 +4332,8 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
                 "temperature": 0.1,
                 "output_reserve": 2048,
             },
-            "prompt_tokens": 10,
-            "usable_input_tokens": 28000,
+            "prompt_tokens": 500000,
+            "usable_input_tokens": replay_usable_input_tokens(32768),
         }
     }
     _paste_hash = _write_bound_replay(_td, system="sys", user="user", source_map=_ok_map)
@@ -4386,7 +4417,7 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
     _paste_hash = _write_bound_replay(
         _td,
         system="sys",
-        user="user",
+        user=("family dinner notes " * 4000),
         source_map={
             "budget": {
                 "capacity_certainty": "observed_env",
@@ -4395,8 +4426,8 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
                     "num_ctx": 8192,
                     "output_reserve": 2048,
                 },
-                "prompt_tokens": 20000,
-                "usable_input_tokens": 4000,
+                "prompt_tokens": 500000,
+                "usable_input_tokens": replay_usable_input_tokens(8192),
             }
         },
     )
@@ -4408,6 +4439,58 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         checks,
         problems,
         detail=_plan_big,
+    )
+    _paste_hash = _write_bound_replay(
+        _td,
+        system="sys",
+        user="user",
+        source_map={
+            "budget": {
+                "capacity_certainty": "observed_env",
+                "proposed_request": {
+                    "model": "gemma4:26b",
+                    "num_ctx": 32768,
+                    "output_reserve": 2048,
+                },
+                "prompt_tokens": 1,
+                "usable_input_tokens": replay_usable_input_tokens(32768),
+            }
+        },
+    )
+    _plan_under = plan_gemma_replay(paste_dir=_td, require_hash=_paste_hash)
+    _check(
+        "review_replay_plan_refuses_sidecar_prompt_understatement",
+        _plan_under.get("ok") is False
+        and "understates" in str(_plan_under.get("error") or ""),
+        checks,
+        problems,
+        detail=_plan_under,
+    )
+    _paste_hash = _write_bound_replay(
+        _td,
+        system="sys",
+        user="user",
+        source_map={
+            "budget": {
+                "capacity_certainty": "observed_env",
+                "proposed_request": {
+                    "model": "gemma4:26b",
+                    "num_ctx": 32768,
+                    "output_reserve": 2048,
+                },
+                "prompt_tokens": 10,
+                "usable_input_tokens": 999999,
+            }
+        },
+    )
+    _plan_wide = plan_gemma_replay(paste_dir=_td, require_hash=_paste_hash)
+    _check(
+        "review_replay_plan_refuses_sidecar_usable_more_permissive",
+        _plan_wide.get("ok") is False
+        and "more_permissive" in str(_plan_wide.get("error") or ""),
+        checks,
+        problems,
+        detail=_plan_wide,
     )
     _sys, _user, _cites = render_model_paste(
         ask="tell me what you know about this person",

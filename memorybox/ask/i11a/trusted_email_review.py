@@ -1019,6 +1019,15 @@ _HUMAN_WRAPPER = re.compile(
     r"fyi\b|thank(?:s| you)\b|picked this|chose this|"
     r"i (?:sent|mailed|picked|chose|made))\b"
 )
+_GENUINE_PERSONAL_WRAPPER = re.compile(
+    r"(?i)\b(?:thinking of you|miss you|love you|happy birthday|"
+    r"fyi\b|picked this|chose this|"
+    r"i (?:sent|mailed|picked|chose|made))\b"
+)
+_MEMBERSHIP_THANKS = re.compile(
+    r"(?i)\bthank(?:s|\s+you)\s+for\s+being\s+a(?:n)?\s+"
+    r"(?:member|customer|subscriber|recipient|valued\s+\w+)\b"
+)
 _INSTITUTIONAL_WE = re.compile(
     r"(?i)\b(?:we(?:'re| are)? (?:excited|delighted|pleased|happy) to|"
     r"our (?:members|customers|collection|store|latest)|"
@@ -1026,6 +1035,11 @@ _INSTITUTIONAL_WE = re.compile(
 )
 _REPLAY_BIND_MARK = "===== REPLAY BINDING ====="
 _GENERIC_IMAGE_MARK = re.compile(r"(?i)\[(?:image|img|cid:[^\]]*)\]")
+
+
+def replay_usable_input_tokens(num_ctx: int) -> int:
+    """Usable prompt room from frozen num_ctx. Do not trust sidecar usable alone."""
+    return max(0, int(num_ctx) - _OUTPUT_TOKEN_ROOM - _SAFETY_TOKEN_ROOM)
 
 
 def replay_binding_payload(source_map: dict[str, Any]) -> dict[str, Any]:
@@ -1172,8 +1186,11 @@ def looks_like_residual_promo(text: str, *, had_service_context: bool = False) -
     t = (text or "").strip()
     if not t:
         return False
+    if _MEMBERSHIP_THANKS.search(t) and not _GENUINE_PERSONAL_WRAPPER.search(t):
+        return True
     if (
         _HUMAN_WRAPPER.search(t)
+        and not _MEMBERSHIP_THANKS.search(t)
         and not _PROMO_REMAINDER.search(t)
         and not _RESIDUAL_PROMO.search(t)
     ):
@@ -1706,6 +1723,8 @@ def _looks_like_short_personal_greeting(text: str) -> bool:
     t = (text or "").strip()
     if not t or len(t) > _MAX_GREETING_CHARS:
         return False
+    if _MEMBERSHIP_THANKS.search(t) and not _GENUINE_PERSONAL_WRAPPER.search(t):
+        return False
     if any(pat.search(t) for pat in _SERVICE_STRONG):
         return False
     if service_notification_signal_count(t) >= 1:
@@ -1761,6 +1780,17 @@ def classify_review_authorship(
             "service_body": "",
         }
     if looks_like_residual_promo(text):
+        return {
+            "kind": "service_generated",
+            "peggy_personal": False,
+            "personal_lead": "",
+            "service_body": text,
+        }
+    if (
+        from_trusted
+        and _MEMBERSHIP_THANKS.search(text)
+        and not _GENUINE_PERSONAL_WRAPPER.search(text)
+    ):
         return {
             "kind": "service_generated",
             "peggy_personal": False,
@@ -2801,9 +2831,9 @@ def plan_gemma_replay(
     budget = (smap or {}).get("budget") if isinstance(smap, dict) else {}
     certainty = str(binding.get("capacity_certainty") or "unknown")
     num_ctx = binding.get("num_ctx")
-    prompt_tokens = budget.get("prompt_tokens")
-    usable = budget.get("usable_input_tokens")
-    if prompt_tokens is None or usable is None:
+    sidecar_prompt = budget.get("prompt_tokens")
+    sidecar_usable = budget.get("usable_input_tokens")
+    if sidecar_prompt is None or sidecar_usable is None:
         return {
             "ok": False,
             "error": "budget_fields_missing — will not skip the oversize check",
@@ -2828,12 +2858,39 @@ def plan_gemma_replay(
                 "proposed_num_ctx": num_ctx,
                 "input_sha256": digest,
             }
-    if usable is not None and prompt_tokens is not None and int(prompt_tokens) > int(usable):
+    measured = measure_prompt_tokens(
+        system,
+        user,
+        model=str(binding.get("model") or ESTABLISHED_GEMMA_MODEL),
+    )
+    recomputed_prompt = int(
+        measured.get("measured_tokens_ollama_tokenize")
+        if measured.get("measured_tokens_ollama_tokenize") is not None
+        else measured["estimated_tokens_bytes_div_4"]
+    )
+    recomputed_usable = replay_usable_input_tokens(int(num_ctx))
+    if int(sidecar_usable) > recomputed_usable:
+        return {
+            "ok": False,
+            "error": "sidecar_usable_more_permissive_than_recomputed",
+            "sidecar_usable_input_tokens": sidecar_usable,
+            "recomputed_usable_input_tokens": recomputed_usable,
+            "input_sha256": digest,
+        }
+    if int(sidecar_prompt) < recomputed_prompt:
+        return {
+            "ok": False,
+            "error": "sidecar_prompt_understates_recomputed",
+            "sidecar_prompt_tokens": sidecar_prompt,
+            "recomputed_prompt_tokens": recomputed_prompt,
+            "input_sha256": digest,
+        }
+    if recomputed_prompt > recomputed_usable:
         return {
             "ok": False,
             "error": "oversize_for_reviewed_budget — will not truncate or refreeze",
-            "prompt_tokens": prompt_tokens,
-            "usable_input_tokens": usable,
+            "prompt_tokens": recomputed_prompt,
+            "usable_input_tokens": recomputed_usable,
             "input_sha256": digest,
         }
     num_predict = binding.get("num_predict")
