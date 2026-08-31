@@ -3168,6 +3168,34 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
             "friday": _member_friday,
         },
     )
+    _ecard_prefix = classify_review_authorship(
+        lead=(
+            "Peg sent you an ecard.\n"
+            "This is an automated notification. Do not reply to this email."
+        ),
+        from_trusted=True,
+    )
+    _member_friday_strong = classify_review_authorship(
+        lead=(
+            "Thank you for being a member. See you Friday.\n"
+            "This is an automated notification. Do not reply to this email."
+        ),
+        from_trusted=True,
+    )
+    _check(
+        "review_strong_service_requires_greeting_not_name_prefix",
+        _ecard_prefix["peggy_personal"] is False
+        and _ecard_prefix["kind"] == "service_generated"
+        and _member_friday_strong["peggy_personal"] is True
+        and "See you Friday" in (_member_friday_strong.get("personal_lead") or "")
+        and _greet["peggy_personal"] is True,
+        checks,
+        problems,
+        detail={
+            "ecard_prefix": _ecard_prefix,
+            "member_friday_strong": _member_friday_strong,
+        },
+    )
     _check(
         "review_service_only_and_unresolved_packets_are_excluded",
         participation_exclusion_reason([_svc_msg])

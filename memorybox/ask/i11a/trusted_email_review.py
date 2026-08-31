@@ -1782,12 +1782,22 @@ def classify_review_authorship(
     weak = sum(1 for pat in _SERVICE_WEAK if pat.search(text))
     if strong:
         kept, omitted = extract_non_service_text(text)
-        kept = _personal_remainder_after_membership_thanks(kept)
-        if from_trusted and kept.strip() and not looks_like_residual_promo(kept):
+        remnant = _personal_remainder_after_membership_thanks(kept)
+        personal_ok = False
+        if from_trusted and remnant.strip():
+            if _looks_like_short_personal_greeting(remnant):
+                personal_ok = True
+            elif (
+                _MEMBERSHIP_THANKS.search(kept or text)
+                and remnant != (kept or "").strip()
+                and not looks_like_residual_promo(remnant)
+            ):
+                personal_ok = True
+        if personal_ok:
             return {
                 "kind": "personal_plus_service",
                 "peggy_personal": True,
-                "personal_lead": kept,
+                "personal_lead": remnant,
                 "service_body": omitted or text[_first_strong_split(text) or 0 :].strip(),
             }
         return {
