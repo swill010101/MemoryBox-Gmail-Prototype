@@ -129,6 +129,7 @@ def _parse_sent_at(raw: Any) -> datetime | None:
 
 
 def _rfc_ids(*parts: Any) -> list[str]:
+    """Bracketed Message-IDs and bare tokens that contain @ (then canonicalized)."""
     found: list[str] = []
     for part in parts:
         if part is None:
@@ -140,9 +141,11 @@ def _rfc_ids(*parts: Any) -> list[str]:
         for text in texts:
             for match in _RFC_ID.findall(text):
                 found.append(match.strip())
-            bare = text.strip()
-            if bare.startswith("<") and bare.endswith(">"):
-                found.append(bare)
+            remainder = _RFC_ID.sub(" ", text)
+            for tok in remainder.split():
+                tok = tok.strip().strip("\"'").strip("<>")
+                if "@" in tok and not tok.startswith("@"):
+                    found.append(f"<{tok}>")
     return list(dict.fromkeys(x for x in found if x))
 
 
@@ -608,7 +611,23 @@ def attach_rfc_neighbors(rows: list[LightRow], extras: list[LightRow]) -> list[L
     return added
 
 
-_RFC_NEIGHBOR_SQL = """
+def _rfc_canon_sql(expr: str) -> str:
+    """Fold case and optional angle brackets so stored bare IDs match query keys."""
+    e = f"trim(both from ({expr}))"
+    return (
+        "lower(CASE "
+        f"WHEN left({e}, 1) = '<' AND right({e}, 1) = '>' THEN {e} "
+        f"WHEN position('@' in {e}) > 0 THEN '<' || {e} || '>' "
+        f"ELSE {e} END)"
+    )
+
+
+_RFC_SQL_MID = (
+    "coalesce(payload_json->>'rfc_message_id', "
+    "payload_json->>'message_id', '')"
+)
+_RFC_SQL_IRT = "coalesce(payload_json->>'in_reply_to', '')"
+_RFC_NEIGHBOR_SQL = f"""
             SELECT id,
                    payload_json->>'sent_at' AS sent_at,
                    payload_json->>'thread_id' AS thread_id,
@@ -631,12 +650,8 @@ _RFC_NEIGHBOR_SQL = """
               AND lower(coalesce(payload_json->>'evidence_channel', 'email'))
                   NOT IN ('sms', 'text', 'imessage', 'mms', 'rcs')
               AND (
-                    lower(coalesce(
-                        payload_json->>'rfc_message_id',
-                        payload_json->>'message_id',
-                        ''
-                    )) = ANY(%s)
-                 OR lower(coalesce(payload_json->>'in_reply_to', '')) = ANY(%s)
+                    {_rfc_canon_sql(_RFC_SQL_MID)} = ANY(%s)
+                 OR {_rfc_canon_sql(_RFC_SQL_IRT)} = ANY(%s)
                  OR (
                         jsonb_typeof(payload_json->'in_reply_to_ids') = 'array'
                     AND EXISTS (
@@ -644,24 +659,23 @@ _RFC_NEIGHBOR_SQL = """
                         FROM jsonb_array_elements_text(
                             payload_json->'in_reply_to_ids'
                         ) AS rid
-                        WHERE lower(rid) = ANY(%s)
+                        WHERE {_rfc_canon_sql("rid")} = ANY(%s)
                     )
                  )
                  OR (
                         coalesce(payload_json->>'references', '') <> ''
                     AND EXISTS (
-                        SELECT 1 FROM unnest(%s::text[]) AS w
-                        WHERE lower(w) = ANY(
-                            SELECT lower(tok)
-                            FROM unnest(regexp_split_to_array(
+                        SELECT 1 FROM unnest(
+                            regexp_split_to_array(
                                 trim(both from payload_json->>'references'),
                                 E'\\\\s+'
-                            )) AS tok
-                        )
+                            )
+                        ) AS tok
+                        WHERE {_rfc_canon_sql("tok")} = ANY(%s)
                     )
                  )
               )
-              {id_clause}
+              {{id_clause}}
             ORDER BY id
             LIMIT %s
 """
@@ -839,10 +853,10 @@ def fetch_rfc_neighbor_rows(
                     queried_rfc.update(wanted_set)
                 if not neighbor_context_complete:
                     break
-            if not neighbor_context_complete:
-                break
             frontier = newly_discovered - known_rfc
             known_rfc.update(newly_discovered)
+            if not neighbor_context_complete:
+                break
             if not frontier:
                 break
         else:

@@ -2739,6 +2739,7 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         fetch_rfc_neighbor_rows,
         group_conversations,
         _unresolved_parent_rfcs,
+        _rfc_ids,
         looks_like_residual_promo,
         NeighborFetchResult,
         participation_exclusion_reason,
@@ -3694,9 +3695,9 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         and "regexp_split_to_array" in _RFC_NEIGHBOR_SQL
         and "NeighborFetchResult" in _fetch_src
         and "rfc_neighbor_query_saturated" not in _fetch_src
-        and "lower(coalesce(" in _RFC_NEIGHBOR_SQL
-        and "lower(rid)" in _RFC_NEIGHBOR_SQL
-        and "SELECT lower(tok)" in _RFC_NEIGHBOR_SQL,
+        and "position('@' in" in _RFC_NEIGHBOR_SQL
+        and "'<' ||" in _RFC_NEIGHBOR_SQL
+        and "regexp_split_to_array" in _RFC_NEIGHBOR_SQL,
         checks,
         problems,
     )
@@ -3942,14 +3943,78 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
     _check(
         "review_neighbor_mixed_case_message_id_matches_normalized_query",
         {r.evidence_id for r in _linked_case} == {"child", "id-b-case"}
-        and "lower(rid) = ANY(%s)" in _RFC_NEIGHBOR_SQL
-        and "lower(coalesce(" in _RFC_NEIGHBOR_SQL,
+        and "position('@' in" in _RFC_NEIGHBOR_SQL
+        and "'<' ||" in _RFC_NEIGHBOR_SQL,
         checks,
         problems,
         detail={
             "rows": [r.evidence_id for r in _case_res.rows],
             "unresolved": _case_res.unresolved_rfc_ids,
         },
+    )
+    _bare_extracted = _rfc_ids("parent-b@x.test")
+    _bare_child = LightRow(
+        evidence_id="bare-child",
+        sent_at=datetime(2009, 1, 3, tzinfo=_tz.utc),
+        thread_id="",
+        rfc_message_id="peggy-bare-child@x.test",
+        reply_ids=_bare_extracted,
+        from_addrs={"peggo417@hotmail.com"},
+        addresses={"peggo417@hotmail.com"},
+        peggy_authored=True,
+        subject="Re: Dinner",
+        skip=False,
+    )
+    _check(
+        "review_rfc_ids_extracts_bare_unbracketed_message_id",
+        _norm_rfc(_bare_extracted[0]) == "<parent-b@x.test>"
+        if _bare_extracted
+        else False,
+        checks,
+        problems,
+        detail=_bare_extracted,
+    )
+    _check(
+        "review_unresolved_parent_includes_bare_in_reply_to",
+        "<parent-b@x.test>" in _unresolved_parent_rfcs([_bare_child]),
+        checks,
+        problems,
+        detail=_unresolved_parent_rfcs([_bare_child]),
+    )
+    _cat_bare = [
+        _neighbor_catalog_row("id-b-bare", "Parent-B@X.TEST"),
+    ]
+    _conn_bare = _NeighborPageConn(_cat_bare)
+
+    def _factory_bare():
+        return _conn_bare
+
+    _bare_res = fetch_rfc_neighbor_rows(
+        [_bare_child],
+        connection_factory=_factory_bare,
+    )
+    _linked_bare = attach_rfc_neighbors([_bare_child], _bare_res.rows)
+    _check(
+        "review_neighbor_bare_stored_message_id_attaches_parent",
+        {r.evidence_id for r in _linked_bare} == {"bare-child", "id-b-bare"},
+        checks,
+        problems,
+        detail={
+            "rows": [r.evidence_id for r in _bare_res.rows],
+            "unresolved": _bare_res.unresolved_rfc_ids,
+            "complete": _bare_res.neighbor_context_complete,
+        },
+    )
+    _check(
+        "review_neighbor_attach_cap_lists_newly_discovered_child_ids",
+        _cap_res.neighbor_context_complete is False
+        and any(
+            rid.startswith("<m") and rid.endswith("@x.test>")
+            for rid in _cap_res.unresolved_rfc_ids
+        ),
+        checks,
+        problems,
+        detail={"unresolved": _cap_res.unresolved_rfc_ids[:12]},
     )
 
     class _DbFailConn:
