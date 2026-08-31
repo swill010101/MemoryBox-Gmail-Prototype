@@ -92,6 +92,10 @@ def migrate(cfg: Settings | None = None) -> list[str]:
                 continue
             sql = path.read_text(encoding="utf-8")
             _apply_sql(conn, sql)
+            if version == "028":
+                from memorybox.ingest.rfc_lookup import backfill_communication_rfc_ids
+
+                backfill_communication_rfc_ids(conn)
             conn.execute(
                 "INSERT INTO schema_migrations (version, filename) VALUES (%s, %s)",
                 (version, path.name),

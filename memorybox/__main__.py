@@ -28,6 +28,11 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     sub.add_parser("migrate", help="Apply pending SQL migrations")
+    p_rfc_backfill = sub.add_parser(
+        "backfill-communication-rfc-ids",
+        help="Idempotent RFC lookup backfill for existing email evidence",
+    )
+    p_rfc_backfill.add_argument("--flightsim", action="store_true")
     sub.add_parser("health", help="Print health JSON")
     sub.add_parser("seed-synthetic", help="I1 synthetic Grandpa graph")
     sub.add_parser("prove-synthetic", help="I1 prove Grandpa graph")
@@ -770,6 +775,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Set MEMORYBOX_P1_RUNTIME_HOST=1",
     )
+    p_email_review.add_argument(
+        "--neighbors-only",
+        action="store_true",
+        help="Stop after RFC neighbor probe (timings only; no packet, sanitation, or models)",
+    )
     p_email_review_gemma = sub.add_parser(
         "run-trusted-email-review-gemma",
         help="Later: Ollama/Gemma-only replay of an approved review paste (no Sol)",
@@ -1007,6 +1017,15 @@ def main(argv: list[str] | None = None) -> int:
 
         print(json.dumps({"applied": migrate()}, indent=2))
         return 0
+
+    if args.cmd == "backfill-communication-rfc-ids":
+        from memorybox.ingest.rfc_lookup import backfill_communication_rfc_ids
+
+        if args.flightsim:
+            _apply_trusted_identity_flightsim_env()
+        payload = backfill_communication_rfc_ids()
+        print(json.dumps(payload, indent=2, default=str), flush=True)
+        return 0 if payload.get("ok") else 1
 
     if args.cmd == "health":
         from memorybox.app import health
@@ -1700,16 +1719,23 @@ def main(argv: list[str] | None = None) -> int:
             out_dir=_P(args.out_dir) if args.out_dir else None,
             interval_start=args.interval_start,
             interval_end=args.interval_end,
+            neighbors_only=bool(getattr(args, "neighbors_only", False)),
         )
         print(json.dumps(payload, indent=2, default=str), flush=True)
         report = payload.get("preparation_report_text")
         if report:
             print("\n===== PREPARATION_REPORT =====", flush=True)
             print(report, flush=True)
-        print(
-            "STOP. Inspect MODEL_PASTE.txt locally. Do not run Gemma until approved.",
-            flush=True,
-        )
+        if payload.get("neighbors_only"):
+            print(
+                "STOP. Neighbor probe only. Do not run full prepare or Gemma yet.",
+                flush=True,
+            )
+        else:
+            print(
+                "STOP. Inspect MODEL_PASTE.txt locally. Do not run Gemma until approved.",
+                flush=True,
+            )
         return 0 if payload.get("ok") else 1
 
     if args.cmd == "run-trusted-email-review-gemma":
