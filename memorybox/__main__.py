@@ -796,7 +796,11 @@ def main(argv: list[str] | None = None) -> int:
         "prepare-trusted-email-review-chunks",
         help="Deterministic token-aware chunks from a frozen trusted email review paste",
     )
-    p_email_review_chunks.add_argument("--paste-dir", required=True)
+    p_email_review_chunks.add_argument(
+        "--paste-dir",
+        required=True,
+        help="Review directory or MODEL_PASTE.txt path (must include SOURCE_MAP.json)",
+    )
     p_email_review_chunks.add_argument(
         "--require-hash",
         required=True,
@@ -813,7 +817,11 @@ def main(argv: list[str] | None = None) -> int:
         "run-trusted-email-review-chunk-gemma",
         help="Later: Ollama/Gemma on one selected chunk only (requires parent+chunk hash)",
     )
-    p_email_review_chunk_gemma.add_argument("--paste-dir", required=True)
+    p_email_review_chunk_gemma.add_argument(
+        "--paste-dir",
+        required=True,
+        help="Review directory or MODEL_PASTE.txt path (must include SOURCE_MAP.json)",
+    )
     p_email_review_chunk_gemma.add_argument("--require-parent-hash", required=True)
     p_email_review_chunk_gemma.add_argument("--chunk-index", type=int, required=True)
     p_email_review_chunk_gemma.add_argument("--require-chunk-hash", required=True)

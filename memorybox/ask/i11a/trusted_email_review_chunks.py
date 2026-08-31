@@ -541,9 +541,24 @@ def _pack_units(
     return chunk_units, splits
 
 
-def _load_frozen_parent(paste_dir: Path, require_hash: str) -> dict[str, Any]:
-    paste_path = paste_dir / "MODEL_PASTE.txt"
-    smap_path = paste_dir / "SOURCE_MAP.json"
+def _resolve_paste_paths(paste_dir: Path | str) -> tuple[Path, Path, Path]:
+    """Return (artifact_dir, model_paste_path, source_map_path).
+
+    Accepts either a review directory or a direct MODEL_PASTE.txt path (same as replay).
+    """
+    path = Path(paste_dir)
+    if path.is_dir():
+        artifact_dir = path
+        paste_path = path / "MODEL_PASTE.txt"
+    else:
+        artifact_dir = path.parent
+        paste_path = path
+    smap_path = artifact_dir / "SOURCE_MAP.json"
+    return artifact_dir, paste_path, smap_path
+
+
+def _load_frozen_parent(paste_dir: Path | str, require_hash: str) -> dict[str, Any]:
+    artifact_dir, paste_path, smap_path = _resolve_paste_paths(paste_dir)
     if not paste_path.is_file():
         return {"ok": False, "error": "model_paste_missing", "path": str(paste_path)}
     if not smap_path.is_file():
@@ -578,7 +593,7 @@ def _load_frozen_parent(paste_dir: Path, require_hash: str) -> dict[str, Any]:
         return {"ok": False, "error": "paste_missing_markers"}
     return {
         "ok": True,
-        "paste_dir": str(paste_dir),
+        "paste_dir": str(artifact_dir),
         "paste_path": str(paste_path),
         "source_map_path": str(smap_path),
         "paste_text": paste_text,
@@ -619,10 +634,10 @@ def prepare_trusted_email_review_chunks(
     out_dir: Path | str | None = None,
 ) -> dict[str, Any]:
     """Split a frozen parent paste into deterministic local chunk files. No models."""
-    path = Path(paste_dir)
-    out = Path(out_dir) if out_dir else path
+    artifact_dir, _, _ = _resolve_paste_paths(paste_dir)
+    out = Path(out_dir) if out_dir else artifact_dir
     out.mkdir(parents=True, exist_ok=True)
-    loaded = _load_frozen_parent(path, require_hash)
+    loaded = _load_frozen_parent(paste_dir, require_hash)
     if not loaded.get("ok"):
         return loaded
     parsed = _parse_parent_paste(loaded["paste_text"])
@@ -820,11 +835,11 @@ def plan_trusted_email_review_chunk_gemma(
     """Build one chunk Ollama request or refuse. No network."""
     from memorybox.providers.llm._ollama_http import ollama_chat_request_payload
 
-    path = Path(paste_dir)
-    parent = _load_frozen_parent(path, require_parent_hash)
+    artifact_dir, _, _ = _resolve_paste_paths(paste_dir)
+    parent = _load_frozen_parent(paste_dir, require_parent_hash)
     if not parent.get("ok"):
         return parent
-    manifest_path = path / "CHUNK_MANIFEST.json"
+    manifest_path = artifact_dir / "CHUNK_MANIFEST.json"
     if not manifest_path.is_file():
         return {"ok": False, "error": "chunk_manifest_missing"}
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -836,7 +851,7 @@ def plan_trusted_email_review_chunk_gemma(
     if not rows:
         return {"ok": False, "error": "chunk_index_not_in_manifest", "chunk_index": chunk_index}
     row = rows[0]
-    chunk_file = path / str(row.get("paste_file") or "")
+    chunk_file = artifact_dir / str(row.get("paste_file") or "")
     if not chunk_file.is_file():
         return {"ok": False, "error": "chunk_paste_missing", "path": str(chunk_file)}
     chunk_text = chunk_file.read_text(encoding="utf-8")
@@ -963,7 +978,7 @@ def run_trusted_email_review_chunk_gemma(
         num_predict=int(plan["num_predict"]),
     )
     elapsed_ms = int((time.monotonic() - t0) * 1000)
-    out_dir = Path(paste_dir)
+    out_dir = artifact_dir
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     base_name = f"CHUNK_{int(chunk_index):03d}_GEMMA_{stamp}"
     result = {
