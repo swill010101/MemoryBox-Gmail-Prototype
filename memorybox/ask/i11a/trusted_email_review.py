@@ -2949,14 +2949,17 @@ def run_trusted_email_review_gemma(
     plan = plan_gemma_replay(paste_dir=paste_dir, require_hash=require_hash)
     if not plan.get("ok"):
         return plan
-    from memorybox.config import OLLAMA_AUTODETECT_URLS, settings
+    from memorybox.config import OLLAMA_AUTODETECT_URLS
     from memorybox.providers.llm._ollama_http import (
         ollama_chat,
         ollama_has_model,
         ollama_reachable,
     )
 
-    base = (settings.ollama_base_url or "").strip()
+    base = ""
+    explicit = (os.environ.get("MEMORYBOX_OLLAMA_BASE_URL") or "").strip()
+    if explicit and ollama_reachable(explicit):
+        base = explicit
     if not base:
         for url in OLLAMA_AUTODETECT_URLS:
             if ollama_reachable(url):

@@ -4808,7 +4808,8 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         "CHUNK GEMMA: preparing" in _run_src
         and "installed and ready" in _run_src
         and "waiting for response" in _run_src
-        and "ollama_has_model" in _run_src,
+        and "ollama_has_model" in _run_src
+        and "settings" not in _run_src,
         checks,
         problems,
     )

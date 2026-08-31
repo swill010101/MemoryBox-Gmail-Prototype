@@ -1208,7 +1208,7 @@ def run_trusted_email_review_chunk_gemma(
 ) -> dict[str, Any]:
     """Run Gemma on one explicitly selected chunk only."""
     from memorybox.ask.i11a.trusted_email_review import apply_flightsim_app_env
-    from memorybox.config import OLLAMA_AUTODETECT_URLS, settings
+    from memorybox.config import OLLAMA_AUTODETECT_URLS
     from memorybox.providers.llm._ollama_http import (
         ollama_chat,
         ollama_has_model,
@@ -1256,13 +1256,16 @@ def run_trusted_email_review_chunk_gemma(
         f"sha256={chunk_sha[:16]}… est_input_tokens≈{plan.get('estimated_input_tokens')}"
     )
     _log("CHUNK GEMMA: locating Ollama…")
-    base = (settings.ollama_base_url or "").strip()
+    base = ""
     tried: list[str] = []
-    if base:
-        tried.append(base)
-        if not ollama_reachable(base):
-            _log(f"CHUNK GEMMA: configured Ollama not reachable at {base}")
-            base = ""
+    explicit = (os.environ.get("MEMORYBOX_OLLAMA_BASE_URL") or "").strip()
+    if explicit:
+        tried.append(explicit)
+        _log(f"CHUNK GEMMA: probing configured {explicit} …")
+        if ollama_reachable(explicit):
+            base = explicit
+        else:
+            _log(f"CHUNK GEMMA: configured Ollama not reachable at {explicit}")
     if not base:
         for url in OLLAMA_AUTODETECT_URLS:
             if url in tried:
