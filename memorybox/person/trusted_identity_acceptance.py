@@ -3145,19 +3145,26 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         lead="Thank you for being a member. I miss you — picked this for Friday.",
         from_trusted=True,
     )
+    _member_friday = classify_review_authorship(
+        lead="Thank you for being a member. See you Friday.",
+        from_trusted=True,
+    )
     _check(
         "review_membership_thanks_is_not_personal_speech",
         _member_thanks["peggy_personal"] is False
         and _member_thanks["kind"] == "service_generated"
         and _member_plus["peggy_personal"] is False
         and _member_plus["kind"] == "service_generated"
-        and _member_personal["peggy_personal"] is True,
+        and _member_personal["peggy_personal"] is True
+        and _member_friday["peggy_personal"] is True
+        and "See you Friday" in (_member_friday.get("personal_lead") or ""),
         checks,
         problems,
         detail={
             "thanks": _member_thanks,
             "plus": _member_plus,
             "personal": _member_personal,
+            "friday": _member_friday,
         },
     )
     _check(
@@ -4373,8 +4380,8 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
                 "temperature": 0.1,
                 "output_reserve": 2048,
             },
-            "prompt_tokens": 500000,
-            "usable_input_tokens": replay_usable_input_tokens(32768),
+            "prompt_tokens": 10,
+            "usable_input_tokens": replay_usable_input_tokens(32768, num_predict=2048),
         }
     }
     _paste_hash = _write_bound_replay(_td, system="sys", user="user", source_map=_ok_map)
@@ -4468,7 +4475,7 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
                     "output_reserve": 2048,
                 },
                 "prompt_tokens": 500000,
-                "usable_input_tokens": replay_usable_input_tokens(8192),
+                "usable_input_tokens": replay_usable_input_tokens(8192, num_predict=2048),
             }
         },
     )
@@ -4493,19 +4500,25 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
                     "num_ctx": 32768,
                     "output_reserve": 2048,
                 },
-                "prompt_tokens": 1,
-                "usable_input_tokens": replay_usable_input_tokens(32768),
+                "prompt_tokens": 500000,
+                "usable_input_tokens": replay_usable_input_tokens(
+                    32768, num_predict=2048
+                ),
             }
         },
     )
-    _plan_under = plan_gemma_replay(paste_dir=_td, require_hash=_paste_hash)
+    _plan_bound_big = plan_gemma_replay(paste_dir=_td, require_hash=_paste_hash)
     _check(
-        "review_replay_plan_refuses_sidecar_prompt_understatement",
-        _plan_under.get("ok") is False
-        and "understates" in str(_plan_under.get("error") or ""),
+        "review_replay_plan_uses_larger_of_sidecar_and_recomputed_prompt",
+        _plan_bound_big.get("ok") is False
+        and "oversize" in str(_plan_bound_big.get("error") or "")
+        and replay_usable_input_tokens(32768, num_predict=2048)
+        == 32768 - 2048 - 2048
+        and replay_usable_input_tokens(32768, num_predict=2048)
+        != replay_usable_input_tokens(32768),
         checks,
         problems,
-        detail=_plan_under,
+        detail=_plan_bound_big,
     )
     _paste_hash = _write_bound_replay(
         _td,

@@ -1047,9 +1047,14 @@ _REPLAY_BIND_MARK = "===== REPLAY BINDING ====="
 _GENERIC_IMAGE_MARK = re.compile(r"(?i)\[(?:image|img|cid:[^\]]*)\]")
 
 
-def replay_usable_input_tokens(num_ctx: int) -> int:
-    """Usable prompt room from frozen num_ctx. Do not trust sidecar usable alone."""
-    return max(0, int(num_ctx) - _OUTPUT_TOKEN_ROOM - _SAFETY_TOKEN_ROOM)
+def replay_usable_input_tokens(
+    num_ctx: int,
+    *,
+    num_predict: int | None = None,
+) -> int:
+    """Usable prompt room from frozen num_ctx minus bound output and safety."""
+    out = int(num_predict) if num_predict else _OUTPUT_TOKEN_ROOM
+    return max(0, int(num_ctx) - out - _SAFETY_TOKEN_ROOM)
 
 
 def replay_binding_payload(source_map: dict[str, Any]) -> dict[str, Any]:
@@ -1191,12 +1196,34 @@ def _is_contamination_line(line: str) -> bool:
     return _clause_is_service(s)
 
 
+_SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
+
+
+def _personal_remainder_after_membership_thanks(text: str) -> str:
+    """Drop membership-thanks sentences; keep other original wording."""
+    raw = (text or "").strip()
+    if not raw or not _MEMBERSHIP_THANKS.search(raw):
+        return raw
+    parts = [p.strip() for p in _SENTENCE_SPLIT.split(raw) if p.strip()]
+    if len(parts) <= 1:
+        parts = [p.strip() for p in _MIXED_CLAUSE_SPLIT.split(raw) if p.strip()] or [raw]
+    kept: list[str] = []
+    for part in parts:
+        if _MEMBERSHIP_THANKS.search(part) and not _GENUINE_PERSONAL_WRAPPER.search(part):
+            rest = _MEMBERSHIP_THANKS.sub("", part).strip(" \t.,;:!?-")
+            if rest:
+                kept.append(rest)
+            continue
+        kept.append(part)
+    return " ".join(kept).strip()
+
+
 def looks_like_residual_promo(text: str, *, had_service_context: bool = False) -> bool:
     """Leftover promo is not speech. I/we/my/our in templates is not a wrapper."""
     t = (text or "").strip()
     if not t:
         return False
-    if _MEMBERSHIP_THANKS.search(t) and not _GENUINE_PERSONAL_WRAPPER.search(t):
+    if _MEMBERSHIP_THANKS.search(t) and not _personal_remainder_after_membership_thanks(t):
         return True
     if (
         _HUMAN_WRAPPER.search(t)
@@ -1755,7 +1782,8 @@ def classify_review_authorship(
     weak = sum(1 for pat in _SERVICE_WEAK if pat.search(text))
     if strong:
         kept, omitted = extract_non_service_text(text)
-        if from_trusted and _looks_like_short_personal_greeting(kept):
+        kept = _personal_remainder_after_membership_thanks(kept)
+        if from_trusted and kept.strip() and not looks_like_residual_promo(kept):
             return {
                 "kind": "personal_plus_service",
                 "peggy_personal": True,
@@ -1796,17 +1824,26 @@ def classify_review_authorship(
             "personal_lead": "",
             "service_body": text,
         }
-    if (
-        from_trusted
-        and _MEMBERSHIP_THANKS.search(text)
-        and not _GENUINE_PERSONAL_WRAPPER.search(text)
-    ):
-        return {
-            "kind": "service_generated",
-            "peggy_personal": False,
-            "personal_lead": "",
-            "service_body": text,
-        }
+    remainder = _personal_remainder_after_membership_thanks(text)
+    if _MEMBERSHIP_THANKS.search(text):
+        if not remainder:
+            return {
+                "kind": "service_generated",
+                "peggy_personal": False,
+                "personal_lead": "",
+                "service_body": text,
+            }
+        if from_trusted:
+            return {
+                "kind": (
+                    "personal_plus_service"
+                    if remainder != text.strip()
+                    else "personal"
+                ),
+                "peggy_personal": True,
+                "personal_lead": remainder,
+                "service_body": text if remainder != text.strip() else "",
+            }
     if from_trusted and text.strip():
         if text.strip() in {_ECARD_EVENT_MARKER, _PROMO_EVENT_MARKER}:
             return {
@@ -2868,6 +2905,13 @@ def plan_gemma_replay(
                 "proposed_num_ctx": num_ctx,
                 "input_sha256": digest,
             }
+    num_predict = binding.get("num_predict")
+    if not num_predict:
+        return {
+            "ok": False,
+            "error": "output_limit_missing — will not send an unbounded request",
+            "input_sha256": digest,
+        }
     measured = measure_prompt_tokens(
         system,
         user,
@@ -2878,7 +2922,11 @@ def plan_gemma_replay(
         if measured.get("measured_tokens_ollama_tokenize") is not None
         else measured["estimated_tokens_bytes_div_4"]
     )
-    recomputed_usable = replay_usable_input_tokens(int(num_ctx))
+    prompt_for_fit = max(int(sidecar_prompt), recomputed_prompt)
+    recomputed_usable = replay_usable_input_tokens(
+        int(num_ctx),
+        num_predict=int(num_predict),
+    )
     if int(sidecar_usable) > recomputed_usable:
         return {
             "ok": False,
@@ -2887,27 +2935,12 @@ def plan_gemma_replay(
             "recomputed_usable_input_tokens": recomputed_usable,
             "input_sha256": digest,
         }
-    if int(sidecar_prompt) < recomputed_prompt:
-        return {
-            "ok": False,
-            "error": "sidecar_prompt_understates_recomputed",
-            "sidecar_prompt_tokens": sidecar_prompt,
-            "recomputed_prompt_tokens": recomputed_prompt,
-            "input_sha256": digest,
-        }
-    if recomputed_prompt > recomputed_usable:
+    if prompt_for_fit > recomputed_usable:
         return {
             "ok": False,
             "error": "oversize_for_reviewed_budget — will not truncate or refreeze",
-            "prompt_tokens": recomputed_prompt,
+            "prompt_tokens": prompt_for_fit,
             "usable_input_tokens": recomputed_usable,
-            "input_sha256": digest,
-        }
-    num_predict = binding.get("num_predict")
-    if not num_predict:
-        return {
-            "ok": False,
-            "error": "output_limit_missing — will not send an unbounded request",
             "input_sha256": digest,
         }
     model = str(binding.get("model") or "")
