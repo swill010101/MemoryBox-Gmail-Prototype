@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import inspect
 import json
+import uuid
 from typing import Any
 
 from memorybox.person.comm_identity import _header_records, corroborate_email_candidate
@@ -4083,6 +4084,54 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
             "rows": [r.evidence_id for r in _multi_irt.rows],
             "extracted": _rfc_ids(_multi_header),
         },
+    )
+    _live_sql = {"ok": False, "error": "not_run"}
+    _live_eid = uuid.uuid4()
+    try:
+        from memorybox.db import connect as _pg_connect
+
+        _pg = _pg_connect()
+        try:
+            _pg.execute("BEGIN")
+            _pg.execute(
+                """
+                INSERT INTO evidence (id, evidence_kind, summary, payload_json)
+                VALUES (%s, 'communication', 'c1o-live-neighbor-sql', %s::jsonb)
+                """,
+                (
+                    _live_eid,
+                    json.dumps(
+                        {
+                            "sent_at": "2009-01-01T12:00:00Z",
+                            "evidence_channel": "email",
+                            "rfc_message_id": "<reply-live-sql@x.test>",
+                            "in_reply_to": _multi_header,
+                            "from": "other@example.test",
+                            "subject": "Re: Dinner",
+                        }
+                    ),
+                ),
+            )
+            _wanted = ["<peggy-child@x.test>"]
+            _live_rows = list(
+                _pg.execute(
+                    _RFC_NEIGHBOR_SQL.format(id_clause=""),
+                    [_wanted, _wanted, _wanted, _wanted, 20],
+                )
+            )
+            _live_ids = [str(r["id"]) for r in _live_rows]
+            _live_sql = {"ok": True, "ids": _live_ids, "n": len(_live_rows)}
+        finally:
+            _pg.rollback()
+            _pg.close()
+    except Exception as exc:  # noqa: BLE001
+        _live_sql = {"ok": False, "error": f"{type(exc).__name__}:{exc}"}
+    _check(
+        "review_neighbor_sql_live_matches_multi_id_in_reply_to_scalar",
+        _live_sql.get("ok") is True and str(_live_eid) in (_live_sql.get("ids") or []),
+        checks,
+        problems,
+        detail=_live_sql,
     )
     _check(
         "review_neighbor_attach_cap_lists_newly_discovered_child_ids",
