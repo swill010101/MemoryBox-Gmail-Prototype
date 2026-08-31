@@ -1771,6 +1771,22 @@ def _looks_like_short_personal_greeting(text: str) -> bool:
     return bool(_SHORT_GREETING.match(t))
 
 
+def _has_positive_personal_language(text: str) -> bool:
+    """Greeting, wrapper, see-you, or first-person that is not institutional we."""
+    t = (text or "").strip()
+    if not t:
+        return False
+    if _looks_like_short_personal_greeting(t):
+        return True
+    if _GENUINE_PERSONAL_WRAPPER.search(t):
+        return True
+    if re.search(r"(?i)\bsee you\b", t):
+        return True
+    if _PERSONAL_VOICE.search(t) and not _INSTITUTIONAL_WE.search(t):
+        return True
+    return False
+
+
 def classify_review_authorship(
     *,
     lead: str,
@@ -1790,6 +1806,7 @@ def classify_review_authorship(
             elif (
                 _MEMBERSHIP_THANKS.search(kept or text)
                 and remnant != (kept or "").strip()
+                and _has_positive_personal_language(remnant)
                 and not looks_like_residual_promo(remnant)
             ):
                 personal_ok = True
@@ -1844,6 +1861,13 @@ def classify_review_authorship(
                 "service_body": text,
             }
         if from_trusted:
+            if not _has_positive_personal_language(remainder):
+                return {
+                    "kind": "unresolved",
+                    "peggy_personal": False,
+                    "personal_lead": remainder,
+                    "service_body": text,
+                }
             return {
                 "kind": (
                     "personal_plus_service"

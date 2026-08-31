@@ -3168,6 +3168,19 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
             "friday": _member_friday,
         },
     )
+    _account_notice = classify_review_authorship(
+        lead="Thank you for being a member. Your account renews Friday.",
+        from_trusted=True,
+    )
+    _check(
+        "review_membership_remainder_requires_positive_personal_language",
+        _account_notice["peggy_personal"] is False
+        and _member_friday["peggy_personal"] is True
+        and "See you Friday" in (_member_friday.get("personal_lead") or ""),
+        checks,
+        problems,
+        detail=_account_notice,
+    )
     _ecard_prefix = classify_review_authorship(
         lead=(
             "Peg sent you an ecard.\n"
