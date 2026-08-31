@@ -2751,6 +2751,8 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         _estimate_tokens,
         _has_independent_human_speech,
         _payload_sort_key,
+        _parse_sent_at,
+        _propose_shorter_interval,
         _sanitation_measurement,
         prepare_trusted_email_review,
         propose_five_year_interval,
@@ -3644,6 +3646,53 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         checks,
         problems,
         detail={"utc": str(_utc[0]), "cst": str(_cst[0])},
+    )
+    _naive_parsed = _parse_sent_at("2009-06-01T12:00:00")
+    _aware_parsed = _parse_sent_at("2009-06-01T12:00:00Z")
+    _check(
+        "review_parse_sent_at_naive_iso_is_utc",
+        _naive_parsed is not None
+        and _naive_parsed.tzinfo is not None
+        and _aware_parsed is not None
+        and _naive_parsed == _aware_parsed,
+        checks,
+        problems,
+        detail={"naive": str(_naive_parsed), "aware": str(_aware_parsed)},
+    )
+
+    def _light(eid: str, when: datetime) -> LightRow:
+        return LightRow(
+            evidence_id=eid,
+            sent_at=when,
+            thread_id="",
+            rfc_message_id="",
+            reply_ids=[],
+            from_addrs={"peggo417@hotmail.com"},
+            addresses={"peggo417@hotmail.com"},
+            peggy_authored=True,
+            subject="x",
+            skip=False,
+        )
+
+    _shorter_mixed = _propose_shorter_interval(
+        [
+            _light("naive", datetime(2009, 1, 2, 12, 0, 0)),
+            _light("aware", datetime(2009, 1, 1, 12, 0, 0, tzinfo=_tz.utc)),
+            _light("offset", datetime(2009, 1, 3, 6, 0, 0, tzinfo=_tz.utc)),
+        ],
+        datetime(2009, 1, 1, tzinfo=_tz.utc),
+        datetime(2009, 12, 31, 23, 59, 59, tzinfo=_tz.utc),
+        usable=70,
+        estimated_full=100,
+    )
+    _check(
+        "review_shorter_interval_sorts_naive_and_aware",
+        _shorter_mixed.get("ok") is True
+        and _shorter_mixed.get("start") == "2009-01-01"
+        and _shorter_mixed.get("end") == "2009-01-02",
+        checks,
+        problems,
+        detail=_shorter_mixed,
     )
     _linked = attach_rfc_neighbors(
         [

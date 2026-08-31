@@ -111,6 +111,15 @@ def _payload_dict(raw: Any) -> dict[str, Any]:
     return {}
 
 
+def _as_utc(when: datetime | None) -> datetime | None:
+    """UTC-aware instant. Naive values are treated as UTC, never mixed in sorts."""
+    if when is None:
+        return None
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    return when.astimezone(timezone.utc)
+
+
 def _parse_sent_at(raw: Any) -> datetime | None:
     text = str(raw or "").strip()
     if not text:
@@ -118,14 +127,16 @@ def _parse_sent_at(raw: Any) -> datetime | None:
     try:
         if text.endswith("Z"):
             text = text[:-1] + "+00:00"
-        return datetime.fromisoformat(text)
+        parsed = datetime.fromisoformat(text)
     except ValueError:
         if len(text) >= 10:
             try:
-                return datetime.fromisoformat(text[:10]).replace(tzinfo=timezone.utc)
+                parsed = datetime.fromisoformat(text[:10])
             except ValueError:
                 return None
-        return None
+        else:
+            return None
+    return _as_utc(parsed)
 
 
 def _rfc_ids(*parts: Any) -> list[str]:
@@ -2006,20 +2017,19 @@ def measure_prompt_tokens(system: str, user: str, *, model: str) -> dict[str, An
 
 def _payload_sort_key(eid: str, payload: dict[str, Any]) -> tuple[datetime, str]:
     """Normalized UTC instant. Raw timestamp strings must not decide order."""
-    when = _parse_sent_at(payload.get("sent_at"))
+    when = _as_utc(_parse_sent_at(payload.get("sent_at")))
     if when is None:
         return datetime.max.replace(tzinfo=timezone.utc), eid
-    if when.tzinfo is None:
-        when = when.replace(tzinfo=timezone.utc)
-    return when.astimezone(timezone.utc), eid
+    return when, eid
 
 
 def _in_interval(when: datetime | None, start: datetime, end: datetime) -> bool:
-    if when is None:
+    instant = _as_utc(when)
+    if instant is None:
         return False
-    if when.tzinfo is None:
-        when = when.replace(tzinfo=timezone.utc)
-    return start <= when <= end
+    start_u = _as_utc(start) or start
+    end_u = _as_utc(end) or end
+    return start_u <= instant <= end_u
 
 
 def render_model_paste(
@@ -2674,17 +2684,14 @@ def _propose_shorter_interval(
     """
     if estimated_full <= 0:
         return {"ok": False, "error": "no_estimate"}
-    dated = [
-        r
-        for r in rows
-        if r.sent_at and start <= (r.sent_at.replace(tzinfo=r.sent_at.tzinfo or timezone.utc)) <= end
-    ]
+    dated = [r for r in rows if r.sent_at and _in_interval(r.sent_at, start, end)]
     years = sorted({r.sent_at.year for r in dated if r.sent_at})
     if not years:
         return {"ok": False, "error": "no_years"}
     ratio = usable / float(estimated_full)
     keep_n = max(1, int(len(dated) * ratio))
-    dated.sort(key=lambda r: r.sent_at or datetime.min.replace(tzinfo=timezone.utc))
+    epoch = datetime.min.replace(tzinfo=timezone.utc)
+    dated.sort(key=lambda r: _as_utc(r.sent_at) or epoch)
     kept = dated[:keep_n]
     if not kept or not kept[-1].sent_at:
         return {"ok": False, "error": "empty_shorter"}
