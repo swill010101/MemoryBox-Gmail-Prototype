@@ -3728,7 +3728,8 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         and "rfc_neighbor_query_saturated" not in _fetch_src
         and "position('@' in" in _RFC_NEIGHBOR_SQL
         and "'<' ||" in _RFC_NEIGHBOR_SQL
-        and "regexp_split_to_array" in _RFC_NEIGHBOR_SQL,
+        and _RFC_NEIGHBOR_SQL.count("regexp_split_to_array") >= 2
+        and "payload_json->>'in_reply_to'" in _RFC_NEIGHBOR_SQL,
         checks,
         problems,
     )
@@ -4034,6 +4035,46 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
             "rows": [r.evidence_id for r in _bare_res.rows],
             "unresolved": _bare_res.unresolved_rfc_ids,
             "complete": _bare_res.neighbor_context_complete,
+        },
+    )
+    _multi_header = (
+        "On Tue, Sam wrote <unrelated@x.test> "
+        "<peggy-child@x.test> (loop avoided)"
+    )
+    _check(
+        "review_rfc_ids_extracts_each_id_from_multi_in_reply_to",
+        "<peggy-child@x.test>" in [_norm_rfc(x) for x in _rfc_ids(_multi_header)]
+        and "<unrelated@x.test>" in [_norm_rfc(x) for x in _rfc_ids(_multi_header)],
+        checks,
+        problems,
+        detail=_rfc_ids(_multi_header),
+    )
+    _cat_multi_irt = [
+        _neighbor_catalog_row(
+            "id-multi-irt",
+            "<reply-multi@x.test>",
+            in_reply_to=_multi_header,
+        )
+    ]
+    _conn_multi_irt = _NeighborPageConn(_cat_multi_irt)
+
+    def _factory_multi_irt():
+        return _conn_multi_irt
+
+    _multi_irt = fetch_rfc_neighbor_rows(
+        [_child],
+        connection_factory=_factory_multi_irt,
+    )
+    _linked_multi_irt = attach_rfc_neighbors([_child], _multi_irt.rows)
+    _check(
+        "review_neighbor_scalar_in_reply_to_with_multiple_ids_attaches_child",
+        "id-multi-irt" in {r.evidence_id for r in _linked_multi_irt}
+        and _RFC_NEIGHBOR_SQL.count("regexp_split_to_array") >= 2,
+        checks,
+        problems,
+        detail={
+            "rows": [r.evidence_id for r in _multi_irt.rows],
+            "extracted": _rfc_ids(_multi_header),
         },
     )
     _check(

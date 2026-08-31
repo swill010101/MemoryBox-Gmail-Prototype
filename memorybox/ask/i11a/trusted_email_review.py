@@ -626,7 +626,6 @@ _RFC_SQL_MID = (
     "coalesce(payload_json->>'rfc_message_id', "
     "payload_json->>'message_id', '')"
 )
-_RFC_SQL_IRT = "coalesce(payload_json->>'in_reply_to', '')"
 _RFC_NEIGHBOR_SQL = f"""
             SELECT id,
                    payload_json->>'sent_at' AS sent_at,
@@ -651,7 +650,18 @@ _RFC_NEIGHBOR_SQL = f"""
                   NOT IN ('sms', 'text', 'imessage', 'mms', 'rcs')
               AND (
                     {_rfc_canon_sql(_RFC_SQL_MID)} = ANY(%s)
-                 OR {_rfc_canon_sql(_RFC_SQL_IRT)} = ANY(%s)
+                 OR (
+                        coalesce(payload_json->>'in_reply_to', '') <> ''
+                    AND EXISTS (
+                        SELECT 1 FROM unnest(
+                            regexp_split_to_array(
+                                trim(both from payload_json->>'in_reply_to'),
+                                E'[\\\\s,;]+'
+                            )
+                        ) AS irt_tok
+                        WHERE {_rfc_canon_sql("irt_tok")} = ANY(%s)
+                    )
+                 )
                  OR (
                         jsonb_typeof(payload_json->'in_reply_to_ids') = 'array'
                     AND EXISTS (
