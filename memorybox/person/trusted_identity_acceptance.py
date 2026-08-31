@@ -3181,6 +3181,28 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         problems,
         detail=_account_notice,
     )
+    _thanks_support = classify_review_authorship(
+        lead=(
+            "Thank you for being a member. Thanks for your continued support."
+        ),
+        from_trusted=True,
+    )
+    _enjoy_benefits = classify_review_authorship(
+        lead="Thank you for being a member. I hope you enjoy your benefits.",
+        from_trusted=True,
+    )
+    _check(
+        "review_membership_remainder_rejects_thanks_led_and_first_person_service",
+        _thanks_support["peggy_personal"] is False
+        and _enjoy_benefits["peggy_personal"] is False
+        and _member_friday["peggy_personal"] is True,
+        checks,
+        problems,
+        detail={
+            "thanks_support": _thanks_support,
+            "enjoy_benefits": _enjoy_benefits,
+        },
+    )
     _ecard_prefix = classify_review_authorship(
         lead=(
             "Peg sent you an ecard.\n"

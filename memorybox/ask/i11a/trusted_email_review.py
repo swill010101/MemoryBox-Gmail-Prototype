@@ -1772,19 +1772,13 @@ def _looks_like_short_personal_greeting(text: str) -> bool:
 
 
 def _has_positive_personal_language(text: str) -> bool:
-    """Greeting, wrapper, see-you, or first-person that is not institutional we."""
+    """Membership leftover is Peggy speech only with attributable conversation."""
     t = (text or "").strip()
     if not t:
         return False
-    if _looks_like_short_personal_greeting(t):
-        return True
     if _GENUINE_PERSONAL_WRAPPER.search(t):
         return True
-    if re.search(r"(?i)\bsee you\b", t):
-        return True
-    if _PERSONAL_VOICE.search(t) and not _INSTITUTIONAL_WE.search(t):
-        return True
-    return False
+    return bool(re.search(r"(?i)\bsee you\b", t))
 
 
 def classify_review_authorship(
@@ -1801,7 +1795,10 @@ def classify_review_authorship(
         remnant = _personal_remainder_after_membership_thanks(kept)
         personal_ok = False
         if from_trusted and remnant.strip():
-            if _looks_like_short_personal_greeting(remnant):
+            if (
+                _looks_like_short_personal_greeting(remnant)
+                and not _MEMBERSHIP_THANKS.search(kept or text)
+            ):
                 personal_ok = True
             elif (
                 _MEMBERSHIP_THANKS.search(kept or text)
