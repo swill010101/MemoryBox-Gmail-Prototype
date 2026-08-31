@@ -1193,6 +1193,10 @@ def plan_trusted_email_review_chunk_gemma(
     }
 
 
+def _chunk_gemma_log(message: str) -> None:
+    print(message, flush=True)
+
+
 def run_trusted_email_review_chunk_gemma(
     *,
     paste_dir: Path | str,
@@ -1200,6 +1204,7 @@ def run_trusted_email_review_chunk_gemma(
     chunk_index: int,
     require_chunk_hash: str,
     timeout_seconds: int = 1800,
+    progress: bool = True,
 ) -> dict[str, Any]:
     """Run Gemma on one explicitly selected chunk only."""
     from memorybox.ask.i11a.trusted_email_review import apply_flightsim_app_env
@@ -1207,10 +1212,23 @@ def run_trusted_email_review_chunk_gemma(
     from memorybox.providers.llm._ollama_http import (
         ollama_chat,
         ollama_has_model,
+        ollama_ps,
         ollama_reachable,
+        ollama_tags,
     )
 
+    def _log(message: str) -> None:
+        if progress:
+            _chunk_gemma_log(message)
+
+    artifact_dir, _, _ = _resolve_paste_paths(paste_dir)
+    _log(
+        "CHUNK GEMMA: preparing — validating parent hash, chunk hash, "
+        "manifest, MEMORYBOX_FEV2_OLLAMA_NUM_CTX…"
+    )
     apply_flightsim_app_env()
+    env_ctx = (os.environ.get("MEMORYBOX_FEV2_OLLAMA_NUM_CTX") or "").strip()
+    _log(f"CHUNK GEMMA: observed MEMORYBOX_FEV2_OLLAMA_NUM_CTX={env_ctx or '(unset)'}")
     plan = plan_trusted_email_review_chunk_gemma(
         paste_dir=paste_dir,
         require_parent_hash=require_parent_hash,
@@ -1218,35 +1236,142 @@ def run_trusted_email_review_chunk_gemma(
         require_chunk_hash=require_chunk_hash,
     )
     if not plan.get("ok"):
+        _log(f"CHUNK GEMMA: STOP — plan refused ({plan.get('error')})")
         return plan
+    chunk_total: int | None = None
+    manifest_path = artifact_dir / "CHUNK_MANIFEST.json"
+    if manifest_path.is_file():
+        try:
+            chunk_total = int(json.loads(manifest_path.read_text(encoding="utf-8")).get("chunk_count") or 0)
+        except (json.JSONDecodeError, TypeError, ValueError):
+            chunk_total = None
+    chunk_label = (
+        f"{chunk_index}/{chunk_total}"
+        if chunk_total and chunk_total > 0
+        else str(chunk_index)
+    )
+    chunk_sha = str(plan.get("chunk_sha256") or "")
+    _log(
+        f"CHUNK GEMMA: plan OK — chunk {chunk_label} "
+        f"sha256={chunk_sha[:16]}… est_input_tokens≈{plan.get('estimated_input_tokens')}"
+    )
+    _log("CHUNK GEMMA: locating Ollama…")
     base = (settings.ollama_base_url or "").strip()
+    tried: list[str] = []
+    if base:
+        tried.append(base)
+        if not ollama_reachable(base):
+            _log(f"CHUNK GEMMA: configured Ollama not reachable at {base}")
+            base = ""
     if not base:
         for url in OLLAMA_AUTODETECT_URLS:
+            if url in tried:
+                continue
+            tried.append(url)
+            _log(f"CHUNK GEMMA: probing {url} …")
             if ollama_reachable(url):
                 base = url
                 break
     model = str(plan.get("model") or ESTABLISHED_GEMMA_MODEL)
-    if not base or not ollama_has_model(base, model):
+    if not base:
+        _log(f"CHUNK GEMMA: STOP — Ollama not reachable (tried {tried})")
+        return {
+            "ok": False,
+            "error": "ollama_unreachable",
+            "skipped": True,
+            "provider": "ollama",
+            "ollama_urls_tried": tried,
+            "request_payload": plan.get("request_payload"),
+        }
+    _log(f"CHUNK GEMMA: Ollama reachable at {base}")
+    _log(f"CHUNK GEMMA: checking installed model {model} …")
+    installed = ollama_has_model(base, model)
+    installed_names: list[str] = []
+    try:
+        tag_rows = ollama_tags(base).get("models") or []
+        for row in tag_rows:
+            if isinstance(row, dict):
+                installed_names.append(str(row.get("name") or row.get("model") or ""))
+    except Exception:  # noqa: BLE001
+        installed_names = []
+    if not installed:
+        _log(
+            f"CHUNK GEMMA: STOP — {model} not installed at {base} "
+            f"(tags: {', '.join(n for n in installed_names if n) or 'none'})"
+        )
         return {
             "ok": False,
             "error": f"ollama_model_missing:{model}",
             "skipped": True,
             "provider": "ollama",
+            "ollama_base_url": base,
+            "installed_models": [n for n in installed_names if n],
             "request_payload": plan.get("request_payload"),
         }
+    _log(f"CHUNK GEMMA: {model} installed and ready at {base}")
+    try:
+        ps_rows = ollama_ps(base).get("models") or []
+        if ps_rows:
+            active = ", ".join(
+                str(r.get("name") or r.get("model") or r) for r in ps_rows if r
+            )
+            _log(f"CHUNK GEMMA: Ollama /api/ps active models: {active}")
+        else:
+            _log("CHUNK GEMMA: Ollama /api/ps empty (no model loaded yet)")
+    except Exception as exc:  # noqa: BLE001
+        _log(f"CHUNK GEMMA: Ollama /api/ps check skipped ({type(exc).__name__})")
     req = plan["request_payload"]
-    t0 = time.monotonic()
-    content, usage = ollama_chat(
-        base,
-        model,
-        req["messages"][0]["content"],
-        req["messages"][1]["content"],
-        format_json=True,
-        timeout=int(timeout_seconds),
-        num_ctx=int(plan["num_ctx"]),
-        num_predict=int(plan["num_predict"]),
+    num_ctx = int(plan["num_ctx"])
+    num_predict = int(plan["num_predict"])
+    _log(
+        f"CHUNK GEMMA: sending chunk {chunk_label} to Ollama "
+        f"(num_ctx={num_ctx}, num_predict={num_predict}, timeout={timeout_seconds}s) …"
     )
+    _log(
+        "CHUNK GEMMA: waiting for response — large prompt eval can take many minutes; "
+        "no further output until Ollama returns …"
+    )
+    t0 = time.monotonic()
+    try:
+        content, usage = ollama_chat(
+            base,
+            model,
+            req["messages"][0]["content"],
+            req["messages"][1]["content"],
+            format_json=True,
+            timeout=int(timeout_seconds),
+            num_ctx=num_ctx,
+            num_predict=num_predict,
+        )
+    except TimeoutError as exc:
+        elapsed_ms = int((time.monotonic() - t0) * 1000)
+        _log(f"CHUNK GEMMA: STOP — timed out after {timeout_seconds}s ({elapsed_ms} ms elapsed)")
+        return {
+            "ok": False,
+            "error": "ollama_chat_timeout",
+            "timeout_seconds": int(timeout_seconds),
+            "elapsed_ms": elapsed_ms,
+            "ollama_base_url": base,
+            "model": model,
+        }
+    except Exception as exc:  # noqa: BLE001
+        elapsed_ms = int((time.monotonic() - t0) * 1000)
+        _log(f"CHUNK GEMMA: STOP — Ollama error after {elapsed_ms} ms ({type(exc).__name__}: {exc})")
+        return {
+            "ok": False,
+            "error": f"ollama_chat_failed:{type(exc).__name__}",
+            "detail": str(exc),
+            "elapsed_ms": elapsed_ms,
+            "ollama_base_url": base,
+            "model": model,
+        }
     elapsed_ms = int((time.monotonic() - t0) * 1000)
+    prompt_eval = (usage or {}).get("prompt_eval_count")
+    eval_count = (usage or {}).get("eval_count")
+    _log(
+        f"CHUNK GEMMA: response received — prompt_eval_count={prompt_eval} "
+        f"eval_count={eval_count} elapsed_ms={elapsed_ms}"
+    )
     out_dir = artifact_dir
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     base_name = f"CHUNK_{int(chunk_index):03d}_GEMMA_{stamp}"
@@ -1254,6 +1379,7 @@ def run_trusted_email_review_chunk_gemma(
         "ok": True,
         "provider": "ollama",
         "model": model,
+        "ollama_base_url": base,
         "parent_packet_sha256": plan.get("parent_packet_sha256"),
         "chunk_index": int(chunk_index),
         "chunk_sha256": plan.get("chunk_sha256"),
@@ -1261,16 +1387,20 @@ def run_trusted_email_review_chunk_gemma(
         "raw": content,
         "usage": usage,
         "elapsed_ms": elapsed_ms,
-        "prompt_eval_count": (usage or {}).get("prompt_eval_count"),
-        "eval_count": (usage or {}).get("eval_count"),
+        "prompt_eval_count": prompt_eval,
+        "eval_count": eval_count,
         "chunking": True,
     }
-    (out_dir / f"{base_name}_request.json").write_text(
+    req_path = out_dir / f"{base_name}_request.json"
+    resp_path = out_dir / f"{base_name}_response.json"
+    _log(f"CHUNK GEMMA: writing {req_path.name} and {resp_path.name} …")
+    req_path.write_text(
         json.dumps(req, indent=2, default=str),
         encoding="utf-8",
     )
-    (out_dir / f"{base_name}_response.json").write_text(
+    resp_path.write_text(
         json.dumps(result, indent=2, default=str),
         encoding="utf-8",
     )
+    _log(f"CHUNK GEMMA: done — saved under {out_dir}")
     return result

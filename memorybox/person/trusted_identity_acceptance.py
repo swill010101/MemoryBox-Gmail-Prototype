@@ -4615,6 +4615,7 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         plan_trusted_email_review_chunk_gemma,
         resync_trusted_email_review_freeze,
         resync_trusted_email_review_chunk_manifest,
+        run_trusted_email_review_chunk_gemma,
     )
 
     def _write_review_parent(td: _Ptmp, *, conversations, cites_extra=None) -> tuple[str, dict]:
@@ -4800,6 +4801,16 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         checks,
         problems,
         detail=_plan_ctx,
+    )
+    _run_src = inspect.getsource(run_trusted_email_review_chunk_gemma)
+    _check(
+        "review_chunk_runner_emits_progress_diagnostics",
+        "CHUNK GEMMA: preparing" in _run_src
+        and "installed and ready" in _run_src
+        and "waiting for response" in _run_src
+        and "ollama_has_model" in _run_src,
+        checks,
+        problems,
     )
     _check(
         "review_chunk_prepare_never_calls_models",
