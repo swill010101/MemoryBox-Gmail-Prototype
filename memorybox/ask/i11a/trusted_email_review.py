@@ -631,12 +631,12 @@ _RFC_NEIGHBOR_SQL = """
               AND lower(coalesce(payload_json->>'evidence_channel', 'email'))
                   NOT IN ('sms', 'text', 'imessage', 'mms', 'rcs')
               AND (
-                    coalesce(
+                    lower(coalesce(
                         payload_json->>'rfc_message_id',
                         payload_json->>'message_id',
                         ''
-                    ) = ANY(%s)
-                 OR coalesce(payload_json->>'in_reply_to', '') = ANY(%s)
+                    )) = ANY(%s)
+                 OR lower(coalesce(payload_json->>'in_reply_to', '')) = ANY(%s)
                  OR (
                         jsonb_typeof(payload_json->'in_reply_to_ids') = 'array'
                     AND EXISTS (
@@ -644,18 +644,19 @@ _RFC_NEIGHBOR_SQL = """
                         FROM jsonb_array_elements_text(
                             payload_json->'in_reply_to_ids'
                         ) AS rid
-                        WHERE rid = ANY(%s)
+                        WHERE lower(rid) = ANY(%s)
                     )
                  )
                  OR (
                         coalesce(payload_json->>'references', '') <> ''
                     AND EXISTS (
                         SELECT 1 FROM unnest(%s::text[]) AS w
-                        WHERE w = ANY(
-                            regexp_split_to_array(
+                        WHERE lower(w) = ANY(
+                            SELECT lower(tok)
+                            FROM unnest(regexp_split_to_array(
                                 trim(both from payload_json->>'references'),
                                 E'\\\\s+'
-                            )
+                            )) AS tok
                         )
                     )
                  )
@@ -722,27 +723,28 @@ def _neighbor_row_matches_wanted(row: LightRow, wanted: set[str]) -> bool:
     return bool(ref_ids & wanted)
 
 
+def _present_own_rfcs(rows: Iterable[LightRow]) -> set[str]:
+    """Message-IDs of rows actually in the packet (not merely referenced)."""
+    return {own for row in rows if (own := _own_rfc(row))}
+
+
+def _referenced_rfcs(rows: Iterable[LightRow]) -> set[str]:
+    return {rid for row in rows for rid in _reply_rfcs(row) if rid}
+
+
+def _frontier_rfcs(rows: Iterable[LightRow]) -> set[str]:
+    """IDs to query: present Message-IDs (find children) plus parent IDs."""
+    return _present_own_rfcs(rows) | _referenced_rfcs(rows)
+
+
 def _collect_known_rfc(rows: Iterable[LightRow]) -> set[str]:
-    known: set[str] = set()
-    for row in rows:
-        own = _own_rfc(row)
-        if own:
-            known.add(own)
-        known.update(_reply_rfcs(row))
-    return known
+    """Present Message-IDs only. Referenced/reply IDs are not 'known' rows."""
+    return _present_own_rfcs(rows)
 
 
 def _unresolved_parent_rfcs(rows: Iterable[LightRow]) -> list[str]:
-    known = _collect_known_rfc(rows)
-    missing = sorted(
-        {
-            rid
-            for row in rows
-            for rid in _reply_rfcs(row)
-            if rid and rid not in known
-        }
-    )
-    return missing
+    present = _present_own_rfcs(rows)
+    return sorted(rid for rid in _referenced_rfcs(rows) if rid not in present)
 
 
 def fetch_rfc_neighbor_rows(
@@ -760,7 +762,7 @@ def fetch_rfc_neighbor_rows(
     have_eids: set[str] = {r.evidence_id for r in rows}
     extras: list[LightRow] = []
     extras_by_id: dict[str, LightRow] = {}
-    known_rfc = _collect_known_rfc(rows)
+    known_rfc = _frontier_rfcs(rows)
     queried_rfc: set[str] = set()
     neighbor_context_complete = True
     stopping_reason: str | None = None
@@ -775,7 +777,6 @@ def fetch_rfc_neighbor_rows(
             to_query = sorted(r for r in known_rfc if r and r not in queried_rfc)
             if not to_query:
                 break
-            queried_rfc.update(to_query)
             hops_used = hop + 1
             newly_discovered: set[str] = set()
 
@@ -786,6 +787,7 @@ def fetch_rfc_neighbor_rows(
                     continue
                 chunk_list = sorted(wanted_set)
                 last_id: Any = None
+                chunk_finished = False
                 while True:
                     if _attach_cap_hit():
                         neighbor_context_complete = False
@@ -806,6 +808,7 @@ def fetch_rfc_neighbor_rows(
                     )
                     pages_fetched += 1
                     if not fetched:
+                        chunk_finished = True
                         break
                     for raw in fetched:
                         last_id = raw["id"]
@@ -830,7 +833,10 @@ def fetch_rfc_neighbor_rows(
                     if not neighbor_context_complete:
                         break
                     if len(fetched) < page_size:
+                        chunk_finished = True
                         break
+                if chunk_finished:
+                    queried_rfc.update(wanted_set)
                 if not neighbor_context_complete:
                     break
             if not neighbor_context_complete:
@@ -846,7 +852,12 @@ def fetch_rfc_neighbor_rows(
                 stopping_reason = f"hop_cap:{max_hops}"
 
     all_rows = list(rows) + extras
-    unresolved = _unresolved_parent_rfcs(all_rows)
+    unresolved = set(_unresolved_parent_rfcs(all_rows))
+    unqueried = {r for r in known_rfc if r and r not in queried_rfc}
+    if unqueried:
+        neighbor_context_complete = False
+        stopping_reason = stopping_reason or "unqueried_rfc_frontier"
+        unresolved.update(unqueried)
     if unresolved:
         neighbor_context_complete = False
         stopping_reason = stopping_reason or "unresolved_parent_rfc_ids"
@@ -855,7 +866,7 @@ def fetch_rfc_neighbor_rows(
         rows=extras,
         neighbor_context_complete=neighbor_context_complete,
         stopping_reason=stopping_reason,
-        unresolved_rfc_ids=unresolved,
+        unresolved_rfc_ids=sorted(unresolved),
         attached_n=len(extras),
         hops_used=hops_used,
         pages_fetched=pages_fetched,

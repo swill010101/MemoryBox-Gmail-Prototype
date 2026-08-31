@@ -2738,6 +2738,7 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         extract_non_service_text,
         fetch_rfc_neighbor_rows,
         group_conversations,
+        _unresolved_parent_rfcs,
         looks_like_residual_promo,
         NeighborFetchResult,
         participation_exclusion_reason,
@@ -3692,7 +3693,10 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         and "id > %s" in _fetch_src
         and "regexp_split_to_array" in _RFC_NEIGHBOR_SQL
         and "NeighborFetchResult" in _fetch_src
-        and "rfc_neighbor_query_saturated" not in _fetch_src,
+        and "rfc_neighbor_query_saturated" not in _fetch_src
+        and "lower(coalesce(" in _RFC_NEIGHBOR_SQL
+        and "lower(rid)" in _RFC_NEIGHBOR_SQL
+        and "SELECT lower(tok)" in _RFC_NEIGHBOR_SQL,
         checks,
         problems,
     )
@@ -3874,6 +3878,78 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         checks,
         problems,
         detail=_cap_res.__dict__,
+    )
+    _check(
+        "review_unresolved_parent_rfc_reported_when_parent_absent",
+        _unresolved_parent_rfcs([_child]) == ["<parent-b@x.test>"],
+        checks,
+        problems,
+        detail=_unresolved_parent_rfcs([_child]),
+    )
+    _empty_conn = _NeighborPageConn([])
+
+    def _factory_empty():
+        return _empty_conn
+
+    _missing_parent = fetch_rfc_neighbor_rows(
+        [_child],
+        connection_factory=_factory_empty,
+    )
+    _check(
+        "review_neighbor_fetch_reports_missing_parent_not_false_complete",
+        _missing_parent.neighbor_context_complete is False
+        and "<parent-b@x.test>" in _missing_parent.unresolved_rfc_ids
+        and _missing_parent.attached_n == 0,
+        checks,
+        problems,
+        detail={
+            "complete": _missing_parent.neighbor_context_complete,
+            "unresolved": _missing_parent.unresolved_rfc_ids,
+            "reason": _missing_parent.stopping_reason,
+        },
+    )
+    _check(
+        "review_neighbor_attach_cap_lists_unqueried_frontier_ids",
+        _cap_res.neighbor_context_complete is False
+        and bool(_cap_res.unresolved_rfc_ids)
+        and (
+            "<parent-b@x.test>" in _cap_res.unresolved_rfc_ids
+            or "<peggy-child@x.test>" in _cap_res.unresolved_rfc_ids
+        ),
+        checks,
+        problems,
+        detail={
+            "unresolved": _cap_res.unresolved_rfc_ids,
+            "reason": _cap_res.stopping_reason,
+        },
+    )
+    _cat_case = [
+        _neighbor_catalog_row(
+            "id-b-case",
+            "<Parent-B@X.TEST>",
+        )
+    ]
+    _conn_case = _NeighborPageConn(_cat_case)
+
+    def _factory_case():
+        return _conn_case
+
+    _case_res = fetch_rfc_neighbor_rows(
+        [_child],
+        connection_factory=_factory_case,
+    )
+    _linked_case = attach_rfc_neighbors([_child], _case_res.rows)
+    _check(
+        "review_neighbor_mixed_case_message_id_matches_normalized_query",
+        {r.evidence_id for r in _linked_case} == {"child", "id-b-case"}
+        and "lower(rid) = ANY(%s)" in _RFC_NEIGHBOR_SQL
+        and "lower(coalesce(" in _RFC_NEIGHBOR_SQL,
+        checks,
+        problems,
+        detail={
+            "rows": [r.evidence_id for r in _case_res.rows],
+            "unresolved": _case_res.unresolved_rfc_ids,
+        },
     )
 
     class _DbFailConn:
