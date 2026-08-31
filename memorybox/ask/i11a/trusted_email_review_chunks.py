@@ -612,12 +612,44 @@ def _load_frozen_parent(paste_dir: Path | str, require_hash: str) -> dict[str, A
         return {"ok": False, "error": "source_map_invalid_json"}
     mapped = str(source_map.get("frozen_input_sha256") or "").strip().lower()
     if mapped != digest.lower():
-        return {
+        report_path = artifact_dir / "PREPARATION_REPORT.txt"
+        report_hash: str | None = None
+        if report_path.is_file():
+            for line in report_path.read_text(encoding="utf-8", errors="replace").splitlines():
+                if line.startswith("frozen_input_sha256:"):
+                    report_hash = line.split(":", 1)[1].strip().lower()
+                    break
+        err = {
             "ok": False,
             "error": "source_map_hash_mismatch",
             "paste_sha256": digest,
             "source_map_frozen_input_sha256": mapped,
+            "paste_path": str(paste_path),
+            "source_map_path": str(smap_path),
         }
+        if report_hash:
+            err["preparation_report_frozen_input_sha256"] = report_hash
+        if report_hash and report_hash == mapped and report_hash != digest.lower():
+            err["hint"] = (
+                "SOURCE_MAP.json and PREPARATION_REPORT.txt agree, but MODEL_PASTE.txt "
+                "on disk was changed after prepare. Restore the original MODEL_PASTE.txt "
+                f"for hash {mapped}, or locate another REVIEW_* directory whose paste "
+                "matches that hash. Do not edit SOURCE_MAP.json alone."
+            )
+        elif report_hash and report_hash == digest.lower() and report_hash != mapped:
+            err["hint"] = (
+                "MODEL_PASTE.txt matches PREPARATION_REPORT.txt but SOURCE_MAP.json is "
+                "stale. Re-run prepare-trusted-email-review to regenerate the sidecar, "
+                "or restore SOURCE_MAP.json from backup. Do not patch frozen_input_sha256 "
+                "without verifying citations still match the paste."
+            )
+        else:
+            err["hint"] = (
+                "Paste and sidecar disagree. Inspect PREPARATION_REPORT.txt and scan "
+                "other REVIEW_* directories for a matching paste/sidecar pair before "
+                "chunking."
+            )
+        return err
     if _MARKER_SYSTEM not in paste_text or _MARKER_USER not in paste_text:
         return {"ok": False, "error": "paste_missing_markers"}
     return {
