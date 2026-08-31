@@ -378,6 +378,9 @@ def add_contact(
     note: str | None = None,
     provenance: dict[str, Any] | None = None,
 ) -> ContactView:
+    """Owner/operator profile add. Promotes an existing auto-expand row in place."""
+    from memorybox.person.phone_map import normalize_handle
+
     pid = ensure_person(person_id)
     kind = (contact_kind or "").strip().lower()
     if kind not in CONTACT_KINDS:
@@ -385,17 +388,101 @@ def add_contact(
     text = (value_text or "").strip()
     if len(text) < 2:
         raise ProfileServiceError("value_text required")
-    cid = uuid4()
+    stored = (normalize_handle(text) or text) if kind == "email" else text
+    match_norm = (normalize_handle(text) or text).lower()
+    actor = (actor_key or "owner").strip() or "owner"
+    trust = (
+        "trusted"
+        if actor in {"owner", "operator", "owner_confirmed"}
+        else "untrusted"
+    )
+    status = "confirmed" if trust == "trusted" else "candidate"
+    prov = dict(provenance or {})
+    if kind == "email":
+        prov.setdefault("source", "person_profile")
+        if trust == "trusted":
+            prov.setdefault("owner_confirmed", True)
+        prov.setdefault("normalized", stored)
+    else:
+        prov.setdefault("source", "owner")
+    prov_json = json.dumps(prov)
     with connection() as conn:
-        conn.execute(
-            """
-            INSERT INTO person_contact_points (
-                id, person_id, contact_kind, value_text, status,
-                actor_key, note, provenance_json
-            ) VALUES (%s, %s, %s, %s, 'confirmed', %s, %s, %s::jsonb)
-            """,
-            (cid, pid, kind, text, actor_key, note, json.dumps(provenance or {"source": "owner"})),
+        candidates = list(
+            conn.execute(
+                """
+                SELECT * FROM person_contact_points
+                WHERE person_id = %s
+                  AND contact_kind = %s
+                  AND status IN ('confirmed', 'candidate', 'observed')
+                ORDER BY created_at ASC
+                """,
+                (pid, kind),
+            ).fetchall()
         )
+        existing = [
+            r
+            for r in candidates
+            if (normalize_handle(str(r.get("value_text") or "")) or "").lower()
+            == match_norm
+            or str(r.get("value_text") or "").strip().lower() == stored.lower()
+        ]
+        if existing:
+            for ex in existing:
+                try:
+                    conn.execute(
+                        """
+                        UPDATE person_contact_points
+                        SET value_text = %s,
+                            status = %s,
+                            actor_key = %s,
+                            note = COALESCE(%s, note),
+                            provenance_json = %s::jsonb,
+                            retrieval_trust = %s,
+                            updated_at = now()
+                        WHERE id = %s
+                        """,
+                        (stored, status, actor, note, prov_json, trust, ex["id"]),
+                    )
+                except Exception:  # noqa: BLE001
+                    conn.execute(
+                        """
+                        UPDATE person_contact_points
+                        SET value_text = %s,
+                            status = %s,
+                            actor_key = %s,
+                            note = COALESCE(%s, note),
+                            provenance_json = %s::jsonb,
+                            updated_at = now()
+                        WHERE id = %s
+                        """,
+                        (stored, status, actor, note, prov_json, ex["id"]),
+                    )
+            row = conn.execute(
+                "SELECT * FROM person_contact_points WHERE id = %s",
+                (existing[0]["id"],),
+            ).fetchone()
+            return _contact_view(row)
+        cid = uuid4()
+        try:
+            conn.execute(
+                """
+                INSERT INTO person_contact_points (
+                    id, person_id, contact_kind, value_text, status,
+                    actor_key, note, provenance_json, retrieval_trust
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s)
+                """,
+                (cid, pid, kind, stored, status, actor, note, prov_json, trust),
+            )
+        except Exception:  # noqa: BLE001
+            conn.execute(
+                """
+                INSERT INTO person_contact_points (
+                    id, person_id, contact_kind, value_text, status,
+                    actor_key, note, provenance_json
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s::jsonb)
+                """,
+                (cid, pid, kind, stored, status, actor, note, prov_json),
+            )
         row = conn.execute("SELECT * FROM person_contact_points WHERE id = %s", (cid,)).fetchone()
     return _contact_view(row)
 
@@ -472,7 +559,8 @@ def list_contacts(person_id: str, *, include_withdrawn: bool = False) -> list[Co
             rows = conn.execute(
                 """
                 SELECT * FROM person_contact_points
-                WHERE person_id = %s AND status = 'confirmed'
+                WHERE person_id = %s
+                  AND status IN ('confirmed', 'candidate', 'observed')
                 ORDER BY created_at ASC
                 """,
                 (pid,),

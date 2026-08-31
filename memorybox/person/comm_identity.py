@@ -104,12 +104,20 @@ def person_identity_snapshot(person_id: str) -> dict[str, Any]:
     except Exception:  # noqa: BLE001
         provider_ids = []
 
-    emails = [
-        c
-        for c in contacts
-        if str(c.get("contact_kind") or "").lower() == "email"
-        and str(c.get("status") or "") == "confirmed"
-    ]
+    from memorybox.person.trusted_identity import classify_contact_trust
+
+    emails = []
+    for c in contacts:
+        if str(c.get("contact_kind") or "").lower() != "email":
+            continue
+        verdict = classify_contact_trust(
+            {
+                "actor_key": c.get("actor_key"),
+                "provenance_json": c.get("provenance") or c.get("provenance_json") or {},
+            }
+        )
+        if verdict.get("retrieval_trust") == "trusted":
+            emails.append(c)
     phones = [
         c
         for c in contacts
@@ -168,30 +176,27 @@ def _address_claimed_by(addr: str) -> list[str]:
     out: list[str] = []
     try:
         with connection() as conn:
+            from memorybox.person.trusted_identity import classify_contact_trust
+
             rows = conn.execute(
                 """
-                SELECT person_id, value_text
+                SELECT person_id, value_text, actor_key, provenance_json, status
                 FROM person_contact_points
-                WHERE contact_kind = 'email' AND status = 'confirmed'
+                WHERE contact_kind = 'email'
+                  AND status IN ('confirmed', 'candidate', 'observed')
                 """
             ).fetchall()
             for r in rows:
-                if normalize_handle(str(r.get("value_text") or "")) == norm:
-                    pid = str(r["person_id"])
-                    if pid not in out:
-                        out.append(pid)
-            rows2 = conn.execute(
-                """
-                SELECT person_id, external_id
-                FROM provider_identities
-                WHERE lower(identity_kind) = 'email'
-                """
-            ).fetchall()
-            for r in rows2:
-                if normalize_handle(str(r.get("external_id") or "")) == norm:
-                    pid = str(r["person_id"])
-                    if pid not in out:
-                        out.append(pid)
+                if normalize_handle(str(r.get("value_text") or "")) != norm:
+                    continue
+                verdict = classify_contact_trust(dict(r))
+                if verdict.get("retrieval_trust") != "trusted":
+                    continue
+                pid = str(r["person_id"])
+                if pid not in out:
+                    out.append(pid)
+            # Provider email rows are not trusted-for-retrieval (same as
+            # phone_map). They must not claim Person ownership.
     except Exception:  # noqa: BLE001
         return out
     return out
@@ -303,31 +308,7 @@ def _header_records(payload: dict[str, Any]) -> list[dict[str, str]]:
                         "header_field": field,
                     }
                 )
-    # Hotmail/Takeout often stores bare From + people[]=["Peg Legg", ...].
-    # Fill empty From display_name from multi-token people[] only (never To/CC/BCC)
-    # so we do not paint Peg Legg onto other participants on the same message.
-    people_names = [
-        str(p).strip()
-        for p in (payload.get("people") or [])
-        if isinstance(p, str) and " " in str(p).strip()
-    ]
-    if people_names:
-        for rec in out:
-            if rec.get("header_field") != "from":
-                continue
-            if (rec.get("display_name") or "").strip():
-                continue
-            other_dns = {
-                _norm_name(r.get("display_name"))
-                for r in out
-                if r is not rec and (r.get("display_name") or "").strip()
-            }
-            for pname in people_names:
-                if _norm_name(pname) in other_dns:
-                    continue
-                rec["display_name"] = pname
-                rec["header_field"] = "from_people"
-                break
+    # people[] is co-occurrence, never a From display used to confirm ownership.
     # Dedupe: prefer non-empty display for the same address+field family.
     best: dict[tuple[str, str], dict[str, str]] = {}
     for rec in out:
@@ -442,7 +423,6 @@ def discover_email_candidates_from_archive(
                     OR lower(coalesce((payload_json->'to')::text, '')) LIKE ANY(%s)
                     OR lower(coalesce((payload_json->'cc')::text, '')) LIKE ANY(%s)
                     OR lower(coalesce((payload_json->'bcc')::text, '')) LIKE ANY(%s)
-                    OR lower(coalesce((payload_json->'people')::text, '')) LIKE ANY(%s)
                     OR lower(coalesce((payload_json->'from_parsed')::text, '')) LIKE ANY(%s)
                     OR lower(coalesce((payload_json->'to_parsed')::text, '')) LIKE ANY(%s)
                     OR lower(coalesce((payload_json->'cc_parsed')::text, '')) LIKE ANY(%s)
@@ -451,7 +431,6 @@ def discover_email_candidates_from_archive(
                 LIMIT %s
                 """,
                 (
-                    patterns,
                     patterns,
                     patterns,
                     patterns,
@@ -474,39 +453,6 @@ def discover_email_candidates_from_archive(
         for rec in _header_records(payload):
             strength = _display_matches_person(rec["display_name"], forms)
             if not strength:
-                # Same-message people[] may carry Peg Legg / Peggy George while the
-                # address row itself only has a short/empty display_name.
-                people_vals = [str(p) for p in (payload.get("people") or [])]
-                people_strength = None
-                for p in people_vals:
-                    s = _display_matches_person(p, forms)
-                    if s in {"full", "alias_full", "nickname_full"}:
-                        people_strength = s
-                        break
-                if people_strength:
-                    # Accept people[] nickname/full when this address appears in
-                    # the same message headers (already true: we are iterating
-                    # this address's header record). Prefer raw-header corroboration
-                    # when present, but do not discard nickname_full solely because
-                    # "peggy george" is absent from raw From/To/CC.
-                    raw_bits = " ".join(
-                        [
-                            str(payload.get("from") or ""),
-                            str((payload.get("to") or "")),
-                            str((payload.get("cc") or "")),
-                            str((payload.get("bcc") or "")),
-                            rec.get("display_name") or "",
-                            " ".join(people_vals),
-                        ]
-                    ).lower()
-                    if any(f in raw_bits for f in forms if " " in f) or any(
-                        " " in (p or "") and _display_matches_person(p, forms)
-                        for p in people_vals
-                    ):
-                        strength = people_strength
-                    else:
-                        strength = None
-            if not strength:
                 continue
             header_hit = True
             addr = rec["address"]
@@ -522,14 +468,7 @@ def discover_email_candidates_from_archive(
                 },
             )
             slot["occurrences"] += 1
-            dn = rec["display_name"] or next(
-                (
-                    str(p)
-                    for p in (payload.get("people") or [])
-                    if _display_matches_person(str(p), forms)
-                ),
-                "",
-            )
+            dn = rec["display_name"]
             if dn:
                 slot["display_names"][dn] = int(slot["display_names"].get(dn) or 0) + 1
             slot["header_fields"].add(rec["header_field"])
@@ -668,20 +607,18 @@ def corroborate_email_candidate(
                 break
         inv = candidate.get("inventory") if isinstance(candidate.get("inventory"), dict) else {}
         if not same_addr_full and inv:
-            for section in ("structured_header", "quoted_body_headers_only"):
-                block = inv.get(section) or {}
-                for slot in block.get("distinct_display_names") or []:
-                    if not isinstance(slot, dict):
-                        continue
-                    dn = str(slot.get("display_name") or "")
-                    s = _display_matches_person(dn, forms)
-                    if s in {"full", "alias_full"}:
-                        same_addr_full = True
-                        result["corroboration"].append(
-                            f"same_address_{section}_full:{dn}"
-                        )
-                        break
-                if same_addr_full:
+            # Quoted/body headers are diagnostic only — never same-address ownership.
+            block = inv.get("structured_header") or {}
+            for slot in block.get("distinct_display_names") or []:
+                if not isinstance(slot, dict):
+                    continue
+                dn = str(slot.get("display_name") or "")
+                s = _display_matches_person(dn, forms)
+                if s in {"full", "alias_full"}:
+                    same_addr_full = True
+                    result["corroboration"].append(
+                        f"same_address_structured_header_full:{dn}"
+                    )
                     break
         alias_forms = {
             _norm_name(str(a.get("alias_text") or ""))
@@ -764,47 +701,55 @@ def ensure_confirmed_email_contact(
         norm,
         provenance=prov,
     )
-    # ensure_confirmed_phone_contact uses actor_key sms_auto_map; for email expand
-    # re-tag provenance is enough. Optionally update note via direct SQL when new.
-    if upserted and note:
+    source = str(prov.get("source") or "")
+    actor = (
+        "comm_identity_operator_attested"
+        if source in {"comm_identity_operator_attested", "operator_attest"}
+        or prov.get("operator_attested") is True
+        else "comm_identity_expand"
+    )
+    if note:
         try:
             with connection() as conn:
                 conn.execute(
                     """
                     UPDATE person_contact_points
                     SET note = COALESCE(note, %s),
-                        actor_key = CASE
-                          WHEN actor_key = 'sms_auto_map' THEN 'comm_identity_expand'
-                          ELSE actor_key
-                        END,
                         updated_at = now()
                     WHERE person_id = %s
                       AND contact_kind = 'email'
-                      AND status = 'confirmed'
                       AND lower(value_text) = %s
                     """,
                     (note, person_id, norm),
                 )
         except Exception:  # noqa: BLE001
             pass
+    from memorybox.person.trusted_identity import apply_email_contact_trust
+
+    trust_stamp = apply_email_contact_trust(person_id, norm, actor_key=actor, provenance=prov)
     # Keep address-centric ledger in sync with confirmed Person contacts.
     # Probe upsert leaves rows as observed; repair/attach must promote them.
     # Direct SQL — do not re-inventory the archive on every contact ensure.
     ledger_promote: dict[str, Any] = {"ok": False}
     try:
         with connection() as conn:
+            ledger_status = (
+                "confirmed"
+                if str((trust_stamp or {}).get("retrieval_trust") or "") == "trusted"
+                else "observed"
+            )
             updated = conn.execute(
                 """
                 UPDATE communication_identities
                 SET resolved_person_id = %s::uuid,
-                    resolution_status = 'confirmed',
+                    resolution_status = %s,
                     updated_at = now()
                 WHERE identity_kind = 'email'
                   AND address_normalized = %s
                 """,
-                (person_id, norm),
+                (person_id, ledger_status, norm),
             )
-            # rowcount may be 0 when probe never ran — insert a confirmed stub.
+            # rowcount may be 0 when probe never ran — insert a stub.
             if getattr(updated, "rowcount", None) == 0:
                 conn.execute(
                     """
@@ -815,21 +760,25 @@ def ensure_confirmed_email_contact(
                         resolution_status, provenance_json, updated_at
                     ) VALUES (
                         %s, 'email', '{}'::jsonb, '[]'::jsonb, 0, 0,
-                        %s::uuid, 'confirmed',
+                        %s::uuid, %s,
                         %s::jsonb, now()
                     )
                     ON CONFLICT (identity_kind, address_normalized) DO UPDATE SET
                         resolved_person_id = EXCLUDED.resolved_person_id,
-                        resolution_status = 'confirmed',
+                        resolution_status = EXCLUDED.resolution_status,
                         updated_at = now()
                     """,
                     (
                         norm,
                         person_id,
+                        ledger_status,
                         json.dumps(
                             {
                                 "source": "ensure_confirmed_email_contact",
                                 "person_id": person_id,
+                                "retrieval_trust": (trust_stamp or {}).get(
+                                    "retrieval_trust"
+                                ),
                             }
                         ),
                     ),
@@ -847,6 +796,8 @@ def ensure_confirmed_email_contact(
         "address": norm,
         "person_id": person_id,
         "ledger_promote": ledger_promote,
+        "retrieval_trust": (trust_stamp or {}).get("retrieval_trust"),
+        "trust_reason": (trust_stamp or {}).get("reason"),
     }
 
 
@@ -877,7 +828,6 @@ def backfill_email_person_ids(
                     OR lower(coalesce((payload_json->'to')::text, '')) LIKE ANY(%s)
                     OR lower(coalesce((payload_json->'cc')::text, '')) LIKE ANY(%s)
                     OR lower(coalesce((payload_json->'bcc')::text, '')) LIKE ANY(%s)
-                    OR lower(coalesce((payload_json->'people')::text, '')) LIKE ANY(%s)
                     OR lower(coalesce((payload_json->'from_parsed')::text, '')) LIKE ANY(%s)
                     OR lower(coalesce((payload_json->'to_parsed')::text, '')) LIKE ANY(%s)
                     OR lower(coalesce((payload_json->'cc_parsed')::text, '')) LIKE ANY(%s)
@@ -886,7 +836,6 @@ def backfill_email_person_ids(
                 LIMIT %s
                 """,
                 (
-                    patterns,
                     patterns,
                     patterns,
                     patterns,
@@ -1086,72 +1035,35 @@ def expand_emails_for_retrieve(
     *,
     force_rediscover: bool = False,
 ) -> dict[str, Any]:
-    """Ask/Gallery hook: discover → resolve → retrieve prep (address-centric).
+    """Ask/Gallery hook: trusted-identity retrieve keys only.
 
-    Governing order:
-    1. Discover communication identities from the archive
-    2. Resolve those identities to People
-    3. Use resolved identities to retrieve complete Person evidence
-
-    Cache: when the Person already has confirmed email contacts and/or confirmed
-    ``communication_identities`` rows, skip archive-wide rediscovery unless
-    ``force_rediscover`` is set. Full-Evidence / Gallery / Ask each call this hook;
-    re-scanning Peg* noise on every retrieve is a FlightSim timeout footgun.
+    Discover/resolve may create candidates. Retrieve addresses are emails
+    classified trusted from auditable provenance — never all confirmed
+    contacts or confirmed ledger rows.
     """
-    ids = [str(p) for p in person_ids if str(p).strip()]
-    cached_addrs: set[str] = set()
-    emails_by_person: dict[str, list[str]] = {pid: [] for pid in ids}
-    # Direct contact + confirmed ledger read first (cache).
-    try:
-        with connection() as conn:
-            rows = conn.execute(
-                """
-                SELECT person_id::text AS person_id, value_text
-                FROM person_contact_points
-                WHERE contact_kind = 'email'
-                  AND status = 'confirmed'
-                  AND person_id::text = ANY(%s)
-                """,
-                (ids,),
-            ).fetchall()
-            for r in rows:
-                n = normalize_handle(str(r.get("value_text") or ""))
-                pid = str(r.get("person_id") or "")
-                if n and "@" in n:
-                    cached_addrs.add(n)
-                    if pid in emails_by_person and n not in emails_by_person[pid]:
-                        emails_by_person[pid].append(n)
-            rows = conn.execute(
-                """
-                SELECT resolved_person_id::text AS person_id, address_normalized
-                FROM communication_identities
-                WHERE identity_kind = 'email'
-                  AND resolution_status = 'confirmed'
-                  AND resolved_person_id::text = ANY(%s)
-                """,
-                (ids,),
-            ).fetchall()
-            for r in rows:
-                n = normalize_handle(str(r.get("address_normalized") or ""))
-                pid = str(r.get("person_id") or "")
-                if n and "@" in n:
-                    cached_addrs.add(n)
-                    if pid in emails_by_person and n not in emails_by_person[pid]:
-                        emails_by_person[pid].append(n)
-    except Exception:  # noqa: BLE001
-        pass
+    from memorybox.person.trusted_identity import trusted_emails_for_people
 
-    if cached_addrs and not force_rediscover:
+    ids = [str(p) for p in person_ids if str(p).strip()]
+    emails_by_person: dict[str, list[str]] = {
+        pid: sorted(trusted_emails_for_people({pid})) for pid in ids
+    }
+    trusted_addrs: set[str] = set()
+    for addrs in emails_by_person.values():
+        trusted_addrs.update(addrs)
+
+    if trusted_addrs and not force_rediscover:
         return {
-            "addresses": cached_addrs,
+            "addresses": trusted_addrs,
             "expansion": {
                 "person_ids": ids,
-                "emails_by_person": {k: sorted(v) for k, v in emails_by_person.items()},
+                "emails_by_person": emails_by_person,
                 "pipeline": ["retrieve"],
                 "cache_hit": True,
+                "trusted_only": True,
                 "skipped_archive_discover": True,
                 "accepted": [
-                    {"address": a, "source": "confirmed_cache"} for a in sorted(cached_addrs)
+                    {"address": a, "source": "trusted_identity"}
+                    for a in sorted(trusted_addrs)
                 ],
                 "llm_calls": 0,
                 "rounds": [],
@@ -1160,80 +1072,52 @@ def expand_emails_for_retrieve(
         }
 
     address_reports: list[dict[str, Any]] = []
-    for pid in ids:
-        try:
-            from memorybox.person.comm_address_index import (
-                resolve_and_attach_addresses_for_person,
-            )
-
-            address_reports.append(
-                resolve_and_attach_addresses_for_person(
-                    pid, persist=True, backfill=True, inventory_attached=True
+    expansion: dict[str, Any] = {
+        "person_ids": ids,
+        "emails_by_person": emails_by_person,
+        "pipeline": ["retrieve"],
+        "cache_hit": False,
+        "trusted_only": True,
+        "accepted": [],
+        "llm_calls": 0,
+        "rounds": [],
+        "rejected": [],
+    }
+    if force_rediscover:
+        for pid in ids:
+            try:
+                from memorybox.person.comm_address_index import (
+                    resolve_and_attach_addresses_for_person,
                 )
+
+                address_reports.append(
+                    resolve_and_attach_addresses_for_person(
+                        pid, persist=True, backfill=True, inventory_attached=True
+                    )
+                )
+            except Exception as exc:  # noqa: BLE001
+                address_reports.append({"person_id": pid, "error": str(exc)})
+        try:
+            expansion = expand_person_communication_identities(
+                ids, persist=True, backfill=True, discover=True
             )
         except Exception as exc:  # noqa: BLE001
-            address_reports.append({"person_id": pid, "error": str(exc)})
-
-    expansion = expand_person_communication_identities(
-        ids, persist=True, backfill=True, discover=True
-    )
-    expansion["address_centric_resolve"] = address_reports
-    expansion["pipeline"] = ["discover", "resolve", "retrieve"]
-    expansion["cache_hit"] = False
-    # Flatten accepted addresses from address-centric resolve for retrieve notes.
-    flat_accepted: list[dict[str, Any]] = []
-    for rep in address_reports:
-        if not isinstance(rep, dict):
-            continue
-        for entry in rep.get("accepted") or []:
-            cand = (entry.get("candidate") if isinstance(entry, dict) else None) or {}
-            addr = normalize_handle(str(cand.get("address") or ""))
-            if addr and "@" in addr:
-                flat_accepted.append({"address": addr, "source": "address_centric"})
-    if flat_accepted:
-        expansion["accepted"] = flat_accepted
-    addrs: set[str] = set()
-    for item in flat_accepted:
-        addrs.add(str(item["address"]))
-    for _pid, emails in (expansion.get("emails_by_person") or {}).items():
-        for e in emails:
-            n = normalize_handle(e)
-            if n and "@" in n:
-                addrs.add(n)
-    # Re-read contacts after discover/resolve (may have attached this call).
-    try:
-        with connection() as conn:
-            rows = conn.execute(
-                """
-                SELECT value_text
-                FROM person_contact_points
-                WHERE contact_kind = 'email'
-                  AND status = 'confirmed'
-                  AND person_id::text = ANY(%s)
-                """,
-                (ids,),
-            ).fetchall()
-            for r in rows:
-                n = normalize_handle(str(r.get("value_text") or ""))
-                if n and "@" in n:
-                    addrs.add(n)
-            rows = conn.execute(
-                """
-                SELECT address_normalized
-                FROM communication_identities
-                WHERE identity_kind = 'email'
-                  AND resolution_status = 'confirmed'
-                  AND resolved_person_id::text = ANY(%s)
-                """,
-                (ids,),
-            ).fetchall()
-            for r in rows:
-                n = normalize_handle(str(r.get("address_normalized") or ""))
-                if n and "@" in n:
-                    addrs.add(n)
-    except Exception:  # noqa: BLE001
-        pass
-    return {"addresses": addrs, "expansion": expansion}
+            expansion = {"error": str(exc), "person_ids": ids}
+        expansion["address_centric_resolve"] = address_reports
+        expansion["pipeline"] = ["discover", "resolve", "retrieve"]
+        expansion["cache_hit"] = False
+        emails_by_person = {
+            pid: sorted(trusted_emails_for_people({pid})) for pid in ids
+        }
+        trusted_addrs = set()
+        for addrs in emails_by_person.values():
+            trusted_addrs.update(addrs)
+    expansion["emails_by_person"] = emails_by_person
+    expansion["trusted_only"] = True
+    expansion["accepted"] = [
+        {"address": a, "source": "trusted_identity"} for a in sorted(trusted_addrs)
+    ]
+    return {"addresses": trusted_addrs, "expansion": expansion}
 
 
 def _seed_header_display_aliases(
@@ -1377,7 +1261,6 @@ def attach_known_email_if_corroborated(
                     OR lower(coalesce((payload_json->'to')::text, '')) LIKE %s
                     OR lower(coalesce((payload_json->'cc')::text, '')) LIKE %s
                     OR lower(coalesce((payload_json->'bcc')::text, '')) LIKE %s
-                    OR lower(coalesce((payload_json->'people')::text, '')) LIKE %s
                     OR lower(coalesce((payload_json->'from_parsed')::text, '')) LIKE %s
                     OR lower(coalesce((payload_json->'to_parsed')::text, '')) LIKE %s
                     OR lower(coalesce((payload_json->'cc_parsed')::text, '')) LIKE %s
@@ -1404,7 +1287,6 @@ def attach_known_email_if_corroborated(
                     addr,
                     angle,
                     mailto,
-                    like,
                     like,
                     like,
                     like,
@@ -1444,9 +1326,7 @@ def attach_known_email_if_corroborated(
                 sample_raw_displays.append(dn)
             if _display_matches_person(dn, forms):
                 display_names[dn] = int(display_names.get(dn) or 0) + 1
-            for p in payload.get("people") or []:
-                if _display_matches_person(str(p), forms):
-                    display_names[str(p)] = int(display_names.get(str(p)) or 0) + 1
+            # people[] is co-occurrence only — never a display used to confirm.
             # Header raw text may include "Peggy George <addr>"
             blob = " ".join(
                 [
@@ -1543,7 +1423,7 @@ def attach_known_email_if_corroborated(
         )
     elif not decision.get("accepted") and len(rows) == 0:
         hint = (
-            "Address not found in From/To/CC/people headers of ingested email. "
+            "Address not found in From/To/CC headers of ingested email. "
             "Confirm the spelling and that the mbox containing it was ingested."
         )
     return {
@@ -1633,20 +1513,24 @@ def diagnose_email_retrieve_gap(
 ) -> dict[str, Any]:
     """Explain why Person-scoped email retrieve may be empty (FlightSim diag).
 
-    Prefer confirmed contacts already on People — no hardcoded Peggy address.
+    Prefer trusted-for-retrieval contacts — no hardcoded person address.
     Optional address_hint only when the operator wants to probe a specific spelling.
     """
+    from memorybox.person.trusted_identity import trusted_emails_for_people
+
     ids = [str(p) for p in person_ids if str(p).strip()]
+    trusted = trusted_emails_for_people(ids)
     out: dict[str, Any] = {
         "person_ids": ids,
         "address_hint": normalize_handle(address_hint) if address_hint else None,
         "snapshots": [],
         "confirmed_emails": [],
+        "trusted_emails": sorted(trusted),
         "expand_preview": None,
         "address_hint_explanation": None,
         "likely_blocker": None,
     }
-    all_emails: set[str] = set()
+    observed_emails: set[str] = set()
     for pid in ids:
         snap = person_identity_snapshot(pid)
         emails = [
@@ -1654,17 +1538,19 @@ def diagnose_email_retrieve_gap(
             for c in (snap.get("emails") or [])
         ]
         emails = [e for e in emails if e and "@" in e]
-        all_emails.update(emails)
+        observed_emails.update(emails)
         out["snapshots"].append(
             {
                 "person_id": pid,
                 "display_name": snap.get("display_name"),
                 "known_name_forms": snap.get("known_name_forms"),
-                "confirmed_emails": emails,
+                "contact_emails": emails,
+                "trusted_emails": sorted(trusted_emails_for_people({pid})),
                 "alias_count": len(snap.get("aliases") or []),
             }
         )
-    out["confirmed_emails"] = sorted(all_emails)
+    out["observed_contact_emails"] = sorted(observed_emails)
+    out["confirmed_emails"] = sorted(trusted)
 
     # If no explicit hint, probe the first confirmed People email (source of truth).
     hint = out.get("address_hint") or (out["confirmed_emails"][0] if out["confirmed_emails"] else None)
@@ -1691,8 +1577,9 @@ def diagnose_email_retrieve_gap(
                     for r in ((expanded.get("expansion") or {}).get("rounds") or [])[:3]
                 ],
             }
-            all_emails.update(expanded.get("addresses") or [])
-            out["confirmed_emails"] = sorted(all_emails)
+            trusted.update(expanded.get("addresses") or [])
+            out["trusted_emails"] = sorted(trusted)
+            out["confirmed_emails"] = sorted(trusted)
             if not hint and out["confirmed_emails"]:
                 hint = out["confirmed_emails"][0]
                 out["address_hint"] = hint
@@ -1816,7 +1703,7 @@ def repair_email_identity_contacts(
                         SELECT 1 FROM person_contact_points c
                         WHERE c.person_id = p.id
                           AND c.contact_kind = 'email'
-                          AND c.status = 'confirmed'
+                          AND c.retrieval_trust = 'trusted'
                       )
                     ORDER BY p.display_name
                     LIMIT 500

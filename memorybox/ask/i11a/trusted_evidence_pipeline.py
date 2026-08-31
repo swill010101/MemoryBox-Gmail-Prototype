@@ -1,0 +1,531 @@
+"""FlightSim / local pipeline: Phase 1 → frozen FEV2 → Gemma/Sol.
+
+Stops on Phase 1 failure. Does not widen identity matching.
+Stops after paired Gemma/Sol reports share the freeze hash.
+Phase 3 chunk compare / model-per-chunk require authorize_phase3.
+"""
+from __future__ import annotations
+
+import json
+import os
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+from memorybox.ask.i11a.trusted_full_evidence_v2 import (
+    ESTABLISHED_GEMMA_MODEL,
+    apply_flightsim_app_env,
+    fixture_is_single_pass_coverage_ok,
+    fixture_selected_email_count,
+    freeze_trusted_full_evidence_v2,
+    run_trusted_full_evidence_v2,
+)
+
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+_DEFAULT_OUT = _REPO_ROOT / "docs" / "test-output" / "trusted-full-evidence-v2"
+
+
+def load_reusable_phase1_report(out: Path) -> dict[str, Any] | None:
+    """Reuse the FlightSim Phase 1 gate so the pipeline does not re-scan Takeout."""
+    for name in ("TRUSTED_IDENTITY_GATE.json", "PHASE1_prove.json"):
+        path = out / name
+        if not path.is_file():
+            continue
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001
+            continue
+        if not isinstance(data, dict):
+            continue
+        runtime = data.get("runtime") or {}
+        flightsim = bool(data.get("flightsim") or runtime.get("flightsim"))
+        if not flightsim or runtime.get("allow_dev_defaults") is True:
+            continue
+        if data.get("ok") is not True:
+            continue
+        inner = data.get("phase1") or data.get("flightsim_report") or {}
+        if not isinstance(inner, dict):
+            continue
+        trusted = list(inner.get("trusted_addresses") or [])
+        if (
+            inner.get("ok") is True
+            and trusted
+            and int(inner.get("retrieve_hit_count") or 0) > 0
+            and int(inner.get("gallery_email_count") or 0) > 0
+            and not (inner.get("unsupported_retrieve_addresses") or [])
+            and int(inner.get("unsupported_retrieve_hit_count") or 0) == 0
+        ):
+            reused = dict(inner)
+            reused["reused"] = True
+            reused["reused_from"] = str(path)
+            return reused
+    return None
+
+
+def load_reusable_year_fair_freeze(out: Path, person_id: str) -> dict[str, Any] | None:
+    """Reuse the gate's year-fair freeze so FlightSim does not normalize twice."""
+    fixtures = [
+        p
+        for p in out.glob("FEV2_*.json")
+        if p.name.startswith("FEV2_")
+        and not p.name.startswith("FEV2REPORT_")
+        and not p.name.startswith("FEV2CHUNK_")
+        and not p.name.startswith("FEV2COMPLETE_")
+        and not p.name.startswith("FEV2_paste_")
+        and not p.name.startswith("FEV2_manifest_")
+    ]
+    ranked: list[tuple[float, Path, dict[str, Any]]] = []
+    for path in fixtures:
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001
+            continue
+        if str(data.get("person_id") or "") != str(person_id):
+            continue
+        if not fixture_is_single_pass_coverage_ok(data):
+            continue
+        ranked.append((path.stat().st_mtime, path, data))
+    if not ranked:
+        return None
+    _mtime, path, data = max(ranked, key=lambda row: row[0])
+    digest = str(data.get("input_sha256") or "")
+    manifest: dict[str, Any] = {}
+    manifest_path = out / f"FEV2_manifest_{digest[:8]}.json"
+    if manifest_path.is_file():
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001
+            manifest = {}
+    selected = fixture_selected_email_count(data)
+    return {
+        "ok": True,
+        "reused": True,
+        "error": None,
+        "fixture_path": str(path),
+        "input_sha256": digest,
+        "evidence_type_counts": data.get("evidence_type_counts") or {},
+        "email_evidence_ids": data.get("email_evidence_ids") or [],
+        "trusted_addresses": data.get("trusted_addresses") or [],
+        "retrieved_email_count": (
+            data.get("archive_email_count")
+            or manifest.get("archive_email_count")
+        ),
+        "selected_email_count": selected,
+        "freeze_email_sample_n": (
+            data.get("freeze_email_sample_n")
+            or manifest.get("freeze_email_sample_n")
+            or selected
+        ),
+    }
+
+
+def _write(path: Path, payload: dict[str, Any]) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2, default=str, ensure_ascii=False), encoding="utf-8")
+    return path
+
+
+def _write_phase2_summary_files(out: Path, result: dict[str, Any], stamp: str) -> None:
+    """Stable + stamped FlightSim paste. Gate commits PHASE2_SUMMARY.txt to PR #77."""
+    text = str(result.get("phase2_summary") or format_phase2_summary(result))
+    result["phase2_summary"] = text
+    try:
+        (out / "PHASE2_SUMMARY.txt").write_text(text, encoding="utf-8")
+        (out / f"PHASE2_SUMMARY_{stamp}.txt").write_text(text, encoding="utf-8")
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _model_fail_error(row: dict[str, Any]) -> str:
+    raw = row.get("error") or row.get("reason")
+    if raw:
+        return str(raw)
+    p2 = row.get("phase2_report") if isinstance(row.get("phase2_report"), dict) else {}
+    val = row.get("email_grounding") if isinstance(row.get("email_grounding"), dict) else {}
+    if not val:
+        val = p2.get("validation") if isinstance(p2.get("validation"), dict) else {}
+    invented = list(val.get("invented_evidence_ids") or [])
+    if not invented:
+        invented = [
+            str(x.get("id") or x)
+            for x in (p2.get("invented_or_unsupported_claims") or [])
+            if isinstance(x, dict) and x.get("reason") == "invented_evidence_id"
+        ]
+    if invented:
+        return "grounding_invented_ids:" + ",".join(str(x) for x in invented[:6])
+    missing = list(val.get("rows_missing_provenance") or [])
+    if missing:
+        return "grounding_missing_provenance"
+    if p2.get("email_reached_model_and_grounded_output") is False:
+        return "email_not_grounded"
+    if p2.get("ok") is False or row.get("ok") is False:
+        return "phase2_report_not_ok"
+    return ""
+
+
+def _model_attempted(row: dict[str, Any]) -> bool:
+    return bool(
+        row.get("report_path")
+        or row.get("phase2_report")
+        or row.get("error")
+        or row.get("skipped") is False
+    )
+
+
+def load_reusable_phase2_run(
+    out: Path,
+    *,
+    provider: str,
+    model: str,
+    fixture_hash: str,
+) -> dict[str, Any] | None:
+    """Reuse an existing FEV2 report for this fixture hash — do not re-pay Gemma.
+
+    Passing reports skip the model. Failed reports are reused so a Sol 429
+    retry does not launch another multi-hour Gemma call; the fail reason is
+    surfaced instead of a blank error / models_not_run stop.
+    """
+    digest = str(fixture_hash or "").strip()
+    if not digest:
+        return None
+    safe_model = str(model or "").replace(":", "-")
+    path = out / f"FEV2REPORT_{provider}_{safe_model}_{digest[:8]}.json"
+    if not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return None
+    if not isinstance(data, dict):
+        return None
+    inner = data.get("phase2_report") if isinstance(data.get("phase2_report"), dict) else data
+    stored = str(inner.get("input_sha256") or data.get("input_sha256") or "")
+    if stored and stored != digest:
+        return None
+    ok = inner.get("ok") is True or data.get("ok") is True
+    loaded = {
+        "ok": bool(ok),
+        "skipped": False,
+        "reused": True,
+        "error": None,
+        "input_sha256": stored or digest,
+        "provider": provider,
+        "model": model,
+        "report_path": str(path),
+        "phase2_report": inner,
+        "email_grounding": (
+            data.get("email_grounding")
+            if isinstance(data.get("email_grounding"), dict)
+            else inner.get("validation")
+        ),
+        "chunking": False,
+    }
+    if not ok:
+        loaded["error"] = _model_fail_error(loaded)
+    return loaded
+
+
+def _try_model_run(
+    fixture_path: str,
+    *,
+    provider: str,
+    model: str,
+    out_dir: Path,
+    timeout_seconds: int,
+) -> dict[str, Any]:
+    try:
+        return run_trusted_full_evidence_v2(
+            fixture_path,
+            provider=provider,
+            model=model,
+            timeout_seconds=timeout_seconds,
+            out_dir=out_dir,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "ok": False,
+            "skipped": False,
+            "error": f"{type(exc).__name__}:{exc}",
+            "provider": provider,
+            "model": model,
+            "chunking": False,
+        }
+
+
+def run_trusted_evidence_pipeline(
+    *,
+    person_name: str,
+    out_dir: Path | str | None = None,
+    run_models: bool = True,
+    gemma_model: str = ESTABLISHED_GEMMA_MODEL,
+    sol_model: str | None = None,
+    timeout_seconds: int = 1800,
+    ask: str = "tell me what you know about this person",
+    authorize_phase3: bool = False,
+) -> dict[str, Any]:
+    """Phase 1 report → freeze → Gemma then Sol. Stop before Phase 3.
+
+    Production retrieve is not person-hardcoded. The display name is an
+    operator argument (FlightSim passes the Person under review).
+    Chunk compare and model-per-chunk run only when authorize_phase3 is True.
+    """
+    out = Path(out_dir) if out_dir else _DEFAULT_OUT
+    out.mkdir(parents=True, exist_ok=True)
+    apply_flightsim_app_env()
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    from memorybox.person.trusted_identity import report_named_person_identity_trust
+
+    phase1 = load_reusable_phase1_report(out)
+    if phase1 is None:
+        phase1 = report_named_person_identity_trust(person_name)
+    phase1_path = _write(out / f"PHASE1_{stamp}.json", phase1)
+    result: dict[str, Any] = {
+        "ok": False,
+        "phase": 1,
+        "person_name": person_name,
+        "phase1_path": str(phase1_path),
+        "phase1": {
+            "ok": phase1.get("ok"),
+            "trusted_addresses": phase1.get("trusted_addresses"),
+            "trusted": phase1.get("trusted"),
+            "counts": phase1.get("counts"),
+            "per_trusted_address": phase1.get("per_trusted_address"),
+            "unique_emails_by_trusted_address": phase1.get("unique_emails_by_trusted_address"),
+            "unique_only_via_trusted_address": phase1.get("unique_only_via_trusted_address"),
+            "shared_across_trusted_addresses": phase1.get("shared_across_trusted_addresses"),
+            "unsupported_retrieve_addresses": phase1.get("unsupported_retrieve_addresses"),
+            "unsupported_retrieve_hit_count": phase1.get("unsupported_retrieve_hit_count"),
+            "retrieve_hit_count": phase1.get("retrieve_hit_count"),
+            "gallery_email_count": phase1.get("gallery_email_count"),
+            "untrusted_n": phase1.get("untrusted_n"),
+            "untrusted_by_reason": phase1.get("untrusted_by_reason"),
+            "phase1_summary": phase1.get("phase1_summary"),
+        },
+    }
+    try:
+        (out / f"PHASE1_SUMMARY_{stamp}.txt").write_text(
+            str(phase1.get("phase1_summary") or ""),
+            encoding="utf-8",
+        )
+    except Exception:  # noqa: BLE001
+        pass
+    if not phase1.get("ok") or not phase1.get("trusted_addresses"):
+        result["stop"] = "phase_1_failed — do not widen matching; attest or fix provenance"
+        result["error"] = phase1.get("error") or "phase_1_not_ok"
+        _write_phase2_summary_files(out, result, stamp)
+        _write(out / f"PIPELINE_{stamp}.json", result)
+        return result
+
+    from memorybox.person import resolve_person_by_name
+
+    resolved = resolve_person_by_name(person_name, create_if_missing=False, confirm=False)
+    pid = str(getattr(resolved, "person_id", "") or getattr(resolved, "id", "") or "")
+    freeze = load_reusable_year_fair_freeze(out, pid)
+    if freeze is None:
+        freeze = freeze_trusted_full_evidence_v2(person_id=pid, ask=ask, out_dir=out)
+    result["phase"] = 2
+    result["freeze"] = {
+        "ok": freeze.get("ok"),
+        "fixture_path": freeze.get("fixture_path"),
+        "input_sha256": freeze.get("input_sha256"),
+        "evidence_type_counts": freeze.get("evidence_type_counts"),
+        "email_evidence_ids": freeze.get("email_evidence_ids"),
+        "trusted_addresses": freeze.get("trusted_addresses"),
+        "retrieved_email_count": freeze.get("retrieved_email_count"),
+        "selected_email_count": freeze.get("selected_email_count"),
+        "freeze_email_sample_n": freeze.get("freeze_email_sample_n"),
+        "reused": bool(freeze.get("reused")),
+        "error": freeze.get("error"),
+    }
+    if not freeze.get("ok") or not freeze.get("fixture_path"):
+        result["stop"] = "phase_2_freeze_failed"
+        _write_phase2_summary_files(out, result, stamp)
+        _write(out / f"PIPELINE_{stamp}.json", result)
+        return result
+
+    fixture_path = str(freeze["fixture_path"])
+    fixture_hash = freeze.get("input_sha256")
+    result["larger_trusted_set"] = {
+        "ok": False,
+        "deferred": True,
+        "reason": "after_both_single_pass_reports_only",
+    }
+    gemma: dict[str, Any] = {"ok": False, "skipped": True, "reason": "run_models=false"}
+    sol: dict[str, Any] = {"ok": False, "skipped": True, "reason": "run_models=false"}
+    if run_models:
+        gemma = load_reusable_phase2_run(
+            out, provider="ollama", model=gemma_model, fixture_hash=str(fixture_hash or "")
+        ) or _try_model_run(
+            fixture_path,
+            provider="ollama",
+            model=gemma_model,
+            out_dir=out,
+            timeout_seconds=timeout_seconds,
+        )
+        cloud_model = (sol_model or os.environ.get("MEMORYBOX_CLOUD_LLM_MODEL") or "").strip()
+        if not gemma.get("ok"):
+            sol = {
+                "ok": False,
+                "skipped": True,
+                "reason": "blocked_until_gemma_ok — fix Gemma grounding before paying Sol",
+            }
+        elif not cloud_model:
+            sol = {
+                "ok": False,
+                "skipped": True,
+                "reason": "no_sol_model — set --sol-model or MEMORYBOX_CLOUD_LLM_MODEL",
+            }
+        elif not (
+            os.environ.get("MEMORYBOX_CLOUD_LLM_BASE_URL")
+            and os.environ.get("MEMORYBOX_CLOUD_LLM_API_KEY")
+        ):
+            sol = {
+                "ok": False,
+                "skipped": True,
+                "reason": "cloud_sol_not_configured",
+            }
+        else:
+            sol = load_reusable_phase2_run(
+                out,
+                provider="cloud",
+                model=cloud_model,
+                fixture_hash=str(fixture_hash or ""),
+            ) or _try_model_run(
+                fixture_path,
+                provider="cloud",
+                model=cloud_model,
+                out_dir=out,
+                timeout_seconds=timeout_seconds,
+            )
+
+    result["gemma"] = {
+        "ok": gemma.get("ok"),
+        "skipped": gemma.get("skipped"),
+        "reused": bool(gemma.get("reused")),
+        "error": _model_fail_error(gemma),
+        "model": gemma.get("model") or gemma_model,
+        "input_sha256": gemma.get("input_sha256") or fixture_hash,
+        "report_path": gemma.get("report_path"),
+        "phase2_report": gemma.get("phase2_report"),
+    }
+    result["sol"] = {
+        "ok": sol.get("ok"),
+        "skipped": sol.get("skipped"),
+        "reused": bool(sol.get("reused")),
+        "error": _model_fail_error(sol),
+        "model": sol.get("model") or sol_model,
+        "input_sha256": sol.get("input_sha256") or fixture_hash,
+        "report_path": sol.get("report_path"),
+        "phase2_report": sol.get("phase2_report"),
+    }
+    same_hash = (
+        (gemma.get("input_sha256") or fixture_hash) == fixture_hash
+        and (sol.get("input_sha256") or fixture_hash) == fixture_hash
+    )
+    both_single_pass = bool(gemma.get("ok")) and bool(sol.get("ok")) and same_hash
+    result["phase3_structure"] = {
+        "ran": False,
+        "reason": "phase_3_requires_explicit_authorization",
+    }
+    result["phase3_model_per_chunk"] = {
+        "ran": False,
+        "reason": "phase_3_requires_explicit_authorization",
+    }
+    if both_single_pass and authorize_phase3:
+        from memorybox.ask.i11a.trusted_fev2_chunking import (
+            compare_chunked_vs_unchunked,
+            run_chunked_models_after_single_pass,
+        )
+
+        try:
+            chunk = compare_chunked_vs_unchunked(fixture_path)
+        except Exception as exc:  # noqa: BLE001
+            chunk = {
+                "ok": False,
+                "error": f"{type(exc).__name__}:{exc}",
+                "chunking": True,
+                "model_calls": 0,
+            }
+        result["phase3_structure"] = chunk
+        g_path = gemma.get("report_path")
+        s_path = sol.get("report_path")
+        cloud_model = (
+            sol.get("model")
+            or (sol.get("phase2_report") or {}).get("model")
+            or sol_model
+            or os.environ.get("MEMORYBOX_CLOUD_LLM_MODEL")
+            or ""
+        )
+        if g_path and s_path and cloud_model:
+            result["phase3_model_per_chunk"] = run_chunked_models_after_single_pass(
+                fixture_path,
+                gemma_report_path=g_path,
+                sol_report_path=s_path,
+                gemma_model=gemma_model,
+                sol_model=str(cloud_model),
+                timeout_seconds=timeout_seconds,
+                out_dir=out,
+            )
+            result["ok"] = bool(chunk.get("ok")) and bool(
+                result["phase3_model_per_chunk"].get("ok")
+            )
+            result["phase"] = 3
+            result["stop"] = (
+                "phase_3_complete" if result["ok"] else "phase_3_chunked_models_failed"
+            )
+        else:
+            result["ok"] = bool(chunk.get("ok"))
+            result["phase"] = 3
+            result["stop"] = (
+                "phase_3_structure_ready — missing report paths for model-per-chunk"
+            )
+    elif both_single_pass:
+        result["phase"] = 2
+        result["ok"] = True
+        result["stop"] = (
+            "phase_2_complete — Phase 3 chunking requires explicit authorization"
+        )
+    elif not gemma.get("ok") and _model_attempted(gemma):
+        result["ok"] = False
+        result["stop"] = "phase_2_gemma_incomplete — do not chunk-with-models yet"
+    elif gemma.get("ok") and not sol.get("ok"):
+        result["ok"] = False
+        result["stop"] = "phase_2_sol_incomplete — do not chunk-with-models yet"
+    elif _model_attempted(gemma) or _model_attempted(sol):
+        result["ok"] = False
+        result["stop"] = (
+            "phase_2_incomplete — Gemma and/or Sol ran but did not pass (see errors)"
+        )
+    else:
+        result["ok"] = False
+        result["stop"] = "phase_2_models_not_run — fixture frozen; run Gemma then Sol on FlightSim"
+    result["fixture_path"] = fixture_path
+    result["input_sha256"] = fixture_hash
+    _write_phase2_summary_files(out, result, stamp)
+    _write(out / f"PIPELINE_{stamp}.json", result)
+    return result
+
+
+def format_phase2_summary(result: dict[str, Any]) -> str:
+    """FlightSim-pasteable Phase 2 stop + Gemma/Sol skip reasons."""
+    freeze = result.get("freeze") or {}
+    gemma = result.get("gemma") or {}
+    sol = result.get("sol") or {}
+    return "\n".join(
+        [
+            "TRUSTED-EVIDENCE PHASE 2 SUMMARY",
+            f"ok: {result.get('ok')}",
+            f"stop: {result.get('stop')}",
+            f"freeze_ok: {freeze.get('ok')} reused={freeze.get('reused')} "
+            f"error={freeze.get('error') or ''}",
+            f"freeze_emails: archive={freeze.get('retrieved_email_count')} "
+            f"sample={freeze.get('freeze_email_sample_n')} "
+            f"selected={freeze.get('selected_email_count')}",
+            f"fixture: {result.get('fixture_path') or freeze.get('fixture_path') or ''}",
+            f"gemma: ok={gemma.get('ok')} skipped={gemma.get('skipped')} "
+            f"reused={gemma.get('reused')} error={gemma.get('error') or ''}",
+            f"sol: ok={sol.get('ok')} skipped={sol.get('skipped')} "
+            f"reused={sol.get('reused')} error={sol.get('error') or ''}",
+            f"phase3: {(result.get('phase3_model_per_chunk') or {}).get('reason') or 'not_run'}",
+        ]
+    )

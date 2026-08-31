@@ -43,15 +43,24 @@ def _index_confirmed_handles(conn: Any | None = None) -> dict[str, list[str]]:
         try:
             rows = c.execute(
                 """
-                SELECT person_id, value_text
+                SELECT person_id, value_text, contact_kind, actor_key, provenance_json, status
                 FROM person_contact_points
                 WHERE contact_kind IN ('phone', 'email')
-                  AND status = 'confirmed'
+                  AND status IN ('confirmed', 'candidate', 'observed')
                 """
             ).fetchall()
         except Exception:  # noqa: BLE001
             rows = []
+        from memorybox.person.trusted_identity import classify_contact_trust
+
         for r in rows:
+            kind = str(r.get("contact_kind") or "")
+            if kind == "email":
+                verdict = classify_contact_trust(dict(r))
+                if verdict.get("retrieval_trust") != "trusted":
+                    continue
+            elif str(r.get("status") or "") != "confirmed":
+                continue
             key = normalize_handle(str(r.get("value_text") or ""))
             if not key:
                 continue
@@ -64,7 +73,7 @@ def _index_confirmed_handles(conn: Any | None = None) -> dict[str, list[str]]:
                 """
                 SELECT person_id, external_id
                 FROM provider_identities
-                WHERE lower(identity_kind) IN ('phone', 'handle', 'apple_id', 'email')
+                WHERE lower(identity_kind) IN ('phone', 'handle', 'apple_id')
                 """
             ).fetchall()
         except Exception:  # noqa: BLE001
@@ -161,30 +170,62 @@ def ensure_confirmed_phone_contact(
             FROM person_contact_points
             WHERE person_id = %s
               AND contact_kind = %s
-              AND status = 'confirmed'
+              AND status IN ('confirmed', 'candidate', 'observed')
             """,
             (pid, kind),
         ).fetchall()
         for r in rows:
             if normalize_handle(str(r.get("value_text") or "")) == norm:
                 return False
-        c.execute(
-            """
-            INSERT INTO person_contact_points (
-                id, person_id, contact_kind, value_text, status,
-                actor_key, note, provenance_json
-            ) VALUES (%s, %s, %s, %s, 'confirmed', %s, %s, %s::jsonb)
-            """,
-            (
-                uuid4(),
-                pid,
-                kind,
-                norm,
-                "sms_auto_map",
-                "Unique confirmed handle from SMS/iMessage ingest",
-                json.dumps(prov),
-            ),
+        from memorybox.person.trusted_identity import classify_contact_trust
+
+        actor = "sms_auto_map"
+        verdict = classify_contact_trust(
+            {"actor_key": actor, "provenance_json": prov}
         )
+        trust = str(verdict.get("retrieval_trust") or "untrusted")
+        status = "confirmed" if kind != "email" else (
+            "confirmed" if trust == "trusted" else "candidate"
+        )
+        try:
+            c.execute(
+                """
+                INSERT INTO person_contact_points (
+                    id, person_id, contact_kind, value_text, status,
+                    actor_key, note, provenance_json, retrieval_trust
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s)
+                """,
+                (
+                    uuid4(),
+                    pid,
+                    kind,
+                    norm,
+                    status,
+                    actor,
+                    "Unique confirmed handle from SMS/iMessage ingest",
+                    json.dumps(prov),
+                    trust,
+                ),
+            )
+        except Exception:  # noqa: BLE001
+            c.execute(
+                """
+                INSERT INTO person_contact_points (
+                    id, person_id, contact_kind, value_text, status,
+                    actor_key, note, provenance_json
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s::jsonb)
+                """,
+                (
+                    uuid4(),
+                    pid,
+                    kind,
+                    norm,
+                    status,
+                    actor,
+                    "Unique confirmed handle from SMS/iMessage ingest",
+                    json.dumps(prov),
+                ),
+            )
         return True
 
     if conn is not None:

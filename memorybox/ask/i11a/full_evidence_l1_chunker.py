@@ -277,11 +277,67 @@ def segment_sms_episodes(
     return episodes
 
 
+_REPLY_SUBJ = re.compile(r"^(?:(?:re|fw|fwd)\s*:\s*)+", re.I)
+
+
+def _norm_email_subject(raw: Any) -> str:
+    s = re.sub(r"\s+", " ", str(raw or "").strip().lower())
+    while True:
+        nxt = _REPLY_SUBJ.sub("", s).strip()
+        if nxt == s:
+            return s
+        s = nxt
+
+
+def _thread_structured_addresses(item: dict[str, Any]) -> list[str]:
+    """From/To/CC/BCC + parsed addresses. Never people[]."""
+    found: set[str] = set()
+    for raw in item.get("addresses") or []:
+        s = str(raw).strip().lower()
+        if s and "@" in s:
+            found.add(s)
+    for rec in (
+        list(item.get("from_parsed") or [])
+        + list(item.get("to_parsed") or [])
+        + list(item.get("cc_parsed") or [])
+        + list(item.get("bcc_parsed") or [])
+    ):
+        if not isinstance(rec, dict):
+            continue
+        s = str(rec.get("normalized") or rec.get("address") or "").strip().lower()
+        if s and "@" in s:
+            found.add(s)
+    blob = " ".join(
+        str(item.get(k) or "")
+        for k in ("from", "to", "cc", "bcc", "from_header", "to_header")
+    )
+    for m in re.finditer(
+        r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}", blob
+    ):
+        found.add(m.group(0).strip().lower())
+    return sorted(found)
+
+
+def _email_thread_key(item: dict[str, Any]) -> str:
+    """Prefer RFC thread_id; else same normalized subject + structured addresses.
+
+    Takeout often omits thread_id. people[] is never part of the key.
+    """
+    tid = str(item.get("thread_id") or "").strip()
+    iid = str(item.get("item_id") or "")
+    if tid and tid != iid:
+        return f"tid:{tid}"
+    subj = _norm_email_subject(item.get("subject") or item.get("title"))
+    addrs = _thread_structured_addresses(item)
+    if subj and addrs:
+        return f"subj:{subj}|{','.join(addrs)}"
+    return f"item:{iid or id(item)}"
+
+
 def group_email_threads(email_items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     by_thread: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for it in email_items:
-        tid = str(it.get("thread_id") or it.get("item_id") or "")
-        by_thread[tid].append(it)
+        by_thread[_email_thread_key(it)].append(it)
     units: list[dict[str, Any]] = []
     for tid, msgs in sorted(by_thread.items(), key=lambda kv: kv[0]):
         msgs_sorted = sorted(
@@ -595,6 +651,7 @@ def build_chunk_manifest(
     compaction: dict[str, Any] | None = None,
     sms_rules: dict[str, Any] | None = None,
     proof: dict[str, Any] | None = None,
+    chunk_sizing: dict[str, int] | None = None,
 ) -> dict[str, Any]:
     proof = proof or prove_chunk_completeness(items, chunks)
     return {
@@ -611,7 +668,8 @@ def build_chunk_manifest(
         },
         "compaction": compaction or {},
         "completeness_proof": proof,
-        "chunk_sizing": {
+        "chunk_sizing": chunk_sizing
+        or {
             "target_min_tokens": L1_CHUNK_TARGET_MIN,
             "target_max_tokens": L1_CHUNK_TARGET_MAX,
             "overshoot_max_tokens": L1_CHUNK_OVERSHOOT_MAX,
@@ -639,12 +697,23 @@ def run_l1_chunker(
     *,
     person_context: dict[str, Any] | None = None,
     ask: str = "",
+    pack_target_min: int | None = None,
+    pack_target_max: int | None = None,
+    pack_overshoot_max: int | None = None,
 ) -> dict[str, Any]:
     """Compact → L1 units → model chunks → completeness proof."""
     compacted, compaction = apply_safe_compaction(items)
     # Exact-dupe already applied upstream; keep key for report symmetry.
     units = build_l1_units(compacted)
-    chunks = pack_model_chunks(units)
+    target_min = int(pack_target_min or L1_CHUNK_TARGET_MIN)
+    target_max = int(pack_target_max or L1_CHUNK_TARGET_MAX)
+    overshoot_max = int(pack_overshoot_max or L1_CHUNK_OVERSHOOT_MAX)
+    chunks = pack_model_chunks(
+        units,
+        target_min=target_min,
+        target_max=target_max,
+        overshoot_max=overshoot_max,
+    )
     proof = prove_chunk_completeness(compacted, chunks)
     if not proof.get("ok"):
         raise RuntimeError(
@@ -685,6 +754,11 @@ def run_l1_chunker(
         compaction=compaction,
         sms_rules=sms_rules,
         proof=proof,
+        chunk_sizing={
+            "target_min_tokens": target_min,
+            "target_max_tokens": target_max,
+            "overshoot_max_tokens": overshoot_max,
+        },
     )
     return {
         "items": compacted,

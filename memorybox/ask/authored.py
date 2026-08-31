@@ -18,7 +18,33 @@ _QUOTE_CUT = re.compile(
 )
 
 
-def authored_email_text(body: str) -> tuple[str, dict[str, bool]]:
+def plain_email_body(payload: dict[str, Any] | None, *, excerpt: str = "") -> str:
+    """Plain text from Takeout payload. Hotmail rows are often HTML-only."""
+    data = payload if isinstance(payload, dict) else {}
+    text = str(data.get("body_text") or "").strip()
+    if text:
+        return text
+    html = str(data.get("body_html") or data.get("html") or "").strip()
+    if html:
+        import html as htmlmod
+
+        cleaned = re.sub(r"(?is)<(script|style|head)\b[^>]*>.*?</\1>", " ", html)
+        cleaned = re.sub(r"(?is)<!--.*?-->", " ", cleaned)
+        converted = re.sub(r"(?i)<br\s*/?>", "\n", cleaned)
+        converted = re.sub(r"(?i)</(p|div|tr|h[1-6]|li)>", "\n", converted)
+        converted = re.sub(r"<[^>]+>", " ", converted)
+        converted = htmlmod.unescape(re.sub(r"[ \t]+\n", "\n", converted))
+        converted = re.sub(r"\n{3,}", "\n\n", converted).strip()
+        if converted:
+            return converted
+    return str(data.get("snippet") or data.get("text") or excerpt or "").strip()
+
+
+def authored_email_text(
+    body: str, *, max_chars: int | None = 8000
+) -> tuple[str, dict[str, bool]]:
+    """Lead authored text. Default 8k cap is for Ask/FEV2 — pass max_chars=None
+    for lossless review preparation."""
     from memorybox.explore.email_attach import split_quoted_email
     flags = {"quote_uncertain": False, "boilerplate_uncertain": False}
     turns = split_quoted_email(body or "")
@@ -39,8 +65,11 @@ def authored_email_text(body: str) -> tuple[str, dict[str, bool]]:
         flags["quote_uncertain"] = True
     if not lead:
         flags["quote_uncertain"] = True
-        lead = (body or "").strip()[:4000]
-    return lead[:8000], flags
+        fallback = (body or "").strip()
+        lead = fallback if max_chars is None else fallback[:4000]
+    if max_chars is None:
+        return lead, flags
+    return lead[: int(max_chars)], flags
 
 
 def sms_location_assertions(

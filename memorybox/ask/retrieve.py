@@ -562,6 +562,11 @@ def _complete_comm_retrieve(plan: QueryPlan) -> bool:
     notes = getattr(plan, "notes", ()) or ()
     if "gallery_email_eligible" in notes:
         return False
+    # Single-pass FEV2 must year-fair-slice. Complete retrieve ignores limit=
+    # and would normalize the whole trusted archive (5k+ HTML bodies) before
+    # Gemma/Sol — that is the FlightSim hang/1-email starve path.
+    if "trusted_full_evidence_v2" in notes:
+        return False
     if _bounded_period_tell(plan) or _tell_pack_comms(plan):
         return True
     if plan.want_communication and (plan.person_ids or plan.person_names):
@@ -734,14 +739,13 @@ def _sql_confirmed_email_addrs(addrs: set[str] | list[str]) -> tuple[str, list[A
         " OR lower(coalesce((payload_json->'to')::text, '')) LIKE ANY(%s)"
         " OR lower(coalesce((payload_json->'cc')::text, '')) LIKE ANY(%s)"
         " OR lower(coalesce((payload_json->'bcc')::text, '')) LIKE ANY(%s)"
-        " OR lower(coalesce((payload_json->'people')::text, '')) LIKE ANY(%s)"
         " OR lower(coalesce((payload_json->'from_parsed')::text, '')) LIKE ANY(%s)"
         " OR lower(coalesce((payload_json->'to_parsed')::text, '')) LIKE ANY(%s)"
         " OR lower(coalesce((payload_json->'cc_parsed')::text, '')) LIKE ANY(%s)"
         " OR lower(coalesce((payload_json->'bcc_parsed')::text, '')) LIKE ANY(%s)"
         ")"
     )
-    return sql, [exact_from, shaped_from, broad_from] + [json_patterns] * 8
+    return sql, [exact_from, shaped_from, broad_from] + [json_patterns] * 7
 
 
 def _person_scoped_comm_where(
@@ -757,25 +761,32 @@ def _person_scoped_comm_where(
     """Indexable Person filter. Never probe-scan the archive with jsonb unnest or %name%.
 
     SMS: GIN person_ids, optionally BitmapOr indexed sender_name prefix.
-    Email: GIN person_ids and/or confirmed email header addresses (not body ILIKE).
+    Email: trusted header addresses only (pass confirmed_emails; empty = skip scan).
     Empty pages are cheap; do not SELECT 1 LIMIT 1 as a separate existence scan.
     """
     base = f"evidence_kind = 'communication' AND {channel_sql} AND {win_sql}"
     clauses: list[str] = []
     params: list[Any] = list(win_params)
     scopes: list[str] = []
-    if person_ids:
+    # Email identity-closed: confirmed_emails is a set (possibly empty).
+    # Never fall back to stale person_ids GIN stamps from auto-expand.
+    if confirmed_emails is not None:
+        if confirmed_emails:
+            addr_sql, addr_params = _sql_confirmed_email_addrs(confirmed_emails)
+            if addr_sql != "FALSE":
+                clauses.append(addr_sql)
+                params.extend(addr_params)
+                scopes.append("confirmed_email_headers")
+            else:
+                return None, [], "no_trusted_retrieve_addresses"
+        else:
+            return None, [], "no_trusted_retrieve_addresses"
+    elif person_ids:
         gin_sql, gin_params = _sql_person_ids_gin(person_ids)
         clauses.append(gin_sql)
         params.extend(gin_params)
         scopes.append("person_ids_gin")
-    if confirmed_emails:
-        addr_sql, addr_params = _sql_confirmed_email_addrs(confirmed_emails)
-        if addr_sql != "FALSE":
-            clauses.append(addr_sql)
-            params.extend(addr_params)
-            scopes.append("confirmed_email_headers")
-    if header_fallback and person_names:
+    if confirmed_emails is None and header_fallback and person_names:
         name_sql, name_params = _sql_sender_prefix(person_names)
         if name_sql != "FALSE":
             clauses.append(name_sql)
@@ -1086,7 +1097,8 @@ def _year_fair_slice(hits: list[EvidenceHit], limit: int) -> tuple[list[Evidence
         year = (h.sent_at or "")[:4] or "undated"
         by_year.setdefault(year, []).append(h)
     years = sorted(by_year)
-    min_per = max(24, cap // max(len(years), 1))
+    # Floor of 24 dropped recent years when years > cap/24 (Peggy ~20y @ 200).
+    min_per = max(1, cap // max(len(years), 1))
     selected: list[EvidenceHit] = []
     leftovers: list[EvidenceHit] = []
     budget = cap
@@ -1410,14 +1422,13 @@ def _payload_email_addresses(payload: dict[str, Any]) -> set[str]:
         n = normalize_handle(str(rec.get("normalized") or rec.get("address") or ""))
         if n and "@" in n:
             out.add(n)
-    # Fallback: raw From/To/CC/BCC (and people[]) when *_parsed is missing on older rows.
+    # Fallback: raw From/To/CC/BCC when *_parsed is missing. Never people[].
     for raw in (
         payload.get("from"),
         payload.get("from_raw"),
         payload.get("to"),
         payload.get("cc"),
         payload.get("bcc"),
-        payload.get("people"),
     ):
         texts: list[str]
         if isinstance(raw, (list, tuple)):
@@ -1437,30 +1448,142 @@ def _payload_email_addresses(payload: dict[str, Any]) -> set[str]:
 
 
 def _confirmed_emails_for_people(person_ids: set[str]) -> set[str]:
-    from memorybox.person.phone_map import normalize_handle
+    from memorybox.person.trusted_identity import trusted_emails_for_people
 
-    ids = [str(p) for p in person_ids if str(p).strip()]
-    if not ids:
-        return set()
-    try:
-        with connection() as conn:
-            rows = conn.execute(
-                """
-                SELECT value_text
-                FROM person_contact_points
-                WHERE contact_kind = 'email'
-                  AND status = 'confirmed'
-                  AND person_id::text = ANY(%s)
-                """,
-                (ids,),
-            ).fetchall()
-    except Exception:  # noqa: BLE001
-        return set()
+    return trusted_emails_for_people(person_ids)
+
+
+def _structured_comm_search_blob(payload: dict[str, Any], summary: str = "") -> str:
+    """Token blob for keyword/Qdrant filters. Never includes people[]."""
+    return " ".join(
+        [
+            str(summary or ""),
+            str(payload.get("subject") or ""),
+            str(payload.get("from") or ""),
+            str(payload.get("to") or ""),
+            str(payload.get("cc") or ""),
+            str(payload.get("bcc") or ""),
+            str(payload.get("body_text") or ""),
+            json.dumps(payload.get("from_parsed") or []),
+            json.dumps(payload.get("to_parsed") or []),
+            json.dumps(payload.get("cc_parsed") or []),
+            json.dumps(payload.get("bcc_parsed") or []),
+        ]
+    ).lower()
+
+
+_SMS_CHANNELS = frozenset({"sms", "text", "imessage", "mms", "rcs"})
+
+
+def _stamp_hit_payload(h: EvidenceHit, payload: dict[str, Any]) -> None:
+    """Keep loaded payload on the hit so later filters see evidence_channel."""
+    if not payload:
+        return
+    h.payload = payload
+    if not h.channel:
+        raw = str(payload.get("evidence_channel") or payload.get("channel") or "").strip()
+        if raw:
+            h.channel = raw
+
+
+def hit_comm_channel(h: EvidenceHit) -> str:
+    ch = str(h.channel or "").lower()
+    p = h.payload if isinstance(getattr(h, "payload", None), dict) else {}
+    return str((p or {}).get("evidence_channel") or (p or {}).get("channel") or ch).lower()
+
+
+def hit_is_sms(h: EvidenceHit) -> bool:
+    kind = str(h.evidence_kind or "").lower()
+    ch = hit_comm_channel(h)
+    return ch in _SMS_CHANNELS or "sms" in kind or kind == "text"
+
+
+def hit_is_email(h: EvidenceHit) -> bool:
+    """True only for mail. Qdrant SMS (kind=communication, empty channel) is false."""
+    if hit_is_sms(h):
+        return False
+    kind = str(h.evidence_kind or "").lower()
+    ch = hit_comm_channel(h)
+    return kind in {"communication", "email", "comms"} or ch == "email" or "mail" in kind
+
+
+def hit_who_blob(h: EvidenceHit) -> str:
+    """Email: structured From/To. Never people[] (Takeout co-occurrence)."""
+    if hit_is_email(h):
+        return " ".join(x for x in (h.from_header, h.to_header) if x)
+    return " ".join(h.people or [])
+
+
+def filter_email_hits_to_trusted(plan: QueryPlan, hits: list[EvidenceHit]) -> list[EvidenceHit]:
+    """Person-scoped Ask: drop communication email that is not a trusted retrieve key."""
+    person_ids = {str(p) for p in (plan.person_ids or ()) if p}
+    if not person_ids and plan.person_names:
+        person_ids = _resolve_person_ids_from_names(plan.person_names)
+    if not person_ids:
+        return hits
+    trusted = _confirmed_emails_for_people(person_ids)
+    out: list[EvidenceHit] = []
+    for h in hits:
+        kind = str(h.evidence_kind or "").lower()
+        ch = str(h.channel or "").lower()
+        maybe_comm = kind in {"communication", "email", "comms"} or ch == "email" or "mail" in kind
+        if not maybe_comm:
+            out.append(h)
+            continue
+        payload = h.payload if isinstance(getattr(h, "payload", None), dict) else {}
+        if not payload:
+            try:
+                from memorybox.ingest.store import get_evidence
+
+                row = get_evidence(UUID(str(h.evidence_id)))
+                payload = _payload_dict((row or {}).get("payload_json"))
+            except Exception:  # noqa: BLE001
+                payload = {}
+        _stamp_hit_payload(h, payload)
+        if hit_is_sms(h) or not hit_is_email(h):
+            out.append(h)
+            continue
+        if not trusted or not payload:
+            continue
+        from memorybox.person.trusted_identity import email_payload_trusted
+
+        if email_payload_trusted(payload, trusted):
+            out.append(h)
+    return out
+
+
+def _resolve_person_ids_from_names(names: list[str] | tuple[str, ...]) -> set[str]:
+    """Name → Person id. Not a retrieve key. Do not create People. Fail closed."""
     out: set[str] = set()
-    for r in rows:
-        n = normalize_handle(str(r.get("value_text") or ""))
-        if n and "@" in n:
-            out.add(n)
+    for raw in names:
+        name = str(raw or "").strip()
+        if not name:
+            continue
+        try:
+            from memorybox.person import resolve_person_by_name
+
+            resolved = resolve_person_by_name(
+                name, create_if_missing=False, confirm=False
+            )
+            pid = str(
+                getattr(resolved, "person_id", "")
+                or getattr(resolved, "id", "")
+                or ""
+            )
+            if pid:
+                out.add(pid)
+                continue
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            from memorybox.person import find_ask_person_by_name
+
+            view = find_ask_person_by_name(name, photo=None, lazy_seed=False)
+            pid = str(getattr(view, "id", "") or "")
+            if pid:
+                out.add(pid)
+        except Exception:  # noqa: BLE001
+            continue
     return out
 
 
@@ -1498,8 +1621,32 @@ def _email_attachments(payload: dict[str, Any]) -> list[dict[str, Any]]:
     return [a for a in (payload.get("attachments") or []) if isinstance(a, dict)]
 
 
+def structured_header_display_names(payload: dict[str, Any]) -> list[str]:
+    """From/To/CC/BCC display names only. Never payload.people[]."""
+    people: list[str] = []
+    seen: set[str] = set()
+    for rec in (
+        list(payload.get("from_parsed") or [])
+        + list(payload.get("to_parsed") or [])
+        + list(payload.get("cc_parsed") or [])
+        + list(payload.get("bcc_parsed") or [])
+    ):
+        if not isinstance(rec, dict):
+            continue
+        label = str(rec.get("display_name") or "").strip()
+        if not label:
+            continue
+        key = label.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        people.append(label)
+    return people
+
+
 def _email_hit(row: dict[str, Any], payload: dict[str, Any], *, score: float) -> EvidenceHit:
-    people = [str(p) for p in (payload.get("people") or []) if str(p).strip()]
+    # Structured header displays only. Never payload.people[] (Takeout co-occurrence).
+    people = structured_header_display_names(payload)
     mapped = (payload.get("identity_resolution") or {}).get("mapped") or []
     identity = [
         {
@@ -1546,7 +1693,6 @@ def _email_person_blob(payload: dict[str, Any]) -> str:
         str(payload.get("from") or ""),
         str(payload.get("from_raw") or ""),
         " ".join(str(t) for t in (payload.get("to") or [])),
-        " ".join(str(p) for p in (payload.get("people") or [])),
     ]
     for rec in list(payload.get("from_parsed") or []) + list(payload.get("to_parsed") or []):
         if isinstance(rec, dict):
@@ -1562,6 +1708,113 @@ def _email_person_blob(payload: dict[str, Any]) -> str:
 
 
 @_timed_provider("email_ms")
+def _year_fair_email_hits_light_scan(
+    where_sql: str,
+    where_params: list[Any],
+    *,
+    limit: int,
+    scope: str,
+) -> list[EvidenceHit]:
+    """Year-fair sample without loading every trusted HTML body.
+
+    FlightSim FEV2 freeze only needs ``limit`` full payloads. Scanning
+    ``payload_json`` for 5k+ Takeout rows is the hang/1-email-starve path.
+    """
+    light: list[EvidenceHit] = []
+    last_id: Any = None
+    with connection() as conn:
+        while True:
+            clause = where_sql
+            qparams = list(where_params)
+            if last_id is not None:
+                clause = f"({where_sql}) AND id > %s"
+                qparams.append(last_id)
+            rows = conn.execute(
+                f"""
+                SELECT id, summary,
+                       coalesce(payload_json->>'sent_at','') AS sent_at,
+                       lower(coalesce(
+                           payload_json->>'mailbox_skip',
+                           payload_json->>'skip_reason',
+                           ''
+                       )) AS skip,
+                       lower(coalesce(
+                           payload_json->>'evidence_channel', 'email'
+                       )) AS ch
+                FROM evidence
+                WHERE {clause}
+                ORDER BY id
+                LIMIT %s
+                """,
+                qparams + [TELL_DB_PAGE],
+            ).fetchall()
+            if not rows:
+                break
+            for r in rows:
+                last_id = r["id"]
+                if str(r["ch"] or "email") != "email":
+                    continue
+                if str(r["skip"] or "").strip() in {"spam", "trash"}:
+                    continue
+                light.append(
+                    EvidenceHit(
+                        evidence_id=str(r["id"]),
+                        evidence_kind="communication",
+                        summary=str(r["summary"] or "email"),
+                        score=1.0,
+                        excerpt="",
+                        source="email_mbox",
+                        sent_at=str(r["sent_at"] or "") or None,
+                        channel="email",
+                    )
+                )
+    total = len(light)
+    sliced, truncated = _year_fair_slice(light, max(1, int(limit)))
+    ids = [h.evidence_id for h in sliced]
+    if not ids:
+        return []
+    raw_ids: list[Any] = []
+    for eid in ids:
+        try:
+            raw_ids.append(UUID(str(eid)))
+        except (ValueError, TypeError):
+            raw_ids.append(eid)
+    by_id: dict[str, EvidenceHit] = {}
+    with connection() as conn:
+        loaded = conn.execute(
+            """
+            SELECT id, evidence_kind, summary, payload_json
+            FROM evidence
+            WHERE id = ANY(%s)
+            """,
+            (raw_ids,),
+        ).fetchall()
+    for r in loaded:
+        payload = _payload_dict(r["payload_json"])
+        by_id[str(r["id"])] = _email_hit(r, payload, score=1.0)
+    hits = [by_id[i] for i in ids if i in by_id]
+    note = (
+        f"ingested email export; n={total}; fev2_light_year_fair; scope={scope}"
+    )
+    if truncated:
+        years = sorted({(h.sent_at or "")[:4] for h in hits if (h.sent_at or "")[:4]})
+        note = (
+            f"{note}; showing {len(hits)} of {total} "
+            f"(year-fair sample; years {years[0] if years else '?'}–{years[-1] if years else '?'})"
+        )
+    for h in hits:
+        h.match_total = total
+        h.truncated = truncated
+        h.count_scope = note
+    if hits:
+        hits[0].count_scope = note
+        if truncated:
+            hits[0].summary = (
+                f"Showing {len(hits)} of {total} emails ({note}). {hits[0].summary}"
+            )
+    return hits
+
+
 def search_email_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> list[EvidenceHit]:
     """Person / date / keyword retrieve over ingested email Evidence."""
     ask = plan.original_ask or ""
@@ -1571,6 +1824,10 @@ def search_email_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> 
     attach_only = bool(EMAIL_ATTACH_ASK_RE.search(ask))
     thread_open = bool(EMAIL_THREAD_RE.search(ask))
     person_ids = {str(p) for p in (plan.person_ids or ()) if p}
+    if not person_ids and plan.person_names:
+        # Ask/Gallery may carry Peg Legg / display names without ids.
+        # Resolve to Person, then trusted emails — never name-blob retrieve.
+        person_ids = _resolve_person_ids_from_names(plan.person_names)
     from memorybox.ingest.comms_email import owner_emails
 
     owner_addrs = owner_emails()
@@ -1583,6 +1840,8 @@ def search_email_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> 
             expanded = expand_emails_for_retrieve(person_ids)
             identity_expand = expanded.get("expansion") or {}
             confirmed_addrs = set(expanded.get("addresses") or [])
+            if asked_owner:
+                confirmed_addrs |= set(owner_addrs or ())
             # Surface per-person resolve errors that previously looked like email=0.
             resolve_errs = [
                 f"{r.get('person_id')}:{r.get('error')}"
@@ -1594,6 +1853,8 @@ def search_email_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> 
         except Exception as exc:  # noqa: BLE001
             identity_expand = {"error": f"{type(exc).__name__}:{exc}"}
             confirmed_addrs = _confirmed_emails_for_people(person_ids)
+            if asked_owner:
+                confirmed_addrs |= set(owner_addrs or ())
     else:
         confirmed_addrs = set()
     person_names = [
@@ -1666,6 +1927,7 @@ def search_email_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> 
     if person_ids and (
         _complete_comm_retrieve(plan)
         or "gallery_email_eligible" in (plan.notes or ())
+        or "trusted_full_evidence_v2" in (plan.notes or ())
     ):
         keywords = []
     holiday_ask = bool(
@@ -1732,6 +1994,13 @@ def search_email_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> 
             paging_reason="email identity probe empty; skip Takeout scan",
         )
         return []
+    if "trusted_full_evidence_v2" in (plan.notes or ()):
+        return _year_fair_email_hits_light_scan(
+            where_sql,
+            where_params,
+            limit=max(1, int(limit)),
+            scope=str(scope),
+        )
     for r in _iter_evidence_rows(
         where_sql,
         where_params,
@@ -1761,36 +2030,13 @@ def search_email_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> 
             if not day or not any(str(a)[:10] <= day <= str(b)[:10] for a, b in windows):
                 return False
         if person_ids or person_names:
-            have = {str(x) for x in (payload.get("person_ids") or [])}
             addrs = _payload_email_addresses(payload)
-            mapped_ids = {
-                str(m.get("person_id"))
-                for m in ((payload.get("identity_resolution") or {}).get("mapped") or [])
-                if isinstance(m, dict) and m.get("person_id")
-            }
-            if person_ids and (have & person_ids or mapped_ids & person_ids):
-                pass
-            elif confirmed_addrs and (addrs & confirmed_addrs):
+            if confirmed_addrs and (addrs & confirmed_addrs):
                 pass
             elif asked_owner and (
                 payload.get("from_owner")
                 or (owner_addrs and (addrs & owner_addrs))
-                or (asked_owner and not owner_addrs and not confirmed_addrs)
             ):
-                # Owner Person + personal Takeout: mailbox is theirs even when
-                # MEMORYBOX_OWNER_EMAIL / confirmed contacts are not set.
-                pass
-            elif (
-                person_names
-                and _sms_name_match(
-                    _email_person_blob(payload),
-                    person_names,
-                    allow_first_token=False,
-                )
-            ):
-                # Full display-name match even when Person ids are set.
-                # Ingest often leaves person_ids empty on email rows; unique
-                # Person lock still supplies person_names (P2-BL-I8-02).
                 pass
             else:
                 return False
@@ -1816,7 +2062,7 @@ def search_email_messages(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) -> 
             have = {h.evidence_id for h in matched}
             for r, payload in rows_payload:
                 tid = payload.get("thread_id")
-                if tid in thread_ids and str(r["id"]) not in have:
+                if tid in thread_ids and str(r["id"]) not in have and _keep(payload, r):
                     extra.append(_email_hit(r, payload, score=0.8))
             matched.extend(extra)
     hits = matched
@@ -1981,6 +2227,13 @@ def search_calendar_events(plan: QueryPlan, *, limit: int = SMS_RETRIEVE_CAP) ->
                 thread_id=str(payload.get("event_uid") or "") or None,
             )
         )
+        notes = getattr(plan, "notes", ()) or ()
+        if (
+            "trusted_full_evidence_v2" in notes
+            and int(limit) > 0
+            and len(hits) >= int(limit)
+        ):
+            break
     hits.sort(key=lambda h: (h.sent_at or "", h.evidence_id))
     total = len(hits)
     scan_note = (
@@ -2152,8 +2405,28 @@ def search_evidence_pg(plan: QueryPlan, *, limit: int = 20) -> list[EvidenceHit]
         params: list[Any] = []
         for t in uniq[:12]:
             like = f"%{t}%"
-            clauses.append("(summary ILIKE %s OR payload_json::text ILIKE %s)")
-            params.extend([like, like])
+            # Communication: structured headers + body only. Never payload_json::text
+            # (that matches people[] co-occurrence and quoted-only identity noise).
+            clauses.append(
+                "("
+                "(evidence_kind = 'communication' AND ("
+                "summary ILIKE %s"
+                " OR coalesce(payload_json->>'subject','') ILIKE %s"
+                " OR coalesce(payload_json->>'from','') ILIKE %s"
+                " OR coalesce(payload_json->>'to','') ILIKE %s"
+                " OR coalesce(payload_json->>'cc','') ILIKE %s"
+                " OR coalesce(payload_json->>'bcc','') ILIKE %s"
+                " OR coalesce(payload_json->>'body_text','') ILIKE %s"
+                " OR coalesce((payload_json->'from_parsed')::text,'') ILIKE %s"
+                " OR coalesce((payload_json->'to_parsed')::text,'') ILIKE %s"
+                " OR coalesce((payload_json->'cc_parsed')::text,'') ILIKE %s"
+                " OR coalesce((payload_json->'bcc_parsed')::text,'') ILIKE %s"
+                ")) OR (evidence_kind <> 'communication' AND ("
+                "summary ILIKE %s OR payload_json::text ILIKE %s"
+                "))"
+                ")"
+            )
+            params.extend([like] * 13)
         where_terms = " OR ".join(clauses) if clauses else "TRUE"
         kind_ph = ",".join(["%s"] * len(kinds))
         sql = f"""
@@ -2199,7 +2472,10 @@ def search_evidence_pg(plan: QueryPlan, *, limit: int = 20) -> list[EvidenceHit]
         ]
         for r in rows:
             payload = _payload_dict(r["payload_json"])
-            blob = f"{r['summary'] or ''} {json.dumps(payload)}".lower()
+            if str(r["evidence_kind"] or "") == "communication":
+                blob = _structured_comm_search_blob(payload, str(r.get("summary") or ""))
+            else:
+                blob = f"{r['summary'] or ''} {json.dumps(payload)}".lower()
             if required and not any(t.lower() in blob for t in required):
                 continue
             match_n = sum(1 for t in distinctive if t.lower() in blob)
@@ -2237,11 +2513,13 @@ def filter_hits_by_constraints(
     other_cons = [c for c in cons if c not in year_cons]
     kept: list[EvidenceHit] = []
     for h in hits:
+        # Email: structured From/To only. Never people[] (Takeout co-occurrence).
+        who = hit_who_blob(h)
         blob = " ".join(
             [
                 h.summary or "",
                 h.excerpt or "",
-                " ".join(h.people or []),
+                who,
                 h.thread_id or "",
                 h.channel or "",
                 h.sent_at or "",
@@ -2363,8 +2641,12 @@ def search_evidence_qdrant(
             excerpt = ""
             blob = str(summary).lower()
             if row:
-                excerpt = _excerpt(_payload_dict(row.get("payload_json")), kind)
-                blob = f"{summary} {excerpt} {json.dumps(_payload_dict(row.get('payload_json')))}".lower()
+                row_payload = _payload_dict(row.get("payload_json"))
+                excerpt = _excerpt(row_payload, kind)
+                if kind == "communication":
+                    blob = _structured_comm_search_blob(row_payload, str(summary or ""))
+                else:
+                    blob = f"{summary} {excerpt} {json.dumps(row_payload)}".lower()
             if required and not any(t.lower() in blob for t in required):
                 continue
             if distinctive and not any(t.lower() in blob for t in distinctive):

@@ -1,0 +1,152 @@
+{
+  "model": "gemma4:26b",
+  "provider": "ollama",
+  "config": {
+    "chunking": false,
+    "stateless": true,
+    "established_gemma": "gemma4:26b"
+  },
+  "input_sha256": "3cf95fa44db905af8a10f250e89da9d59138d315c6ff7272c1e2957b231259e8",
+  "evidence_type_counts": {
+    "email": 1,
+    "person": 1
+  },
+  "schema_ok": true,
+  "validation": {
+    "email_evidence_in_fixture": 2,
+    "email_evidence_cited": [],
+    "claims_citing_email": 0,
+    "email_reached_model": true,
+    "email_affected_output": false,
+    "unsupported_claims": [],
+    "ok": false,
+    "invented_evidence_ids": [
+      "email_1",
+      "person_1"
+    ],
+    "rows_missing_provenance": [],
+    "schema_ok": true
+  },
+  "episodes": [
+    {
+      "title": "Email from Peg Legg regarding Christmas Wish List",
+      "when": "2005-12-09",
+      "summary": "Peg Legg (peggo417@hotmail.com) sent an email to tom.will@sbcglobal.net with the subject 'FW: christmas wish list', mentioning 'webbing a few later on tonight' and signing off as 'Pegs'.",
+      "evidence_ids": [
+        "email_1"
+      ]
+    }
+  ],
+  "claims": [
+    {
+      "text": "The person with ID cc6eb438-86a9-405c-89aa-6c6fc43de076 is associated with the identity Peg Legg and the email peggo417@hotmail.com.",
+      "evidence_ids": [
+        "person_1"
+      ]
+    },
+    {
+      "text": "The identity peggo417@hotmail.com is associated with multiple names including Mom, Peg, Peg Legg, Pegg Legg, Peggy George, and Pegs.",
+      "evidence_ids": [
+        "person_1",
+        "email_1"
+      ]
+    },
+    {
+      "text": "The person with ID cc6eb438-86a9-405c-89aa-6c6fc43de076 is linked to numerous aliases including Joe Lindemann (incubusfan111@hotmail.com), Jay McFarling (jaym@bohnanddawson.com), and Stephanie Caratenuto (jsjc2@hotmail.com).",
+      "evidence_ids": [
+        "person_1"
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "from": "cc6eb438-86a9-405c-89aa-6c6fc43de076",
+      "to": "0ba1f217-7894-4927-8981-668606967991",
+      "role": "parent",
+      "evidence_ids": [
+        "person_1"
+      ]
+    },
+    {
+      "from": "cc6eb438-86a9-405c-89aa-6c6fc43de076",
+      "to": "126e2fd4-6947-4971-9984-493969969999",
+      "role": "spouse",
+      "evidence_ids": [
+        "person_1"
+      ]
+    },
+    {
+      "from": "cc6eb438-86a9-405c-89aa-6c6fc43de076",
+      "to": "33509a4c-7894-4927-8981-668606967991",
+      "role": "sibling",
+      "evidence_ids": [
+        "person_1"
+      ]
+    }
+  ],
+  "narrator": "MemoryBox Full-Evidence V2",
+  "email_evidence_that_affected_output": [],
+  "accepted_claim_evidence_ids": [
+    "person_1",
+    "email_1"
+  ],
+  "invented_or_unsupported_claims": [
+    {
+      "id": "email_1",
+      "reason": "invented_evidence_id"
+    },
+    {
+      "id": "person_1",
+      "reason": "invented_evidence_id"
+    }
+  ],
+  "relationship_errors": [
+    {
+      "reason": "invented_evidence_id",
+      "id": "person_1",
+      "row": {
+        "from": "cc6eb438-86a9-405c-89aa-6c6fc43de076",
+        "to": "0ba1f217-7894-4927-8981-668606967991",
+        "role": "parent",
+        "evidence_ids": [
+          "person_1"
+        ]
+      }
+    },
+    {
+      "reason": "invented_evidence_id",
+      "id": "person_1",
+      "row": {
+        "from": "cc6eb438-86a9-405c-89aa-6c6fc43de076",
+        "to": "126e2fd4-6947-4971-9984-493969969999",
+        "role": "spouse",
+        "evidence_ids": [
+          "person_1"
+        ]
+      }
+    },
+    {
+      "reason": "invented_evidence_id",
+      "id": "person_1",
+      "row": {
+        "from": "cc6eb438-86a9-405c-89aa-6c6fc43de076",
+        "to": "33509a4c-7894-4927-8981-668606967991",
+        "role": "sibling",
+        "evidence_ids": [
+          "person_1"
+        ]
+      }
+    }
+  ],
+  "gallery": {},
+  "timing_ms": 11333,
+  "tokens": {
+    "prompt": null,
+    "completion": null,
+    "total": null,
+    "fixture_estimated": 241081
+  },
+  "chunking": false,
+  "email_reached_model_and_grounded_output": false,
+  "ok": false
+}

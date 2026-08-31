@@ -19,6 +19,7 @@ from memorybox.ask.retrieve import (
     StoryHit,
     VideoHit,
     _place_trip_keywords,
+    hit_who_blob,
     trip_discovery_pending,
 )
 from memorybox.planner import QueryPlan
@@ -58,6 +59,11 @@ def _day(raw: Any) -> str | None:
 
 def _blob(*parts: Any) -> str:
     return " ".join(str(p or "") for p in parts).lower()
+
+
+def _hit_who_blob(h: EvidenceHit) -> str:
+    """Email: structured From/To. Never people[] (Takeout co-occurrence)."""
+    return hit_who_blob(h)
 
 
 def _place_tokens(plan: QueryPlan) -> list[str]:
@@ -470,7 +476,7 @@ def resolve_trip(
     matched_ev = []
     comm_pipeline: list[dict[str, Any]] = []
     for h in evidence:
-        blob = _blob(h.summary, h.excerpt, " ".join(h.people or []), h.channel, h.evidence_kind)
+        blob = _blob(h.summary, h.excerpt, _hit_who_blob(h), h.channel, h.evidence_kind)
         channel = str(h.channel or h.evidence_kind or "").lower()
         match_reason = None if tokens else "no_place_tokens"
         if tokens:
@@ -875,7 +881,7 @@ def apply_plan_windows(
         if channel in {"calendar", "calendar_event"}:
             kept_ev.append(h)
             continue
-        blob = _blob(h.summary, h.excerpt, " ".join(h.people or []), h.channel, h.evidence_kind)
+        blob = _blob(h.summary, h.excerpt, _hit_who_blob(h), h.channel, h.evidence_kind)
         if (not tokens) or _place_match_reason(blob, tokens):
             kept_ev.append(h)
             continue

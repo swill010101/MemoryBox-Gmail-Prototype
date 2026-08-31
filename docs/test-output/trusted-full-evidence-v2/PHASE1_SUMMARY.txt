@@ -1,0 +1,30 @@
+TRUSTED-IDENTITY PHASE 1 REPORT
+person: Peggy George
+ok: True
+counts: {"confirmed": 1, "candidate": 699, "observed": 0, "trusted_for_retrieval": 1}
+trusted identities:
+  - peggo417@hotmail.com why=owner_or_operator_attested actor=comm_identity_operator_attested source=comm_identity_operator_attested structured=0 retrieve_hits=5716 unique_only=5716
+shared_across_trusted: 0
+retrieve_hit_count: 5716
+gallery_email_count: 5716
+unsupported_retrieve_addresses: []
+unsupported_retrieve_hit_count: 0
+untrusted_n: 699
+untrusted_by_reason: {"auto_expand:sms_auto_map": 1, "auto_expand:comm_identity_expand": 698}
+untrusted_sample (not retrieve keys — attest/re-add profile, do not widen):
+  - edwill@aol.com why=auto_expand:sms_auto_map actor=sms_auto_map source=comm_identity_repair
+  - dsill1027@gmail.com why=auto_expand:comm_identity_expand actor=comm_identity_expand source=comm_address_index_resolve
+  - lyndasilver@gmail.com why=auto_expand:comm_identity_expand actor=comm_identity_expand source=comm_identity_expand
+  - maggie.rutherford@gmail.com why=auto_expand:comm_identity_expand actor=comm_identity_expand source=comm_identity_expand
+  - pegged417@hotmail.com why=auto_expand:comm_identity_expand actor=comm_identity_expand source=comm_identity_expand
+  - rgeorg5678@sbcglobal.net why=auto_expand:comm_identity_expand actor=comm_identity_expand source=comm_identity_expand
+  - hruz_meg@att.net why=auto_expand:comm_identity_expand actor=comm_identity_expand source=comm_identity_expand
+  - margaret.ross@chartercom.com why=auto_expand:comm_identity_expand actor=comm_identity_expand source=comm_identity_expand
+  - pcassani@ssdmo.org why=auto_expand:comm_identity_expand actor=comm_identity_expand source=comm_identity_expand
+  - psbruch37@att.net why=auto_expand:comm_identity_expand actor=comm_identity_expand source=comm_identity_expand
+  - leggopeggo@gmail.com why=auto_expand:comm_identity_expand actor=comm_identity_expand source=comm_identity_expand
+  - ed.cox@aftonchemical.com why=auto_expand:comm_identity_expand actor=comm_identity_expand source=comm_identity_expand
+  - zulily@e.zulily.com why=auto_expand:comm_identity_expand actor=comm_identity_expand source=comm_identity_expand
+  - customercare@email.ebates.com why=auto_expand:comm_identity_expand actor=comm_identity_expand source=comm_identity_expand
+  - yorudi@aol.com why=auto_expand:comm_identity_expand actor=comm_identity_expand source=comm_identity_expand
+  - pmusen@duodogs.org why=auto_expand:comm_identity_expand actor=comm_identity_expand source=comm_identity_expand

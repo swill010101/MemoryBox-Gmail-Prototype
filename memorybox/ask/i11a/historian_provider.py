@@ -36,6 +36,8 @@ class HistorianProviderSpec:
     provider: HistorianProviderKind
     model: str
     timeout_seconds: int
+    num_ctx: int | None = None
+    max_tokens: int | None = None
 
 
 def normalize_provider_kind(raw: str | None) -> HistorianProviderKind:
@@ -81,10 +83,18 @@ class _TimeoutOllamaChat:
 
     provider_key = "ollama"
 
-    def __init__(self, *, base_url: str, chat_model: str, timeout_seconds: int) -> None:
+    def __init__(
+        self,
+        *,
+        base_url: str,
+        chat_model: str,
+        timeout_seconds: int,
+        num_ctx: int | None = None,
+    ) -> None:
         self.base_url = base_url.rstrip("/")
         self.chat_model = chat_model
         self.timeout_seconds = int(timeout_seconds)
+        self.num_ctx = int(num_ctx) if num_ctx else None
 
     def health(self) -> Any:
         from memorybox.providers.llm.ollama import OllamaLlmProvider
@@ -110,6 +120,7 @@ class _TimeoutOllamaChat:
                 user,
                 format_json=json_mode,
                 timeout=self.timeout_seconds,
+                num_ctx=self.num_ctx,
             )
         except TimeoutError as exc:
             raise ProviderUnavailable(f"timed out after {self.timeout_seconds}s") from exc
@@ -125,31 +136,114 @@ class _TimeoutOllamaChat:
         return ChatResultDto(model=self.chat_model, content=content, usage=usage)
 
 
-class _CloudHistorianStub:
-    """Placeholder — cloud benchmark requires explicit --provider cloud."""
+class _CloudOpenAICompatChat:
+    """Explicit opt-in cloud control (Sol). Stateless single request only.
+
+    Requires MEMORYBOX_CLOUD_LLM_BASE_URL and MEMORYBOX_CLOUD_LLM_API_KEY.
+    Never selected unless --provider cloud.
+    """
 
     provider_key = "cloud"
 
-    def __init__(self, *, chat_model: str, timeout_seconds: int) -> None:
+    def __init__(
+        self, *, chat_model: str, timeout_seconds: int, max_tokens: int | None = None
+    ) -> None:
+        import os
+
         self.chat_model = chat_model
         self.timeout_seconds = int(timeout_seconds)
+        self.base_url = (os.environ.get("MEMORYBOX_CLOUD_LLM_BASE_URL") or "").rstrip("/")
+        self.api_key = (os.environ.get("MEMORYBOX_CLOUD_LLM_API_KEY") or "").strip()
+        env_max = (os.environ.get("MEMORYBOX_CLOUD_LLM_MAX_TOKENS") or "").strip()
+        self.max_tokens = (
+            int(max_tokens)
+            if max_tokens
+            else (int(env_max) if env_max.isdigit() else 8_192)
+        )
 
     def health(self) -> Any:
         from memorybox.providers.base import ProviderHealth
 
+        ok = bool(self.base_url and self.api_key)
         return ProviderHealth(
             provider_key=self.provider_key,
-            ok=False,
-            detail="cloud historian provider not implemented",
+            ok=ok,
+            detail=(
+                "cloud OpenAI-compatible endpoint configured"
+                if ok
+                else "set MEMORYBOX_CLOUD_LLM_BASE_URL and MEMORYBOX_CLOUD_LLM_API_KEY"
+            ),
         )
 
     def chat(self, messages: list[ChatMessage], *, json_mode: bool = False) -> ChatResultDto:
-        raise HistorianCloudNotAvailable(
-            "Cloud historian provider is not implemented yet. "
-            "Use --provider ollama for local Ollama runs. "
-            "When implemented, cloud calls will be stateless single-request only "
-            "(no ChatGPT history, MemoryBox memory, or profile context)."
-        )
+        import json as _json
+        import urllib.error
+        import urllib.request
+
+        if not self.base_url or not self.api_key:
+            raise HistorianCloudNotAvailable(
+                "Cloud provider requires MEMORYBOX_CLOUD_LLM_BASE_URL and "
+                "MEMORYBOX_CLOUD_LLM_API_KEY. Stateless single-request only "
+                "(no ChatGPT history, MemoryBox memory, or profile context)."
+            )
+        url = self.base_url
+        if not url.endswith("/chat/completions"):
+            url = f"{url}/chat/completions"
+        payload: dict[str, Any] = {
+            "model": self.chat_model,
+            "temperature": 0,
+            "max_tokens": int(self.max_tokens),
+            "messages": [{"role": m.role, "content": m.content} for m in messages],
+        }
+        if json_mode:
+            payload["response_format"] = {"type": "json_object"}
+        delays = (4, 8, 16, 32)
+        body: dict[str, Any] | None = None
+        last_exc: BaseException | None = None
+        for attempt in range(len(delays) + 1):
+            req = urllib.request.Request(
+                url,
+                data=_json.dumps(payload).encode("utf-8"),
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {self.api_key}",
+                },
+                method="POST",
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=self.timeout_seconds) as resp:
+                    body = _json.loads(resp.read().decode("utf-8"))
+                last_exc = None
+                break
+            except urllib.error.HTTPError as exc:
+                last_exc = exc
+                try:
+                    exc.read()
+                except Exception:  # noqa: BLE001
+                    pass
+                if int(getattr(exc, "code", 0) or 0) != 429 or attempt >= len(delays):
+                    raise ProviderUnavailable(f"cloud chat failed: {exc}") from exc
+                wait_s = float(delays[attempt])
+                raw_after = ""
+                if exc.headers is not None:
+                    raw_after = str(exc.headers.get("Retry-After") or "").strip()
+                if raw_after.isdigit():
+                    wait_s = max(wait_s, float(int(raw_after)))
+                time.sleep(min(wait_s, 90.0))
+            except Exception as exc:  # noqa: BLE001
+                raise ProviderUnavailable(f"cloud chat failed: {exc}") from exc
+        if body is None:
+            raise ProviderUnavailable(f"cloud chat failed: {last_exc}")
+        choices = body.get("choices") or []
+        content = ""
+        if choices:
+            content = str(((choices[0] or {}).get("message") or {}).get("content") or "")
+        usage = dict(body.get("usage") or {})
+        usage["timeout_seconds"] = self.timeout_seconds
+        usage["model"] = self.chat_model
+        usage["provider_key"] = self.provider_key
+        usage["stateless"] = True
+        return ChatResultDto(model=self.chat_model, content=content, usage=usage)
 
 
 def build_historian_provider(spec: HistorianProviderSpec) -> Any:
@@ -158,7 +252,11 @@ def build_historian_provider(spec: HistorianProviderSpec) -> Any:
     if not model:
         raise HistorianProviderError("--model is required for historian-fixture-run")
     if spec.provider == "cloud":
-        return _CloudHistorianStub(chat_model=model, timeout_seconds=spec.timeout_seconds)
+        return _CloudOpenAICompatChat(
+            chat_model=model,
+            timeout_seconds=spec.timeout_seconds,
+            max_tokens=spec.max_tokens,
+        )
     from memorybox.config import OLLAMA_AUTODETECT_URLS, settings
     from memorybox.providers.llm._ollama_http import ollama_reachable
 
@@ -176,6 +274,7 @@ def build_historian_provider(spec: HistorianProviderSpec) -> Any:
         base_url=base,
         chat_model=model,
         timeout_seconds=spec.timeout_seconds,
+        num_ctx=spec.num_ctx,
     )
 
 

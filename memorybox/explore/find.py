@@ -500,6 +500,7 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
             title = (summary or kind or "Evidence")[:80]
             preview = excerpt or summary
             detail = excerpt or summary
+        is_email_item = type_ == "email"
         item = _item_base(
             id=f"evidence:{eid}",
             type_=type_ if type_ != "communication" else "email",
@@ -511,7 +512,8 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
             evidence_id=eid,
             evidence_kind=kind,
             score=e.get("score"),
-            people=people or None,
+            # Email: structured From/To only. Never payload people[] on the card.
+            people=None if is_email_item else (people or None),
             attachments=e.get("attachments") or None,
             thread_id=e.get("thread_id"),
             direction=e.get("direction"),
@@ -520,12 +522,15 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
             item["preview"] = preview
             item["detail"] = detail
             item["title"] = title
-        item["from"] = (
-            e.get("from_header")
-            or people[0]
-            or e.get("thread_id")
-            or "Message"
-        )
+        if is_email_item:
+            item["from"] = e.get("from_header") or "Message"
+        else:
+            item["from"] = (
+                e.get("from_header")
+                or (people[0] if people else None)
+                or e.get("thread_id")
+                or "Message"
+            )
         if e.get("to_header"):
             item["to"] = e.get("to_header")
         atts = e.get("attachments") or item.get("attachments") or []
@@ -954,19 +959,13 @@ def _attach_visible_email(
     show_email: bool,
 ) -> tuple[list[dict[str, Any]], int, int]:
     """Person-scoped Find keeps emails eligible. Q3: hidden unless presentation on."""
+    # Re-resolve Gallery email through the same trusted retrieve as Ask.
+    # Do not keep pre-attached emails (people[] / person_ids GIN leftovers).
+    items = [i for i in items if not _is_email_type(i.get("type"))]
     existing_ids = {str(i.get("evidence_id") or "") for i in items if i.get("evidence_id")}
-    already = [i for i in items if _is_email_type(i.get("type"))]
     plan = result.get("plan") or {}
     people = list(plan.get("person_names") or [])
     pids = list(plan.get("person_ids") or [])
-    if already:
-        for i in already:
-            i["gallery_default_hidden"] = not show_email
-        match_total = 0
-        for e in result.get("evidence_hits") or []:
-            if str(e.get("channel") or "").lower() == "email" and e.get("match_total"):
-                match_total = max(match_total, int(e.get("match_total") or 0))
-        return items, match_total or len(already), match_total
     if not show_email:
         return items, 0, 0
     if not people and not pids:
@@ -1208,7 +1207,7 @@ def build_explore_find(
     if show_email and not show_sms and not email_available and not tell_mode:
         summary = (
             (summary or "").rstrip()
-            + " 0 emails matched this person (Person id, confirmed address, or full display name)."
+            + " 0 emails matched this person (trusted confirmed address)."
         ).strip()
     if sms_hidden and not show_sms and "are in the archive" not in (summary or ""):
         plan_mode = str((result.get("plan") or {}).get("output_mode") or "show")

@@ -97,6 +97,7 @@ def inventory_email_address(
     rows_scanned = 0
     header_hits = 0
     quoted_hits = 0
+    sql_header_count = 0
 
     try:
         with connection() as conn:
@@ -110,11 +111,8 @@ def inventory_email_address(
             # names are parsed in Python only from header-matched rows.
             angle = f"%<{addr}>%"
             mailto = f"%[mailto:{addr}]%"
-            rows = conn.execute(
-                """
-                SELECT id, payload_json
-                FROM evidence
-                WHERE evidence_kind = 'communication'
+            where_sql = """
+                evidence_kind = 'communication'
                   AND lower(coalesce(payload_json->>'evidence_channel', 'email'))
                       NOT IN ('sms', 'text', 'imessage', 'mms', 'rcs')
                   AND lower(coalesce(payload_json->>'mailbox_skip',
@@ -128,54 +126,43 @@ def inventory_email_address(
                     OR lower(coalesce((payload_json->'to')::text, '')) LIKE %s
                     OR lower(coalesce((payload_json->'cc')::text, '')) LIKE %s
                     OR lower(coalesce((payload_json->'bcc')::text, '')) LIKE %s
-                    OR lower(coalesce((payload_json->'people')::text, '')) LIKE %s
                     OR lower(coalesce((payload_json->'from_parsed')::text, '')) LIKE %s
                     OR lower(coalesce((payload_json->'to_parsed')::text, '')) LIKE %s
                     OR lower(coalesce((payload_json->'cc_parsed')::text, '')) LIKE %s
                     OR lower(coalesce((payload_json->'bcc_parsed')::text, '')) LIKE %s
                   )
-                ORDER BY CASE
-                  WHEN lower(coalesce(payload_json->>'from', '')) = %s
-                    OR lower(coalesce(payload_json->>'from', '')) LIKE %s
-                    OR lower(coalesce(payload_json->>'from', '')) LIKE %s
-                    OR lower(coalesce((payload_json->'from_parsed')::text, '')) LIKE %s
-                    OR lower(coalesce((payload_json->'to')::text, '')) LIKE %s
-                    OR lower(coalesce((payload_json->'cc')::text, '')) LIKE %s
-                    OR lower(coalesce((payload_json->'bcc')::text, '')) LIKE %s
-                    OR lower(coalesce((payload_json->'to_parsed')::text, '')) LIKE %s
-                    OR lower(coalesce((payload_json->'cc_parsed')::text, '')) LIKE %s
-                    OR lower(coalesce((payload_json->'bcc_parsed')::text, '')) LIKE %s
-                  THEN 0
-                  ELSE 1
-                END,
-                id
+            """
+            where_params = (
+                addr,
+                angle,
+                mailto,
+                like,
+                like,
+                like,
+                like,
+                like,
+                like,
+                like,
+                like,
+            )
+            # COUNT first — do not pull 100k payloads. FlightSim Phase 1 reported
+            # structured=0 for peggo417 because that scan timed out.
+            count_row = conn.execute(
+                f"SELECT COUNT(*) AS n FROM evidence WHERE {where_sql}",
+                where_params,
+            ).fetchone()
+            sql_header_count = int((count_row or {}).get("n") or 0)
+            header_hits = sql_header_count
+            display_limit = min(int(limit_scan), 400)
+            rows = conn.execute(
+                f"""
+                SELECT id, payload_json
+                FROM evidence
+                WHERE {where_sql}
+                ORDER BY id
                 LIMIT %s
                 """,
-                (
-                    addr,
-                    angle,
-                    mailto,
-                    like,
-                    like,
-                    like,
-                    like,
-                    like,
-                    like,
-                    like,
-                    like,
-                    like,
-                    addr,
-                    angle,
-                    mailto,
-                    like,
-                    like,
-                    like,
-                    like,
-                    like,
-                    like,
-                    like,
-                    limit_scan,
-                ),
+                where_params + (display_limit,),
             ).fetchall()
     except Exception as exc:  # noqa: BLE001
         return {"ok": False, "error": str(exc), "address": addr}
@@ -195,7 +182,6 @@ def inventory_email_address(
             if rec.get("address") != addr:
                 continue
             structured_hit = True
-            header_hits += 1
             header_fields_seen.add(rec.get("header_field") or "")
             dn = _norm_display(rec.get("display_name"))
             key = dn or "(empty_display_name)"
@@ -516,8 +502,8 @@ def find_addresses_for_person_forms(
 
     Two-pass scan on large Takeouts:
     1. Structured ``*_parsed`` display_name only (high signal; Peg Legg rows).
-    2. Broader From/To/CC/BCC/people[] prefilter, ordered so structured hits
-       still win within the LIMIT window.
+    2. Broader From/To/CC/BCC prefilter (never people[]), ordered so structured
+       hits still win within the LIMIT window.
     """
     from memorybox.person.comm_identity import (
         _display_matches_person,
@@ -674,7 +660,6 @@ def find_addresses_for_person_forms(
                     OR lower(coalesce((payload_json->'to')::text, '')) LIKE ANY(%s)
                     OR lower(coalesce((payload_json->'cc')::text, '')) LIKE ANY(%s)
                     OR lower(coalesce((payload_json->'bcc')::text, '')) LIKE ANY(%s)
-                    OR lower(coalesce((payload_json->'people')::text, '')) LIKE ANY(%s)
                     OR lower(coalesce((payload_json->'from_parsed')::text, '')) LIKE ANY(%s)
                     OR lower(coalesce((payload_json->'to_parsed')::text, '')) LIKE ANY(%s)
                     OR lower(coalesce((payload_json->'cc_parsed')::text, '')) LIKE ANY(%s)
@@ -690,7 +675,6 @@ def find_addresses_for_person_forms(
                     OR lower(coalesce((payload_json->'to')::text, '')) LIKE ANY(%s)
                     OR lower(coalesce((payload_json->'cc')::text, '')) LIKE ANY(%s)
                     OR lower(coalesce((payload_json->'bcc')::text, '')) LIKE ANY(%s)
-                    OR lower(coalesce((payload_json->'people')::text, '')) LIKE ANY(%s)
                   THEN 1
                   ELSE 2
                 END,
@@ -706,8 +690,6 @@ def find_addresses_for_person_forms(
                     patterns,
                     patterns,
                     patterns,
-                    patterns,
-                    order_patterns,
                     order_patterns,
                     order_patterns,
                     order_patterns,

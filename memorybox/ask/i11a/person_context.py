@@ -197,8 +197,46 @@ def _person_card(person_id: str, *, at: date | None) -> dict[str, Any] | None:
                     row["person_contact_status"] = c.get("status")
                     row["person_contact_id"] = c.get("id")
                     break
+    trusted_addrs: set[str] = set()
+    try:
+        from memorybox.person.trusted_identity import trusted_emails_for_people
+
+        trusted_addrs = trusted_emails_for_people({str(person_id)})
+    except Exception:  # noqa: BLE001
+        trusted_addrs = set()
+    if trusted_addrs:
+        filtered: list[dict[str, Any]] = []
+        for row in comm_ids:
+            kind = str(row.get("contact_kind") or "")
+            val = str(row.get("value_text") or "")
+            try:
+                from memorybox.person.phone_map import normalize_handle
+
+                n = normalize_handle(val)
+            except Exception:  # noqa: BLE001
+                n = val.strip().lower()
+            if kind == "email" or "@" in n:
+                if n in trusted_addrs:
+                    filtered.append(row)
+            else:
+                filtered.append(row)
+        comm_ids = filtered
+    elif comm_ids:
+        comm_ids = [
+            row
+            for row in comm_ids
+            if str(row.get("contact_kind") or "") != "email"
+            and "@" not in str(row.get("value_text") or "")
+        ]
     if not comm_ids:
-        comm_ids = contacts
+        comm_ids = [
+            c
+            for c in contacts
+            if str(c.get("contact_kind") or "") != "email"
+            or (
+                str(c.get("value_text") or "").strip().lower() in trusted_addrs
+            )
+        ]
     known: list[dict[str, Any]] = []
     allowed: set[str] = set()
     try:
@@ -296,10 +334,21 @@ def slim_person_context_for_model(ctx: dict[str, Any] | None) -> dict[str, Any]:
                     "role_kind": row.get("role_kind"),
                 }
             )
+        comm = []
+        for row in (card.get("communication_identities") or [])[:16]:
+            if not isinstance(row, dict):
+                continue
+            comm.append(
+                {
+                    "contact_kind": row.get("contact_kind") or row.get("identity_kind"),
+                    "value_text": row.get("value_text") or row.get("address_normalized"),
+                }
+            )
         return {
             "person_id": card.get("person_id"),
             "display_name": card.get("display_name"),
             "age_at_period": card.get("age_at_period"),
+            "communication_identities": comm,
             "known_relationships": known,
             "allowed_relationship_labels": card.get("allowed_relationship_labels") or [],
         }

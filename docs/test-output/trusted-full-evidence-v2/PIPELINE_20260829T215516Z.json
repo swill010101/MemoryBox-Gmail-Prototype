@@ -1,0 +1,287 @@
+{
+  "ok": false,
+  "phase": 2,
+  "person_name": "Peggy George",
+  "phase1_path": "C:\\MemoryBox\\docs\\test-output\\trusted-full-evidence-v2\\PHASE1_20260829T215516Z.json",
+  "phase1": {
+    "ok": true,
+    "trusted_addresses": [
+      "peggo417@hotmail.com"
+    ],
+    "trusted": [
+      {
+        "address": "peggo417@hotmail.com",
+        "reason": "owner_or_operator_attested",
+        "actor_key": "comm_identity_operator_attested",
+        "provenance_source": "comm_identity_operator_attested",
+        "prior_status": "confirmed"
+      }
+    ],
+    "counts": {
+      "confirmed": 1,
+      "candidate": 699,
+      "observed": 0,
+      "trusted_for_retrieval": 1
+    },
+    "per_trusted_address": [
+      {
+        "address": "peggo417@hotmail.com",
+        "why_trusted": "owner_or_operator_attested",
+        "actor_key": "comm_identity_operator_attested",
+        "provenance_source": "comm_identity_operator_attested",
+        "unique_structured_messages": 0
+      }
+    ],
+    "unique_emails_by_trusted_address": {
+      "peggo417@hotmail.com": 5716
+    },
+    "unique_only_via_trusted_address": {
+      "peggo417@hotmail.com": 5716
+    },
+    "shared_across_trusted_addresses": 0,
+    "unsupported_retrieve_addresses": [],
+    "unsupported_retrieve_hit_count": 0,
+    "retrieve_hit_count": 5716,
+    "gallery_email_count": 5716,
+    "phase1_summary": "TRUSTED-IDENTITY PHASE 1 REPORT\nperson: Peggy George\nok: True\ncounts: {\"confirmed\": 1, \"candidate\": 699, \"observed\": 0, \"trusted_for_retrieval\": 1}\ntrusted identities:\n  - peggo417@hotmail.com why=owner_or_operator_attested actor=comm_identity_operator_attested source=comm_identity_operator_attested structured=0 retrieve_hits=5716 unique_only=5716\nshared_across_trusted: 0\nretrieve_hit_count: 5716\ngallery_email_count: 5716\nunsupported_retrieve_addresses: []\nunsupported_retrieve_hit_count: 0"
+  },
+  "freeze": {
+    "ok": true,
+    "fixture_path": "C:\\MemoryBox\\docs\\test-output\\trusted-full-evidence-v2\\FEV2_20260829T215848Z_3cf95fa4.json",
+    "input_sha256": "3cf95fa44db905af8a10f250e89da9d59138d315c6ff7272c1e2957b231259e8",
+    "evidence_type_counts": {
+      "person": 1,
+      "email": 1
+    },
+    "email_evidence_ids": [
+      "992d6453-3376-425c-a62b-fa05db1b4a3e",
+      "email:992d6453-3376-425c-a62b-fa05db1b4a3e"
+    ],
+    "trusted_addresses": [
+      "peggo417@hotmail.com"
+    ],
+    "error": null
+  },
+  "larger_trusted_set": {
+    "ok": false,
+    "deferred": true,
+    "reason": "after_both_single_pass_reports_only"
+  },
+  "gemma": {
+    "ok": false,
+    "skipped": null,
+    "error": null,
+    "model": "gemma4:26b",
+    "input_sha256": "3cf95fa44db905af8a10f250e89da9d59138d315c6ff7272c1e2957b231259e8",
+    "report_path": "C:\\MemoryBox\\docs\\test-output\\trusted-full-evidence-v2\\FEV2REPORT_ollama_gemma4-26b_3cf95fa4.json",
+    "phase2_report": {
+      "model": "gemma4:26b",
+      "provider": "ollama",
+      "config": {
+        "chunking": false,
+        "stateless": true,
+        "established_gemma": "gemma4:26b"
+      },
+      "input_sha256": "3cf95fa44db905af8a10f250e89da9d59138d315c6ff7272c1e2957b231259e8",
+      "evidence_type_counts": {
+        "email": 1,
+        "person": 1
+      },
+      "schema_ok": true,
+      "validation": {
+        "email_evidence_in_fixture": 2,
+        "email_evidence_cited": [],
+        "claims_citing_email": 0,
+        "email_reached_model": true,
+        "email_affected_output": false,
+        "unsupported_claims": [],
+        "ok": false,
+        "invented_evidence_ids": [
+          "email_1",
+          "person_1"
+        ],
+        "rows_missing_provenance": [],
+        "schema_ok": true
+      },
+      "episodes": [
+        {
+          "title": "Email from Peg Legg regarding Christmas Wish List",
+          "when": "2005-12-09",
+          "summary": "Peg Legg (peggo417@hotmail.com) sent an email to tom.will@sbcglobal.net with the subject 'FW: christmas wish list', mentioning 'webbing a few later on tonight' and signing off as 'Pegs'.",
+          "evidence_ids": [
+            "email_1"
+          ]
+        }
+      ],
+      "claims": [
+        {
+          "text": "The person with ID cc6eb438-86a9-405c-89aa-6c6fc43de076 is associated with the identity Peg Legg and the email peggo417@hotmail.com.",
+          "evidence_ids": [
+            "person_1"
+          ]
+        },
+        {
+          "text": "The identity peggo417@hotmail.com is associated with multiple names including Mom, Peg, Peg Legg, Pegg Legg, Peggy George, and Pegs.",
+          "evidence_ids": [
+            "person_1",
+            "email_1"
+          ]
+        },
+        {
+          "text": "The person with ID cc6eb438-86a9-405c-89aa-6c6fc43de076 is linked to numerous aliases including Joe Lindemann (incubusfan111@hotmail.com), Jay McFarling (jaym@bohnanddawson.com), and Stephanie Caratenuto (jsjc2@hotmail.com).",
+          "evidence_ids": [
+            "person_1"
+          ]
+        }
+      ],
+      "relationships": [
+        {
+          "from": "cc6eb438-86a9-405c-89aa-6c6fc43de076",
+          "to": "0ba1f217-7894-4927-8981-668606967991",
+          "role": "parent",
+          "evidence_ids": [
+            "person_1"
+          ]
+        },
+        {
+          "from": "cc6eb438-86a9-405c-89aa-6c6fc43de076",
+          "to": "126e2fd4-6947-4971-9984-493969969999",
+          "role": "spouse",
+          "evidence_ids": [
+            "person_1"
+          ]
+        },
+        {
+          "from": "cc6eb438-86a9-405c-89aa-6c6fc43de076",
+          "to": "33509a4c-7894-4927-8981-668606967991",
+          "role": "sibling",
+          "evidence_ids": [
+            "person_1"
+          ]
+        }
+      ],
+      "narrator": "MemoryBox Full-Evidence V2",
+      "email_evidence_that_affected_output": [],
+      "accepted_claim_evidence_ids": [
+        "person_1",
+        "email_1"
+      ],
+      "invented_or_unsupported_claims": [
+        {
+          "id": "email_1",
+          "reason": "invented_evidence_id"
+        },
+        {
+          "id": "person_1",
+          "reason": "invented_evidence_id"
+        }
+      ],
+      "relationship_errors": [
+        {
+          "reason": "invented_evidence_id",
+          "id": "person_1",
+          "row": {
+            "from": "cc6eb438-86a9-405c-89aa-6c6fc43de076",
+            "to": "0ba1f217-7894-4927-8981-668606967991",
+            "role": "parent",
+            "evidence_ids": [
+              "person_1"
+            ]
+          }
+        },
+        {
+          "reason": "invented_evidence_id",
+          "id": "person_1",
+          "row": {
+            "from": "cc6eb438-86a9-405c-89aa-6c6fc43de076",
+            "to": "126e2fd4-6947-4971-9984-493969969999",
+            "role": "spouse",
+            "evidence_ids": [
+              "person_1"
+            ]
+          }
+        },
+        {
+          "reason": "invented_evidence_id",
+          "id": "person_1",
+          "row": {
+            "from": "cc6eb438-86a9-405c-89aa-6c6fc43de076",
+            "to": "33509a4c-7894-4927-8981-668606967991",
+            "role": "sibling",
+            "evidence_ids": [
+              "person_1"
+            ]
+          }
+        }
+      ],
+      "gallery": {},
+      "timing_ms": 11333,
+      "tokens": {
+        "prompt": null,
+        "completion": null,
+        "total": null,
+        "fixture_estimated": 241081
+      },
+      "chunking": false,
+      "email_reached_model_and_grounded_output": false,
+      "ok": false
+    }
+  },
+  "sol": {
+    "ok": false,
+    "skipped": true,
+    "error": "no_sol_model — set --sol-model or MEMORYBOX_CLOUD_LLM_MODEL",
+    "model": null,
+    "input_sha256": "3cf95fa44db905af8a10f250e89da9d59138d315c6ff7272c1e2957b231259e8",
+    "report_path": null,
+    "phase2_report": null
+  },
+  "phase3_structure": {
+    "ok": true,
+    "input_sha256": "3cf95fa44db905af8a10f250e89da9d59138d315c6ff7272c1e2957b231259e8",
+    "unchunked_item_count": 2,
+    "chunk_count": 2,
+    "l1_unit_kinds": {
+      "person_facts": 1,
+      "email_thread": 1
+    },
+    "evidence_lost": [],
+    "duplicate_item_ids": [],
+    "unsupported_additions": [],
+    "chronological_units": true,
+    "tokens": {
+      "unchunked_estimated": 241081,
+      "chunk_estimated": [
+        239920,
+        36
+      ],
+      "chunk_estimated_sum": 239956
+    },
+    "missing_semantic_unit_kinds": [],
+    "completeness_proof": {
+      "ok": true,
+      "eligible_item_count": 2,
+      "chunked_item_count": 2,
+      "unique_eligible": 2,
+      "unique_chunked": 2,
+      "union_equals_normalized": true,
+      "multiset_equal": true,
+      "missing_item_ids": [],
+      "extra_item_ids": [],
+      "duplicated_across_chunks": [],
+      "no_cross_chunk_duplicates": true,
+      "llm_invoked": false,
+      "production_semantics_changed": false
+    },
+    "chunking": true,
+    "model_calls": 0,
+    "note": "Structure-only compare. Run models per chunk only after both single-pass Gemma and Sol reports exist for this fixture hash."
+  },
+  "phase3_model_per_chunk": {
+    "ran": false,
+    "reason": "blocked_until_both_single_pass_reports_exist_for_same_fixture_hash"
+  },
+  "stop": "phase_2_models_not_run — fixture frozen; run Gemma then Sol on FlightSim",
+  "fixture_path": "C:\\MemoryBox\\docs\\test-output\\trusted-full-evidence-v2\\FEV2_20260829T215848Z_3cf95fa4.json",
+  "input_sha256": "3cf95fa44db905af8a10f250e89da9d59138d315c6ff7272c1e2957b231259e8"
+}

@@ -64,7 +64,7 @@ def _pick_exact_peggy_george(people: list[Any]) -> Any | None:
                     FROM person_contact_points
                     WHERE person_id = %s::uuid
                       AND contact_kind = 'email'
-                      AND status = 'confirmed'
+                      AND retrieval_trust = 'trusted'
                       AND lower(value_text) = %s
                     LIMIT 1
                     """,
@@ -149,6 +149,50 @@ def _fmt_addrs(val: Any) -> str | None:
         return ", ".join(bits) or None
     s = str(val).strip()
     return s or None
+
+
+def _structured_email_fields(payload: dict[str, Any], hit: dict[str, Any]) -> dict[str, Any]:
+    """From/To/CC/BCC + parsed addresses only. Never people[]."""
+    from_parsed = [
+        r
+        for r in list((payload or {}).get("from_parsed") or [])
+        if isinstance(r, dict)
+    ]
+    to_parsed = [
+        r for r in list((payload or {}).get("to_parsed") or []) if isinstance(r, dict)
+    ]
+    cc_parsed = [
+        r for r in list((payload or {}).get("cc_parsed") or []) if isinstance(r, dict)
+    ]
+    bcc_parsed = [
+        r for r in list((payload or {}).get("bcc_parsed") or []) if isinstance(r, dict)
+    ]
+    addrs: list[str] = []
+    names: list[str] = []
+    for rec in from_parsed + to_parsed + cc_parsed + bcc_parsed:
+        addr = str(rec.get("normalized") or rec.get("address") or "").strip().lower()
+        if addr and "@" in addr and addr not in addrs:
+            addrs.append(addr)
+        dn = str(rec.get("display_name") or "").strip()
+        if dn and dn not in names:
+            names.append(dn)
+    from_h = hit.get("from_header") or (payload or {}).get("from")
+    if not from_h and from_parsed:
+        rec = from_parsed[0]
+        addr = str(rec.get("address") or rec.get("normalized") or "").strip()
+        dn = str(rec.get("display_name") or "").strip()
+        from_h = f"{dn} <{addr}>".strip() if dn and addr else addr
+    return {
+        "from": from_h,
+        "to": hit.get("to_header") or _fmt_addrs((payload or {}).get("to")),
+        "cc": _fmt_addrs((payload or {}).get("cc")),
+        "bcc": _fmt_addrs((payload or {}).get("bcc")),
+        "from_parsed": from_parsed,
+        "to_parsed": to_parsed,
+        "cc_parsed": cc_parsed,
+        "addresses": addrs,
+        "participants": names,
+    }
 
 
 def _mailbox_skip(payload: dict[str, Any]) -> str | None:
@@ -440,7 +484,9 @@ def retrieve_eligible_hits(
 
     try:
         if plan.want_communication or plan.want_calendar:
-            evidence = list(R.search_evidence_pg(plan) or [])
+            evidence = R.filter_email_hits_to_trusted(
+                plan, list(R.search_evidence_pg(plan) or [])
+            )
         if plan.want_still or plan.want_photo:
             # limit=0 → unbounded person library (no year-fair sample for tell).
             photos, photo_status = R.search_photos(plan, photo, limit=0)
@@ -588,7 +634,9 @@ def _normalize_comm_hit(hit: Any, *, retrieved_index: int) -> tuple[dict[str, An
         "sms_message",
         "text_message",
     }
-    raw_body = str((payload or {}).get("body_text") or d.get("excerpt") or "")
+    from memorybox.ask.authored import plain_email_body
+
+    raw_body = plain_email_body(payload or {}, excerpt=str(d.get("excerpt") or ""))
     when = str(d.get("sent_at") or (payload or {}).get("sent_at") or "") or None
     thread_id = (
         d.get("thread_id")
@@ -628,22 +676,28 @@ def _normalize_comm_hit(hit: Any, *, retrieved_index: int) -> tuple[dict[str, An
     # email (default for remaining communication)
     subject = str((payload or {}).get("subject") or d.get("summary") or "")
     body, flags = _complete_email_body(raw_body)
-    from_h = d.get("from_header") or (payload or {}).get("from")
-    to_h = d.get("to_header") or _fmt_addrs((payload or {}).get("to"))
-    cc_h = _fmt_addrs((payload or {}).get("cc"))
+    structured = _structured_email_fields(payload or {}, d)
+    from_h = structured["from"]
+    to_h = structured["to"]
+    cc_h = structured["cc"]
     item = {
         "item_id": _stable_item_id("email", eid),
         "source": "email",
         "native_id": eid,
+        "evidence_id": eid,
         "timestamp": when,
         "from": from_h,
         "to": to_h,
         "cc": cc_h,
+        "bcc": structured["bcc"],
+        "from_parsed": structured["from_parsed"],
+        "to_parsed": structured["to_parsed"],
+        "addresses": structured["addresses"],
         "subject": subject,
         "body": body,
         "raw_body_chars": len(raw_body),
         "thread_id": thread_id,
-        "participants": people,
+        "participants": structured["participants"],
         "direction": d.get("direction") or (payload or {}).get("direction"),
         "attachments": d.get("attachments") or (payload or {}).get("attachments") or [],
         "normalization": {
@@ -956,6 +1010,79 @@ def _normalize_guided(row: dict[str, Any], *, retrieved_index: int) -> dict[str,
     return item
 
 
+_UNTRUSTED_ALIAS_ACTORS = frozenset(
+    {"comm_identity_expand", "sms_auto_map", "comm_identity_header_alias"}
+)
+_UNTRUSTED_ALIAS_SOURCES = frozenset(
+    {
+        "comm_identity_expand",
+        "comm_identity_header_alias",
+        "address_centric",
+        "corroborated_header_identity",
+    }
+)
+
+
+def _canonical_alias_texts(aliases: Any, *, limit: int = 32) -> list[str]:
+    """Owner/profile names only. Header/auto-expand aliases are not Person facts."""
+    out: list[str] = []
+    seen: set[str] = set()
+    for raw in aliases or []:
+        if not isinstance(raw, dict):
+            text = str(raw or "").strip()
+            actor = ""
+            source = ""
+        else:
+            text = str(raw.get("alias_text") or raw.get("alias") or "").strip()
+            actor = str(raw.get("actor_key") or "").strip()
+            prov = raw.get("provenance") or {}
+            source = str(prov.get("source") or raw.get("source") or "").strip()
+        if not text or "@" in text:
+            continue
+        if actor in _UNTRUSTED_ALIAS_ACTORS or source in _UNTRUSTED_ALIAS_SOURCES:
+            continue
+        key = text.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(text)
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _slim_relationship_rows_for_facts(rows: Any, *, limit: int) -> list[dict[str, Any]]:
+    """Ids + role only. Provenance blobs must not eat the single-pass window."""
+    out: list[dict[str, Any]] = []
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        out.append(
+            {
+                "from_person_id": row.get("from_person_id"),
+                "to_person_id": row.get("to_person_id"),
+                "role_kind": row.get("role_kind"),
+            }
+        )
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _slim_comm_identities_for_facts(rows: Any) -> list[dict[str, Any]]:
+    slim: list[dict[str, Any]] = []
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        slim.append(
+            {
+                "contact_kind": row.get("contact_kind") or row.get("identity_kind"),
+                "value_text": row.get("value_text") or row.get("address_normalized"),
+            }
+        )
+    return slim[:16]
+
+
 def _person_fact_items(person_context: dict[str, Any]) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
     focals = list(person_context.get("focal_subjects") or [])
@@ -968,10 +1095,16 @@ def _person_fact_items(person_context: dict[str, Any]) -> list[dict[str, Any]]:
             "birth_date": card.get("birth_date"),
             "death_date": card.get("death_date"),
             "age_at_period": card.get("age_at_period"),
-            "aliases": card.get("aliases") or [],
-            "communication_identities": card.get("communication_identities") or [],
-            "known_relationships": card.get("known_relationships") or [],
-            "inferred_relationships": card.get("inferred_relationships") or [],
+            "aliases": _canonical_alias_texts(card.get("aliases") or []),
+            "communication_identities": _slim_comm_identities_for_facts(
+                card.get("communication_identities") or []
+            ),
+            "known_relationships": _slim_relationship_rows_for_facts(
+                card.get("known_relationships") or [], limit=24
+            ),
+            "inferred_relationships": _slim_relationship_rows_for_facts(
+                card.get("inferred_relationships") or [], limit=12
+            ),
             "allowed_relationship_labels": card.get("allowed_relationship_labels") or [],
         }
         body = json.dumps(facts, indent=2, default=str, ensure_ascii=False)
@@ -1114,6 +1247,10 @@ def _item_text_blob(item: dict[str, Any]) -> str:
 def format_item_block(item: dict[str, Any]) -> str:
     src = str(item.get("source") or "other").upper()
     lines = [f"### [{src}] {item.get('item_id')}"]
+    if item.get("cite_as"):
+        lines.append(f"cite_as: {item.get('cite_as')}")
+    if item.get("evidence_id") or item.get("native_id"):
+        lines.append(f"evidence_id: {item.get('evidence_id') or item.get('native_id')}")
     if item.get("timestamp"):
         lines.append(f"timestamp: {item.get('timestamp')}")
     if item.get("title"):
@@ -1126,10 +1263,12 @@ def format_item_block(item: dict[str, Any]) -> str:
         lines.append(f"to: {item.get('to')}")
     if item.get("cc"):
         lines.append(f"cc: {item.get('cc')}")
-    if item.get("participants"):
+    if item.get("participants") and src != "EMAIL":
         lines.append(f"participants: {', '.join(str(p) for p in item['participants'])}")
-    if item.get("people"):
+    if item.get("people") and src != "EMAIL":
         lines.append(f"people: {', '.join(str(p) for p in item['people'])}")
+    if src == "EMAIL" and item.get("addresses"):
+        lines.append("addresses: " + ", ".join(str(a) for a in item["addresses"]))
     if item.get("location") or item.get("place"):
         lines.append(f"location: {item.get('location') or item.get('place')}")
     if item.get("thread_id"):

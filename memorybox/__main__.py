@@ -7,8 +7,21 @@ import os
 import sys
 
 
+def _apply_trusted_identity_flightsim_env() -> None:
+    """Match tools/flightsim-trusted-identity-gate.cmd: P1=1 and no ALLOW_DEV."""
+    os.environ["MEMORYBOX_P1_RUNTIME_HOST"] = "1"
+    os.environ["MEMORYBOX_ALLOW_DEV_DEFAULTS"] = ""
+
+
 def main(argv: list[str] | None = None) -> int:
-    if "MEMORYBOX_DATABASE_URL" not in os.environ and "MEMORYBOX_ALLOW_DEV_DEFAULTS" not in os.environ:
+    argv_list = list(sys.argv[1:] if argv is None else argv)
+    # Apply --flightsim before any Settings cache or ALLOW_DEV desktop default.
+    if "--flightsim" in argv_list:
+        _apply_trusted_identity_flightsim_env()
+    elif (
+        "MEMORYBOX_DATABASE_URL" not in os.environ
+        and "MEMORYBOX_ALLOW_DEV_DEFAULTS" not in os.environ
+    ):
         os.environ["MEMORYBOX_ALLOW_DEV_DEFAULTS"] = "1"
 
     parser = argparse.ArgumentParser(prog="memorybox", description="MemoryBox monolith CLI")
@@ -634,6 +647,141 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Use FlightSim archive (no local seed)",
     )
+    p_prove_trust = sub.add_parser(
+        "prove-trusted-identity-retrieval",
+        help="Trusted-for-retrieval identity boundary (Phase 1)",
+    )
+    p_prove_trust.add_argument(
+        "--flightsim",
+        action="store_true",
+        help="Reclassify and report the named Person on the live archive",
+    )
+    p_report_trust = sub.add_parser(
+        "report-trusted-identities",
+        help="Reclassify and report trusted-for-retrieval emails for a Person",
+    )
+    p_report_trust.add_argument("--person", required=True, help="Person display name")
+    p_reclass_trust = sub.add_parser(
+        "reclassify-trusted-identities",
+        help="Demote unsupported auto-confirmed emails; keep evidence rows",
+    )
+    p_reclass_trust.add_argument("--person", required=True, help="Person display name")
+    p_attest_trust = sub.add_parser(
+        "attest-trusted-identity",
+        help="Owner/operator attest an email as trusted for retrieve",
+    )
+    p_attest_trust.add_argument("--person", required=True, help="Person display name")
+    p_attest_trust.add_argument("--email", required=True, help="Email address")
+    p_fev2_pre = sub.add_parser(
+        "fev2-preflight",
+        help="Phase 2: record Ollama Gemma + cloud Sol readiness (no freeze)",
+    )
+    p_fev2_pre.add_argument("--out-dir", default=None)
+    p_fev2_freeze = sub.add_parser(
+        "freeze-trusted-full-evidence-v2",
+        help="Phase 2: freeze trusted Full-Evidence V2 fixture (no model, no chunking)",
+    )
+    p_fev2_freeze.add_argument("--person", required=True, help="Person display name")
+    p_fev2_freeze.add_argument(
+        "--ask",
+        default="tell me what you know about this person",
+        help="Ask used to retrieve eligible evidence",
+    )
+    p_fev2_freeze.add_argument("--out-dir", default=None)
+    p_fev2_freeze.add_argument(
+        "--complete-trusted",
+        action="store_true",
+        help="Phase 3 larger trusted set: do not token-cap trusted email",
+    )
+    p_fev2_freeze.add_argument(
+        "--reuse-if-coverage-ok",
+        action="store_true",
+        help="Reuse a year-fair freeze already in --out-dir (skip a second Takeout scan)",
+    )
+    p_fev2_run = sub.add_parser(
+        "run-trusted-full-evidence-v2",
+        help="Phase 2: replay frozen FEV2 through ollama (Gemma) or cloud (Sol)",
+    )
+    p_fev2_run.add_argument("--fixture", required=True)
+    p_fev2_run.add_argument("--provider", required=True, help="ollama or cloud")
+    p_fev2_run.add_argument("--model", required=True)
+    p_fev2_run.add_argument("--timeout-seconds", type=int, default=1800)
+    p_fev2_run.add_argument("--out-dir", default=None)
+    p_fev2_chunks = sub.add_parser(
+        "compare-trusted-fev2-chunks",
+        help="Phase 3: semantic chunk vs unchunked frozen FEV2 (structure only)",
+    )
+    p_fev2_chunks.add_argument("--fixture", required=True)
+    p_fev2_chunk_models = sub.add_parser(
+        "run-trusted-fev2-chunked-models",
+        help="Phase 3: model-per-chunk after both single-pass reports exist",
+    )
+    p_fev2_chunk_models.add_argument("--fixture", default="")
+    p_fev2_chunk_models.add_argument("--gemma-report", default="")
+    p_fev2_chunk_models.add_argument("--sol-report", default="")
+    p_fev2_chunk_models.add_argument(
+        "--from-dir",
+        default="",
+        help="Discover latest FEV2 fixture + Phase 2 reports in this directory",
+    )
+    p_fev2_chunk_models.add_argument("--gemma-model", default=None)
+    p_fev2_chunk_models.add_argument("--sol-model", default="")
+    p_fev2_chunk_models.add_argument("--timeout-seconds", type=int, default=1800)
+    p_fev2_chunk_models.add_argument("--out-dir", default=None)
+    p_fev2_pipe = sub.add_parser(
+        "run-trusted-evidence-pipeline",
+        help="Phase 1 report → freeze FEV2 → Gemma/Sol (stop before Phase 3)",
+    )
+    p_fev2_pipe.add_argument("--person", required=True, help="Person display name")
+    p_fev2_pipe.add_argument("--ask", default="tell me what you know about this person")
+    p_fev2_pipe.add_argument("--out-dir", default=None)
+    p_fev2_pipe.add_argument(
+        "--skip-models",
+        action="store_true",
+        help="Freeze only; do not call Gemma or Sol",
+    )
+    p_fev2_pipe.add_argument("--gemma-model", default=None)
+    p_fev2_pipe.add_argument("--sol-model", default=None)
+    p_fev2_pipe.add_argument("--timeout-seconds", type=int, default=1800)
+    p_fev2_pipe.add_argument(
+        "--flightsim",
+        action="store_true",
+        help="Set MEMORYBOX_P1_RUNTIME_HOST=1",
+    )
+    p_fev2_pipe.add_argument(
+        "--authorize-phase3",
+        action="store_true",
+        help="Run Phase 3 chunk compare + model-per-chunk. Default off.",
+    )
+    p_email_review = sub.add_parser(
+        "prepare-trusted-email-review",
+        help="Date-bounded trusted email conversations for human review (no models)",
+    )
+    p_email_review.add_argument("--person", required=True)
+    p_email_review.add_argument(
+        "--ask",
+        default="tell me what you know about this person",
+    )
+    p_email_review.add_argument("--out-dir", default=None)
+    p_email_review.add_argument("--interval-start", default=None, help="YYYY-MM-DD")
+    p_email_review.add_argument("--interval-end", default=None, help="YYYY-MM-DD")
+    p_email_review.add_argument(
+        "--flightsim",
+        action="store_true",
+        help="Set MEMORYBOX_P1_RUNTIME_HOST=1",
+    )
+    p_email_review_gemma = sub.add_parser(
+        "run-trusted-email-review-gemma",
+        help="Later: Ollama/Gemma-only replay of an approved review paste (no Sol)",
+    )
+    p_email_review_gemma.add_argument("--paste-dir", required=True)
+    p_email_review_gemma.add_argument(
+        "--require-hash",
+        required=True,
+        help="Frozen SHA-256 of MODEL_PASTE.txt; refuse if different",
+    )
+    p_email_review_gemma.add_argument("--timeout-seconds", type=int, default=1800)
+    p_email_review_gemma.add_argument("--flightsim", action="store_true")
     p_i11a_enrich.add_argument(
         "--ask",
         default="tell me what you know about Peggy",
@@ -852,7 +1000,7 @@ def main(argv: list[str] | None = None) -> int:
     p_serve.add_argument("--host", default=None)
     p_serve.add_argument("--port", type=int, default=None)
 
-    args = parser.parse_args(argv)
+    args = parser.parse_args(argv_list)
 
     if args.cmd == "migrate":
         from memorybox.migrate import migrate
@@ -1360,6 +1508,221 @@ def main(argv: list[str] | None = None) -> int:
                     f"===== FAILURE_DIAG written: {gate.get('failure_diag_path')} =====",
                     flush=True,
                 )
+        return 0 if payload.get("ok") else 1
+
+    if args.cmd == "prove-trusted-identity-retrieval":
+        from memorybox.person.trusted_identity_acceptance import (
+            run_prove_trusted_identity_retrieval,
+        )
+
+        if args.flightsim:
+            _apply_trusted_identity_flightsim_env()
+        payload = run_prove_trusted_identity_retrieval(flightsim=bool(args.flightsim))
+        print(json.dumps(payload, indent=2, default=str), flush=True)
+        summary = (payload.get("flightsim_report") or {}).get("phase1_summary")
+        if summary:
+            print("\n===== PHASE1_SUMMARY (paste this) =====", flush=True)
+            print(summary, flush=True)
+        return 0 if payload.get("ok") else 1
+
+    if args.cmd == "report-trusted-identities":
+        from memorybox.person.trusted_identity import report_named_person_identity_trust
+
+        payload = report_named_person_identity_trust(args.person)
+        print(json.dumps(payload, indent=2, default=str), flush=True)
+        if payload.get("phase1_summary"):
+            print("\n===== PHASE1_SUMMARY (paste this) =====", flush=True)
+            print(payload["phase1_summary"], flush=True)
+        return 0 if payload.get("ok") else 1
+
+    if args.cmd == "reclassify-trusted-identities":
+        from memorybox.person.trusted_identity import report_named_person_identity_trust
+
+        payload = report_named_person_identity_trust(args.person)
+        print(json.dumps(payload, indent=2, default=str), flush=True)
+        return 0 if payload.get("ok") else 1
+
+    if args.cmd == "attest-trusted-identity":
+        from memorybox.person import resolve_person_by_name
+        from memorybox.person.trusted_identity import attest_trusted_email
+
+        resolved = resolve_person_by_name(
+            args.person, create_if_missing=False, confirm=False
+        )
+        payload = attest_trusted_email(resolved.person_id, args.email)
+        print(json.dumps(payload, indent=2, default=str), flush=True)
+        return 0 if payload.get("upserted") or payload.get("address") else 1
+
+    if args.cmd == "fev2-preflight":
+        from pathlib import Path as _Pre
+
+        from memorybox.ask.i11a.trusted_fev2_preflight import run_phase2_preflight
+
+        payload = run_phase2_preflight(
+            out_dir=_Pre(args.out_dir) if args.out_dir else None,
+        )
+        print(json.dumps(payload, indent=2, default=str), flush=True)
+        return 0
+
+    if args.cmd == "freeze-trusted-full-evidence-v2":
+        from pathlib import Path
+
+        from memorybox.person import resolve_person_by_name
+        from memorybox.ask.i11a.trusted_full_evidence_v2 import (
+            freeze_trusted_full_evidence_v2,
+        )
+
+        resolved = resolve_person_by_name(
+            args.person, create_if_missing=False, confirm=False
+        )
+        out = Path(args.out_dir) if args.out_dir else None
+        if getattr(args, "reuse_if_coverage_ok", False):
+            from memorybox.ask.i11a.trusted_evidence_pipeline import (
+                _DEFAULT_OUT,
+                load_reusable_year_fair_freeze,
+            )
+
+            reused = load_reusable_year_fair_freeze(
+                out if out is not None else _DEFAULT_OUT,
+                str(resolved.person_id),
+            )
+            if reused:
+                print(json.dumps(reused, indent=2, default=str), flush=True)
+                return 0
+        payload = freeze_trusted_full_evidence_v2(
+            person_id=resolved.person_id,
+            ask=args.ask,
+            out_dir=out,
+            complete_trusted=bool(getattr(args, "complete_trusted", False)),
+        )
+        printed = {k: v for k, v in payload.items() if k != "fixture"}
+        print(json.dumps(printed, indent=2, default=str), flush=True)
+        return 0 if payload.get("ok") else 1
+
+    if args.cmd == "run-trusted-full-evidence-v2":
+        from pathlib import Path as _Path
+        from memorybox.ask.i11a.trusted_full_evidence_v2 import (
+            run_trusted_full_evidence_v2,
+        )
+
+        payload = run_trusted_full_evidence_v2(
+            args.fixture,
+            provider=args.provider,
+            model=args.model,
+            timeout_seconds=int(args.timeout_seconds),
+            out_dir=_Path(args.out_dir) if args.out_dir else None,
+        )
+        print(json.dumps(payload, indent=2, default=str), flush=True)
+        return 0 if payload.get("ok") else 1
+
+    if args.cmd == "compare-trusted-fev2-chunks":
+        from memorybox.ask.i11a.trusted_fev2_chunking import compare_chunked_vs_unchunked
+
+        payload = compare_chunked_vs_unchunked(args.fixture)
+        print(json.dumps(payload, indent=2, default=str), flush=True)
+        return 0 if payload.get("ok") else 1
+
+    if args.cmd == "run-trusted-fev2-chunked-models":
+        from pathlib import Path as _PC
+
+        from memorybox.ask.i11a.trusted_fev2_chunking import (
+            run_chunked_models_after_single_pass,
+            run_chunked_models_from_dir,
+        )
+        from memorybox.ask.i11a.trusted_full_evidence_v2 import ESTABLISHED_GEMMA_MODEL
+
+        if args.from_dir:
+            payload = run_chunked_models_from_dir(
+                args.from_dir,
+                gemma_model=args.gemma_model or ESTABLISHED_GEMMA_MODEL,
+                sol_model=args.sol_model or None,
+                timeout_seconds=int(args.timeout_seconds),
+            )
+        elif args.fixture and args.gemma_report and args.sol_report and args.sol_model:
+            payload = run_chunked_models_after_single_pass(
+                args.fixture,
+                gemma_report_path=args.gemma_report,
+                sol_report_path=args.sol_report,
+                gemma_model=args.gemma_model or ESTABLISHED_GEMMA_MODEL,
+                sol_model=args.sol_model,
+                timeout_seconds=int(args.timeout_seconds),
+                out_dir=_PC(args.out_dir) if args.out_dir else None,
+            )
+        else:
+            payload = {
+                "ok": False,
+                "error": "need --from-dir or --fixture + --gemma-report + --sol-report + --sol-model",
+            }
+        print(json.dumps(payload, indent=2, default=str), flush=True)
+        return 0 if payload.get("ok") else 1
+
+    if args.cmd == "run-trusted-evidence-pipeline":
+        from pathlib import Path as _P
+
+        from memorybox.ask.i11a.trusted_evidence_pipeline import (
+            run_trusted_evidence_pipeline,
+        )
+        from memorybox.ask.i11a.trusted_full_evidence_v2 import ESTABLISHED_GEMMA_MODEL
+
+        if args.flightsim:
+            _apply_trusted_identity_flightsim_env()
+        payload = run_trusted_evidence_pipeline(
+            person_name=args.person,
+            out_dir=_P(args.out_dir) if args.out_dir else None,
+            run_models=not bool(args.skip_models),
+            gemma_model=args.gemma_model or ESTABLISHED_GEMMA_MODEL,
+            sol_model=args.sol_model,
+            timeout_seconds=int(args.timeout_seconds),
+            ask=args.ask,
+            authorize_phase3=bool(getattr(args, "authorize_phase3", False)),
+        )
+        print(json.dumps(payload, indent=2, default=str), flush=True)
+        summary = ((payload.get("phase1") or {}).get("phase1_summary"))
+        if summary:
+            print("\n===== PHASE1_SUMMARY (paste this) =====", flush=True)
+            print(summary, flush=True)
+        phase2_summary = payload.get("phase2_summary")
+        if phase2_summary:
+            print("\n===== PHASE2_SUMMARY (paste this) =====", flush=True)
+            print(phase2_summary, flush=True)
+        return 0 if payload.get("ok") else 1
+
+    if args.cmd == "prepare-trusted-email-review":
+        from pathlib import Path as _P
+
+        from memorybox.ask.i11a.trusted_email_review import prepare_trusted_email_review
+
+        if args.flightsim:
+            _apply_trusted_identity_flightsim_env()
+        payload = prepare_trusted_email_review(
+            person_name=args.person,
+            ask=args.ask,
+            out_dir=_P(args.out_dir) if args.out_dir else None,
+            interval_start=args.interval_start,
+            interval_end=args.interval_end,
+        )
+        print(json.dumps(payload, indent=2, default=str), flush=True)
+        report = payload.get("preparation_report_text")
+        if report:
+            print("\n===== PREPARATION_REPORT =====", flush=True)
+            print(report, flush=True)
+        print(
+            "STOP. Inspect MODEL_PASTE.txt locally. Do not run Gemma until approved.",
+            flush=True,
+        )
+        return 0 if payload.get("ok") else 1
+
+    if args.cmd == "run-trusted-email-review-gemma":
+        from memorybox.ask.i11a.trusted_email_review import run_trusted_email_review_gemma
+
+        if args.flightsim:
+            _apply_trusted_identity_flightsim_env()
+        payload = run_trusted_email_review_gemma(
+            paste_dir=args.paste_dir,
+            require_hash=args.require_hash,
+            timeout_seconds=int(args.timeout_seconds),
+        )
+        print(json.dumps(payload, indent=2, default=str), flush=True)
         return 0 if payload.get("ok") else 1
 
     if args.cmd == "i11a-enrich":
