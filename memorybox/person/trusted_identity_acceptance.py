@@ -2739,6 +2739,7 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         fetch_rfc_neighbor_rows,
         group_conversations,
         looks_like_residual_promo,
+        NeighborFetchError,
         NeighborFetchResult,
         participation_exclusion_reason,
         plan_gemma_replay,
@@ -2766,6 +2767,10 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
     )
     from memorybox.ask.authored import authored_email_text as _authored_text
     from datetime import datetime, timezone as _tz
+    from memorybox.ingest.rfc_lookup import (
+        extract_rfc_lookup_rows,
+        replace_communication_rfc_ids,
+    )
 
     _html = classify_body_source(
         {
@@ -3732,18 +3737,24 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         detail=[r.evidence_id for r in _linked],
     )
     _fetch_src = inspect.getsource(fetch_rfc_neighbor_rows)
+    _where = _RFC_NEIGHBOR_SQL.split("WHERE", 1)[1].split("ORDER BY", 1)[0]
     _check(
         "review_rfc_neighbor_fetch_is_targeted_and_keyset_paged",
-        "ANY(%s)" in _RFC_NEIGHBOR_SQL
+        "communication_rfc_ids" in _RFC_NEIGHBOR_SQL
+        and "r.rfc_id = ANY(%s)" in _RFC_NEIGHBOR_SQL
+        and "regexp_split_to_array" not in _RFC_NEIGHBOR_SQL
+        and "jsonb_array_elements" not in _RFC_NEIGHBOR_SQL
+        and "payload_json" not in _where
         and "LIMIT 8000" not in _RFC_NEIGHBOR_SQL
         and "OFFSET" not in _RFC_NEIGHBOR_SQL.upper()
         and "{id_clause}" in _RFC_NEIGHBOR_SQL
         and "id > %s" in _fetch_src
-        and "regexp_split_to_array" in _RFC_NEIGHBOR_SQL
         and "NeighborFetchResult" in _fetch_src
-        and "rfc_neighbor_query_saturated" not in _fetch_src,
+        and "rfc_neighbor_query_saturated" not in _fetch_src
+        and "statement_timeout" in _fetch_src,
         checks,
         problems,
+        detail=_where,
     )
 
     def _neighbor_catalog_row(
@@ -3949,6 +3960,137 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         checks,
         problems,
         detail=_db_fail,
+    )
+    _mixed_rows = extract_rfc_lookup_rows(
+        {
+            "rfc_message_id": "ABC@Example.TEST",
+            "in_reply_to": "<Parent@x.test> <Other@x.test>",
+            "in_reply_to_ids": ["<Array@x.test>"],
+            "references": "<RefOne@x.test> <RefTwo@x.test>",
+        }
+    )
+    _mixed_ids = {rfc for rfc, _role in _mixed_rows}
+    _check(
+        "review_rfc_lookup_extracts_mixed_case_and_multiple_parents",
+        "<abc@example.test>" in _mixed_ids
+        and "<parent@x.test>" in _mixed_ids
+        and "<other@x.test>" in _mixed_ids
+        and "<array@x.test>" in _mixed_ids
+        and "<refone@x.test>" in _mixed_ids
+        and ("<abc@example.test>", "own") in _mixed_rows
+        and extract_rfc_lookup_rows(
+            {
+                "rfc_message_id": "ABC@Example.TEST",
+                "in_reply_to": "<Parent@x.test> <Other@x.test>",
+                "in_reply_to_ids": ["<Array@x.test>"],
+                "references": "<RefOne@x.test> <RefTwo@x.test>",
+            }
+        )
+        == _mixed_rows,
+        checks,
+        problems,
+        detail=_mixed_rows,
+    )
+    _huge = "<" + ("x" * 2000) + "@example.test>"
+    _html = "<div class=\"" + ("a" * 2800) + "\">"
+    _skipped = extract_rfc_lookup_rows(
+        {
+            "rfc_message_id": _huge,
+            "in_reply_to": _html,
+            "references": "<ok@x.test>",
+        }
+    )
+    _check(
+        "review_rfc_lookup_skips_oversize_and_html_tokens",
+        _skipped == [("<ok@x.test>", "references")]
+        and _norm_rfc(_huge) == ""
+        and _norm_rfc(_html) == "",
+        checks,
+        problems,
+        detail=_skipped,
+    )
+
+    class _LookupMem:
+        def __init__(self) -> None:
+            self.rows: list[tuple] = []
+
+        def execute(self, sql, params=None):
+            text = str(sql)
+            if "DELETE FROM communication_rfc_ids" in text:
+                eid = params[0]
+                self.rows = [r for r in self.rows if r[0] != eid]
+            elif "INSERT INTO communication_rfc_ids" in text:
+                self.rows.append(tuple(params))
+            return []
+
+    _mem = _LookupMem()
+    _payload = {
+        "rfc_message_id": "<Idem@x.test>",
+        "in_reply_to": "<Prev@x.test>",
+        "evidence_channel": "email",
+    }
+    replace_communication_rfc_ids("e1", _payload, conn=_mem)
+    first_n = len(_mem.rows)
+    replace_communication_rfc_ids("e1", _payload, conn=_mem)
+    _check(
+        "review_rfc_lookup_backfill_replace_is_idempotent",
+        first_n == 2
+        and len(_mem.rows) == 2
+        and {r[1] for r in _mem.rows} == {"<idem@x.test>", "<prev@x.test>"},
+        checks,
+        problems,
+        detail=_mem.rows,
+    )
+    _lookup_sqls = [sql for sql, _p in _conn3.executes]
+    _check(
+        "review_runtime_neighbor_walk_queries_indexed_lookup",
+        _lookup_sqls
+        and all("communication_rfc_ids" in sql for sql in _lookup_sqls)
+        and all("regexp_split_to_array" not in sql for sql in _lookup_sqls)
+        and all("jsonb_array_elements" not in sql for sql in _lookup_sqls),
+        checks,
+        problems,
+        detail=_lookup_sqls[:2],
+    )
+    try:
+        fetch_rfc_neighbor_rows([_child], connection_factory=_factory3, stage_deadline_s=0)
+        _deadline = {"ok": True}
+    except NeighborFetchError as exc:
+        _deadline = {"ok": False, "code": exc.code, "detail": exc.detail}
+    _check(
+        "review_neighbor_stage_deadline_fails_closed",
+        _deadline.get("ok") is False
+        and _deadline.get("code") == "rfc_neighbor_stage_deadline"
+        and "elapsed_ms" in (_deadline.get("detail") or {}),
+        checks,
+        problems,
+        detail=_deadline,
+    )
+    review_src = inspect.getsource(prepare_trusted_email_review)
+    _check(
+        "review_neighbors_only_stops_before_packet_and_models",
+        "neighbors_only" in review_src
+        and "packet_built" in review_src
+        and review_src.find("if neighbors_only:")
+        < review_src.find("load_payloads")
+        and review_src.find("if neighbors_only:")
+        < review_src.find("measure_prompt_tokens")
+        and review_src.find("if neighbors_only:")
+        < review_src.find("render_model_paste"),
+        checks,
+        problems,
+    )
+    _comms = (
+        __import__("pathlib")
+        .Path(__import__("memorybox.ingest.comms_email", fromlist=["*"]).__file__)
+        .read_text(encoding="utf-8")
+    )
+    _check(
+        "review_email_ingest_maintains_rfc_lookup",
+        "replace_communication_rfc_ids" in _comms
+        and _comms.count("replace_communication_rfc_ids") >= 2,
+        checks,
+        problems,
     )
     _keep_love = PreparedMessage(
         evidence_id="keep-love",

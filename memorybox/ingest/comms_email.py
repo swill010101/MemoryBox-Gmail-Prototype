@@ -8,6 +8,7 @@ from uuid import UUID
 
 from memorybox.db import connection
 from memorybox.ingest import store as store
+from memorybox.ingest.rfc_lookup import replace_communication_rfc_ids
 from memorybox.ingest.sms_attach_cache import put_media_object
 from memorybox.person.phone_map import (
     _index_confirmed_handles,
@@ -371,6 +372,12 @@ def ingest_mbox(
                         )
                         if old_ver != PARSER_VERSION:
                             store.update_evidence_payload(existing, payload, conn=conn)
+                            replace_communication_rfc_ids(
+                                existing,
+                                payload,
+                                conn=conn,
+                                evidence_kind="communication",
+                            )
                             upgraded += 1
                         else:
                             skipped += 1
@@ -383,6 +390,12 @@ def ingest_mbox(
                         summary=(msg.subject or "(no subject)")[:500],
                         payload=payload,
                         conn=conn,
+                    )
+                    replace_communication_rfc_ids(
+                        eid,
+                        payload,
+                        conn=conn,
+                        evidence_kind="communication",
                     )
                     existing_hashes[msg.content_hash] = eid
                     inserted += 1
