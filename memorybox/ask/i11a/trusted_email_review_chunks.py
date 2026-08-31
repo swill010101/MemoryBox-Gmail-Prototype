@@ -567,13 +567,42 @@ def _load_frozen_parent(paste_dir: Path | str, require_hash: str) -> dict[str, A
     paste_text = paste_bytes.decode("utf-8")
     digest = _sha256_bytes(paste_bytes)
     want = (require_hash or "").strip().lower()
+    smap_hint: str | None = None
+    if smap_path.is_file():
+        try:
+            smap_hint = str(
+                json.loads(smap_path.read_text(encoding="utf-8")).get("frozen_input_sha256")
+                or ""
+            ).strip().lower() or None
+        except (json.JSONDecodeError, OSError):
+            smap_hint = None
     if not want or digest.lower() != want:
-        return {
+        err: dict[str, Any] = {
             "ok": False,
             "error": "parent_hash_mismatch",
             "expected": want,
             "actual": digest,
+            "paste_path": str(paste_path),
         }
+        if smap_hint:
+            err["source_map_frozen_input_sha256"] = smap_hint
+            if smap_hint == digest.lower():
+                err["hint"] = (
+                    "MODEL_PASTE.txt matches SOURCE_MAP.json but not --require-hash. "
+                    "Use the actual hash above, or locate the review directory "
+                    "for the frozen packet you intended."
+                )
+            else:
+                err["hint"] = (
+                    "MODEL_PASTE.txt does not match SOURCE_MAP.json or --require-hash. "
+                    "Do not chunk until the paste and sidecar are reconciled."
+                )
+        else:
+            err["hint"] = (
+                "Use the actual hash of MODEL_PASTE.txt as --require-hash, or point "
+                "--paste-dir at the review directory for the intended frozen packet."
+            )
+        return err
     smap_bytes = smap_path.read_bytes()
     smap_text = smap_bytes.decode("utf-8")
     smap_sha = _sha256_bytes(smap_bytes)
