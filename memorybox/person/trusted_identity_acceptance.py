@@ -4603,6 +4603,7 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         "prepare-trusted-email-review" in main_txt
         and "prepare-trusted-email-review-chunks" in main_txt
         and "resync-trusted-email-review-freeze" in main_txt
+        and "resync-trusted-email-review-chunk-manifest" in main_txt
         and "run-trusted-email-review-gemma" in main_txt
         and "run-trusted-email-review-chunk-gemma" in main_txt
         and "trusted-email-review/**" in gi_txt,
@@ -4613,6 +4614,7 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         prepare_trusted_email_review_chunks,
         plan_trusted_email_review_chunk_gemma,
         resync_trusted_email_review_freeze,
+        resync_trusted_email_review_chunk_manifest,
     )
 
     def _write_review_parent(td: _Ptmp, *, conversations, cites_extra=None) -> tuple[str, dict]:
@@ -4867,6 +4869,43 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         checks,
         problems,
         detail=_resync,
+    )
+    _chunk_resync_td = _Ptmp(tempfile.mkdtemp())
+    _chunk_resync_hash, _ = _write_review_parent(
+        _chunk_resync_td,
+        conversations=[
+            {"grouping": "singleton", "messages": [_early]},
+        ],
+    )
+    _chunk_resync_prep = prepare_trusted_email_review_chunks(
+        paste_dir=_chunk_resync_td,
+        require_hash=_chunk_resync_hash,
+        target_estimated_tokens=2500,
+    )
+    _bad_manifest = json.loads(
+        (_chunk_resync_td / "CHUNK_MANIFEST.json").read_text(encoding="utf-8")
+    )
+    _bad_manifest["chunks"][0]["chunk_sha256"] = "0" * 64
+    (_chunk_resync_td / "CHUNK_MANIFEST.json").write_text(
+        json.dumps(_bad_manifest), encoding="utf-8"
+    )
+    _chunk_resync = resync_trusted_email_review_chunk_manifest(
+        paste_dir=_chunk_resync_td,
+        require_parent_hash=_chunk_resync_hash,
+    )
+    _fixed_manifest = json.loads(
+        (_chunk_resync_td / "CHUNK_MANIFEST.json").read_text(encoding="utf-8")
+    )
+    _on_disk = __import__("hashlib").sha256(
+        (_chunk_resync_td / "CHUNK_001_MODEL_PASTE.txt").read_bytes()
+    ).hexdigest()
+    _check(
+        "review_chunk_manifest_resync_matches_on_disk_hashes",
+        _chunk_resync.get("ok") is True
+        and _fixed_manifest["chunks"][0]["chunk_sha256"] == _on_disk,
+        checks,
+        problems,
+        detail=_chunk_resync,
     )
     _split_td = _Ptmp(tempfile.mkdtemp())
     _big_turns = [

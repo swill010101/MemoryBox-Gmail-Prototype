@@ -780,6 +780,84 @@ def resync_trusted_email_review_freeze(
     }
 
 
+def resync_trusted_email_review_chunk_manifest(
+    *,
+    paste_dir: Path | str,
+    require_parent_hash: str,
+) -> dict[str, Any]:
+    """Re-hash CHUNK_* files on disk and update CHUNK_MANIFEST.json."""
+    artifact_dir, _, _ = _resolve_paste_paths(paste_dir)
+    parent = _load_frozen_parent(paste_dir, require_parent_hash)
+    if not parent.get("ok"):
+        return parent
+    manifest_path = artifact_dir / "CHUNK_MANIFEST.json"
+    if not manifest_path.is_file():
+        return {"ok": False, "error": "chunk_manifest_missing", "path": str(manifest_path)}
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if str(manifest.get("parent_packet_sha256") or "").lower() != str(
+        parent["paste_sha256"]
+    ).lower():
+        return {"ok": False, "error": "manifest_parent_hash_mismatch"}
+    rows = list(manifest.get("chunks") or [])
+    if not rows:
+        return {"ok": False, "error": "chunk_manifest_empty"}
+    updated: list[dict[str, Any]] = []
+    changes: list[dict[str, Any]] = []
+    for row in sorted(rows, key=lambda r: int(r.get("chunk_index") or 0)):
+        chunk_file = artifact_dir / str(row.get("paste_file") or "")
+        if not chunk_file.is_file():
+            return {
+                "ok": False,
+                "error": "chunk_paste_missing",
+                "path": str(chunk_file),
+            }
+        on_disk = chunk_file.read_bytes()
+        new_sha = _sha256_bytes(on_disk)
+        old_sha = str(row.get("chunk_sha256") or "").strip().lower()
+        paste_on_disk = on_disk.decode("utf-8")
+        new_row = dict(row)
+        new_row["chunk_sha256"] = new_sha
+        new_row["estimated_input_tokens"] = _estimate_chunk_tokens(paste_on_disk)
+        updated.append(new_row)
+        if old_sha != new_sha.lower():
+            changes.append(
+                {
+                    "chunk_index": int(row.get("chunk_index") or 0),
+                    "previous_sha256": old_sha,
+                    "reviewed_sha256": new_sha,
+                }
+            )
+    manifest["chunks"] = updated
+    manifest_text = json.dumps(manifest, indent=2, default=str, ensure_ascii=False) + "\n"
+    manifest_path.write_text(manifest_text, encoding="utf-8", newline="\n")
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    report_path = artifact_dir / "CHUNK_MANIFEST_RESYNC_REPORT.txt"
+    report_lines = [
+        "TRUSTED EMAIL REVIEW — CHUNK MANIFEST RESYNC REPORT",
+        f"resynced_at: {stamp}",
+        f"parent_packet_sha256: {parent['paste_sha256']}",
+        f"chunks_updated: {len(changes)}",
+        json.dumps(changes, indent=2),
+    ]
+    report_path.write_text("\n".join(report_lines) + "\n", encoding="utf-8", newline="\n")
+    return {
+        "ok": True,
+        "paste_dir": str(artifact_dir),
+        "parent_packet_sha256": parent["paste_sha256"],
+        "manifest_path": str(manifest_path),
+        "changes": changes,
+        "models_called": False,
+        "chunks": [
+            {
+                "chunk_index": r.get("chunk_index"),
+                "chunk_sha256": r.get("chunk_sha256"),
+                "paste_file": r.get("paste_file"),
+            }
+            for r in updated
+        ],
+    }
+
+
 def _parse_parent_paste(paste_text: str) -> dict[str, Any]:
     _, rest = paste_text.split(_MARKER_SYSTEM, 1)
     if _REPLAY_BIND_MARK not in rest or _MARKER_USER not in rest:
@@ -848,11 +926,16 @@ def prepare_trusted_email_review_chunks(
             user_header=user_header,
             units=units,
         )
-        sha = _sha256_text(paste)
         cite_as = [c for u in units for c in u.cite_as]
         evidence_ids = _evidence_ids_for_cites(cite_as, citations)
         ds, de = _date_range(units)
-        est = _estimate_chunk_tokens(paste)
+        fname = f"CHUNK_{i:03d}_MODEL_PASTE.txt"
+        chunk_path = out / fname
+        chunk_path.write_text(paste, encoding="utf-8", newline="\n")
+        on_disk = chunk_path.read_bytes()
+        paste_on_disk = on_disk.decode("utf-8")
+        sha = _sha256_bytes(on_disk)
+        est = _estimate_chunk_tokens(paste_on_disk)
         unavoidable = est > target_estimated_tokens
         unit_splits = [
             {
@@ -872,9 +955,9 @@ def prepare_trusted_email_review_chunks(
                 chunk_index=i,
                 units=units,
                 system=system,
-                user=paste.split(_MARKER_USER, 1)[1],
+                user=paste_on_disk.split(_MARKER_USER, 1)[1],
                 binding_json=binding_json,
-                paste_text=paste,
+                paste_text=paste_on_disk,
                 sha256=sha,
                 estimated_tokens=est,
                 date_start=ds,
@@ -888,8 +971,6 @@ def prepare_trusted_email_review_chunks(
                 unavoidable_oversize=unavoidable,
             )
         )
-        fname = f"CHUNK_{i:03d}_MODEL_PASTE.txt"
-        (out / fname).write_text(paste, encoding="utf-8")
     parent_cites = [str(c.get("cite_as") or "") for c in citations if c.get("cite_as")]
     chunk_cites: list[str] = []
     for ch in prepared:
@@ -1032,15 +1113,26 @@ def plan_trusted_email_review_chunk_gemma(
     if not chunk_file.is_file():
         return {"ok": False, "error": "chunk_paste_missing", "path": str(chunk_file)}
     chunk_text = chunk_file.read_text(encoding="utf-8")
-    chunk_sha = _sha256_text(chunk_text)
+    chunk_sha = _sha256_bytes(chunk_file.read_bytes())
     want_chunk = (require_chunk_hash or "").strip().lower()
     if not want_chunk or chunk_sha.lower() != want_chunk:
-        return {
+        manifest_sha = str(row.get("chunk_sha256") or "").strip().lower()
+        err = {
             "ok": False,
             "error": "chunk_hash_mismatch",
             "expected": want_chunk,
             "actual": chunk_sha,
+            "chunk_path": str(chunk_file),
         }
+        if manifest_sha and manifest_sha != chunk_sha.lower():
+            err["manifest_chunk_sha256"] = manifest_sha
+            err["hint"] = (
+                "CHUNK manifest hash does not match the file on disk. Use "
+                "resync-trusted-email-review-chunk-manifest, re-run "
+                "prepare-trusted-email-review-chunks, or pass --require-chunk-hash "
+                "from Get-FileHash on the chunk file you reviewed."
+            )
+        return err
     env_ctx = (os.environ.get("MEMORYBOX_FEV2_OLLAMA_NUM_CTX") or "").strip()
     if not env_ctx.isdigit() or int(env_ctx) != ADVERTISED_CONTEXT:
         return {
