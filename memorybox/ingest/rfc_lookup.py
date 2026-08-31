@@ -11,19 +11,37 @@ import time
 from typing import Any
 from uuid import UUID
 
-_RFC_ID = re.compile(r"<[^>]+>")
+_RFC_ID = re.compile(r"<[^<>\s]{1,200}@[^<>\s]{1,255}>")
 _SKIP_CHANNELS = frozenset({"sms", "text", "imessage", "mms", "rcs"})
 _BACKFILL_PAGE = 500
+RFC_ID_MAX_BYTES = 512
 LOOKUP_TABLE = "communication_rfc_ids"
 
 
 def _norm_rfc(raw: str) -> str:
+    """Canonical <local@host>. Empty if missing, folded, or too large for btree."""
     mid = (raw or "").strip()
-    if not mid:
+    if not mid or any(ch.isspace() for ch in mid):
         return ""
     if not mid.startswith("<") and "@" in mid:
         mid = f"<{mid}>"
-    return mid.lower()
+    mid = mid.lower()
+    if not (mid.startswith("<") and mid.endswith(">") and "@" in mid):
+        return ""
+    inner = mid[1:-1]
+    if (
+        not inner
+        or inner.count("@") < 1
+        or "<" in inner
+        or ">" in inner
+        or any(ch.isspace() for ch in inner)
+    ):
+        return ""
+    if len(mid.encode("utf-8")) > RFC_ID_MAX_BYTES:
+        return ""
+    if _RFC_ID.fullmatch(mid) is None:
+        return ""
+    return mid
 
 
 def _rfc_ids(*parts: Any) -> list[str]:
@@ -41,7 +59,15 @@ def _rfc_ids(*parts: Any) -> list[str]:
             bare = text.strip()
             if bare.startswith("<") and bare.endswith(">"):
                 found.append(bare)
-    return list(dict.fromkeys(x for x in found if x))
+    out: list[str] = []
+    seen: set[str] = set()
+    for raw in found:
+        nid = _norm_rfc(raw)
+        if not nid or nid in seen:
+            continue
+        seen.add(nid)
+        out.append(nid)
+    return out
 
 
 def is_email_communication(evidence_kind: str, payload: dict[str, Any] | None) -> bool:

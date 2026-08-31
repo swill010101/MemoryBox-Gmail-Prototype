@@ -3991,6 +3991,24 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         problems,
         detail=_mixed_rows,
     )
+    _huge = "<" + ("x" * 2000) + "@example.test>"
+    _html = "<div class=\"" + ("a" * 2800) + "\">"
+    _skipped = extract_rfc_lookup_rows(
+        {
+            "rfc_message_id": _huge,
+            "in_reply_to": _html,
+            "references": "<ok@x.test>",
+        }
+    )
+    _check(
+        "review_rfc_lookup_skips_oversize_and_html_tokens",
+        _skipped == [("<ok@x.test>", "references")]
+        and _norm_rfc(_huge) == ""
+        and _norm_rfc(_html) == "",
+        checks,
+        problems,
+        detail=_skipped,
+    )
 
     class _LookupMem:
         def __init__(self) -> None:

@@ -4,7 +4,8 @@
 
 CREATE TABLE IF NOT EXISTS communication_rfc_ids (
     evidence_id UUID NOT NULL REFERENCES evidence (id) ON DELETE CASCADE,
-    rfc_id      TEXT NOT NULL,
+    rfc_id      TEXT NOT NULL
+        CHECK (char_length(rfc_id) BETWEEN 3 AND 512),
     role        TEXT NOT NULL
         CHECK (role IN ('own', 'in_reply_to', 'references')),
     PRIMARY KEY (evidence_id, rfc_id, role)
