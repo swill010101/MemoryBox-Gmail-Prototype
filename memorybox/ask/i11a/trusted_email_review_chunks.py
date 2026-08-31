@@ -633,15 +633,14 @@ def _load_frozen_parent(paste_dir: Path | str, require_hash: str) -> dict[str, A
             err["hint"] = (
                 "SOURCE_MAP.json and PREPARATION_REPORT.txt agree, but MODEL_PASTE.txt "
                 "on disk was changed after prepare. Restore the original MODEL_PASTE.txt "
-                f"for hash {mapped}, or locate another REVIEW_* directory whose paste "
-                "matches that hash. Do not edit SOURCE_MAP.json alone."
+                f"for hash {mapped}, resync-trusted-email-review-freeze if the on-disk "
+                "paste is the reviewed canonical input, or locate another REVIEW_* directory."
             )
         elif report_hash and report_hash == digest.lower() and report_hash != mapped:
             err["hint"] = (
                 "MODEL_PASTE.txt matches PREPARATION_REPORT.txt but SOURCE_MAP.json is "
-                "stale. Re-run prepare-trusted-email-review to regenerate the sidecar, "
-                "or restore SOURCE_MAP.json from backup. Do not patch frozen_input_sha256 "
-                "without verifying citations still match the paste."
+                "stale. Run resync-trusted-email-review-freeze if the paste is reviewed "
+                "canonical, or re-run prepare-trusted-email-review."
             )
         else:
             err["hint"] = (
@@ -661,6 +660,123 @@ def _load_frozen_parent(paste_dir: Path | str, require_hash: str) -> dict[str, A
         "paste_sha256": digest,
         "source_map_sha256": smap_sha,
         "source_map": source_map,
+    }
+
+
+def _cite_as_in_paste(paste_text: str) -> list[str]:
+    if _MARKER_CONV in paste_text:
+        _, conv_blob = paste_text.split(_MARKER_CONV, 1)
+    else:
+        conv_blob = paste_text
+    return sorted(set(_CITE_TAG.findall(conv_blob)))
+
+
+def resync_trusted_email_review_freeze(
+    *,
+    paste_dir: Path | str,
+    require_paste_hash: str,
+) -> dict[str, Any]:
+    """Align SOURCE_MAP (and LOCAL_MANIFEST) to reviewed MODEL_PASTE on disk.
+
+    Never modifies MODEL_PASTE.txt. Refuses when paste cite_as tags disagree with
+    SOURCE_MAP citations — in that case re-prepare instead of patching hashes alone.
+    """
+    artifact_dir, paste_path, smap_path = _resolve_paste_paths(paste_dir)
+    if not paste_path.is_file():
+        return {"ok": False, "error": "model_paste_missing", "path": str(paste_path)}
+    if not smap_path.is_file():
+        return {"ok": False, "error": "source_map_missing", "path": str(smap_path)}
+    paste_bytes = paste_path.read_bytes()
+    paste_text = paste_bytes.decode("utf-8")
+    digest = _sha256_bytes(paste_bytes)
+    want = (require_paste_hash or "").strip().lower()
+    if not want or digest.lower() != want:
+        return {
+            "ok": False,
+            "error": "paste_hash_mismatch",
+            "expected": want,
+            "actual": digest,
+            "paste_path": str(paste_path),
+        }
+    if _MARKER_SYSTEM not in paste_text or _MARKER_USER not in paste_text:
+        return {"ok": False, "error": "paste_missing_markers"}
+    try:
+        source_map = json.loads(smap_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {"ok": False, "error": "source_map_invalid_json"}
+    old_hash = str(source_map.get("frozen_input_sha256") or "").strip().lower()
+    if old_hash == digest.lower():
+        return {
+            "ok": True,
+            "already_synced": True,
+            "paste_dir": str(artifact_dir),
+            "paste_sha256": digest,
+            "source_map_sha256": _file_sha256(smap_path),
+            "models_called": False,
+        }
+    citations = list(source_map.get("citations") or [])
+    paste_cites = _cite_as_in_paste(paste_text)
+    smap_cites = sorted(
+        {str(c.get("cite_as") or "") for c in citations if c.get("cite_as")}
+    )
+    missing_in_smap = sorted(set(paste_cites) - set(smap_cites))
+    missing_in_paste = sorted(set(smap_cites) - set(paste_cites))
+    if missing_in_smap or missing_in_paste:
+        return {
+            "ok": False,
+            "error": "cite_as_mismatch_between_paste_and_source_map",
+            "paste_sha256": digest,
+            "source_map_frozen_input_sha256": old_hash,
+            "missing_in_source_map": missing_in_smap,
+            "missing_in_paste": missing_in_paste,
+            "hint": (
+                "SOURCE_MAP citations do not match the reviewed paste. Re-run "
+                "prepare-trusted-email-review; do not patch frozen_input_sha256 alone."
+            ),
+        }
+    source_map["frozen_input_sha256"] = digest
+    smap_text = json.dumps(source_map, indent=2, default=str, ensure_ascii=False) + "\n"
+    smap_path.write_text(smap_text, encoding="utf-8", newline="\n")
+    smap_sha = _sha256_bytes(smap_text.encode("utf-8"))
+    manifest_path = artifact_dir / "LOCAL_MANIFEST.json"
+    if manifest_path.is_file():
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["frozen_input_sha256"] = digest
+            manifest_path.write_text(
+                json.dumps(manifest, indent=2, default=str, ensure_ascii=False) + "\n",
+                encoding="utf-8",
+                newline="\n",
+            )
+        except json.JSONDecodeError:
+            pass
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    report_lines = [
+        "TRUSTED EMAIL REVIEW — FREEZE RESYNC REPORT",
+        f"resynced_at: {stamp}",
+        "Models were not called.",
+        f"paste_path: {paste_path}",
+        f"previous_frozen_input_sha256: {old_hash}",
+        f"reviewed_paste_sha256: {digest}",
+        f"source_map_sha256: {smap_sha}",
+        f"cite_as_n: {len(paste_cites)}",
+        "MODEL_PASTE.txt was not modified.",
+    ]
+    report_path = artifact_dir / "FREEZE_RESYNC_REPORT.txt"
+    report_path.write_text("\n".join(report_lines) + "\n", encoding="utf-8", newline="\n")
+    return {
+        "ok": True,
+        "already_synced": False,
+        "paste_dir": str(artifact_dir),
+        "paste_sha256": digest,
+        "previous_frozen_input_sha256": old_hash,
+        "source_map_sha256": smap_sha,
+        "source_map_path": str(smap_path),
+        "report_path": str(report_path),
+        "models_called": False,
+        "hint": (
+            f"Sidecar synced to reviewed paste. Chunk with --require-hash {digest}."
+        ),
     }
 
 

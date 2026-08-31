@@ -4602,6 +4602,7 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         "review_cli_and_gitignore_keep_paste_off_github",
         "prepare-trusted-email-review" in main_txt
         and "prepare-trusted-email-review-chunks" in main_txt
+        and "resync-trusted-email-review-freeze" in main_txt
         and "run-trusted-email-review-gemma" in main_txt
         and "run-trusted-email-review-chunk-gemma" in main_txt
         and "trusted-email-review/**" in gi_txt,
@@ -4611,6 +4612,7 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
     from memorybox.ask.i11a.trusted_email_review_chunks import (
         prepare_trusted_email_review_chunks,
         plan_trusted_email_review_chunk_gemma,
+        resync_trusted_email_review_freeze,
     )
 
     def _write_review_parent(td: _Ptmp, *, conversations, cites_extra=None) -> tuple[str, dict]:
@@ -4825,6 +4827,46 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
         checks,
         problems,
         detail=_bad_smap,
+    )
+    _desync_td = _Ptmp(tempfile.mkdtemp())
+    _desync_hash, _ = _write_review_parent(
+        _desync_td,
+        conversations=[
+            {"grouping": "singleton", "messages": [_early]},
+        ],
+    )
+    _desync_smap = json.loads((_desync_td / "SOURCE_MAP.json").read_text(encoding="utf-8"))
+    _desync_smap["frozen_input_sha256"] = "0" * 64
+    (_desync_td / "SOURCE_MAP.json").write_text(json.dumps(_desync_smap), encoding="utf-8")
+    _desync_chunk = prepare_trusted_email_review_chunks(
+        paste_dir=_desync_td,
+        require_hash=_desync_hash,
+        target_estimated_tokens=2500,
+    )
+    _check(
+        "review_chunks_fail_closed_until_sidecar_resynced",
+        _desync_chunk.get("ok") is False
+        and "source_map_hash_mismatch" in str(_desync_chunk.get("error") or ""),
+        checks,
+        problems,
+    )
+    _resync = resync_trusted_email_review_freeze(
+        paste_dir=_desync_td,
+        require_paste_hash=_desync_hash,
+    )
+    _after_resync = prepare_trusted_email_review_chunks(
+        paste_dir=_desync_td,
+        require_hash=_desync_hash,
+        target_estimated_tokens=2500,
+    )
+    _check(
+        "review_resync_aligns_sidecar_to_reviewed_paste",
+        _resync.get("ok") is True
+        and _resync.get("models_called") is False
+        and _after_resync.get("ok") is True,
+        checks,
+        problems,
+        detail=_resync,
     )
     _split_td = _Ptmp(tempfile.mkdtemp())
     _big_turns = [

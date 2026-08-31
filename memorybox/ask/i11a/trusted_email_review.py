@@ -2554,11 +2554,10 @@ def prepare_trusted_email_review(
         + "\n\n===== USER QUESTION AND EVIDENCE =====\n"
         + user
     )
-    digest = hashlib.sha256(paste_text.encode("utf-8")).hexdigest()
+    (run_dir / "MODEL_PASTE.txt").write_text(paste_text, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256((run_dir / "MODEL_PASTE.txt").read_bytes()).hexdigest()
     if digest.startswith(_FORBIDDEN_FREEZE_PREFIX):
         return {"ok": False, "error": "hash_collision_forbidden_prefix"}
-
-    (run_dir / "MODEL_PASTE.txt").write_text(paste_text, encoding="utf-8")
     source_map = {
         "person_name": person_name,
         "person_id": pid,

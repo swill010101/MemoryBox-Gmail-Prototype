@@ -813,6 +813,21 @@ def main(argv: list[str] | None = None) -> int:
     )
     p_email_review_chunks.add_argument("--out-dir", default=None)
     p_email_review_chunks.add_argument("--flightsim", action="store_true")
+    p_email_review_resync = sub.add_parser(
+        "resync-trusted-email-review-freeze",
+        help="Sync SOURCE_MAP frozen hash to reviewed MODEL_PASTE on disk (never edits paste)",
+    )
+    p_email_review_resync.add_argument(
+        "--paste-dir",
+        required=True,
+        help="Review directory or MODEL_PASTE.txt path",
+    )
+    p_email_review_resync.add_argument(
+        "--require-paste-hash",
+        required=True,
+        help="SHA-256 of the reviewed MODEL_PASTE.txt on disk",
+    )
+    p_email_review_resync.add_argument("--flightsim", action="store_true")
     p_email_review_chunk_gemma = sub.add_parser(
         "run-trusted-email-review-chunk-gemma",
         help="Later: Ollama/Gemma on one selected chunk only (requires parent+chunk hash)",
@@ -1797,6 +1812,22 @@ def main(argv: list[str] | None = None) -> int:
             "STOP. Inspect CHUNK_* files locally. Do not run Gemma until a chunk is approved.",
             flush=True,
         )
+        return 0 if payload.get("ok") else 1
+
+    if args.cmd == "resync-trusted-email-review-freeze":
+        from pathlib import Path as _P
+
+        from memorybox.ask.i11a.trusted_email_review_chunks import (
+            resync_trusted_email_review_freeze,
+        )
+
+        if args.flightsim:
+            _apply_trusted_identity_flightsim_env()
+        payload = resync_trusted_email_review_freeze(
+            paste_dir=_P(args.paste_dir),
+            require_paste_hash=args.require_paste_hash,
+        )
+        print(json.dumps(payload, indent=2, default=str), flush=True)
         return 0 if payload.get("ok") else 1
 
     if args.cmd == "run-trusted-email-review-chunk-gemma":
