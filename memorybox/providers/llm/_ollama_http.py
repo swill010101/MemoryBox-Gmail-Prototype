@@ -175,6 +175,12 @@ def ollama_tags(base_url: str, timeout: int = 15) -> dict[str, Any]:
         return json.load(resp)
 
 
+def ollama_ps(base_url: str, timeout: int = 10) -> dict[str, Any]:
+    """Return Ollama /api/ps payload (models currently loaded / running)."""
+    with urllib.request.urlopen(f"{base_url.rstrip('/')}/api/ps", timeout=timeout) as resp:
+        return json.load(resp)
+
+
 def ollama_show(base_url: str, model: str, *, timeout: int = 15) -> dict[str, Any]:
     """Model metadata from /api/show. Does not generate tokens."""
     return _post_json(

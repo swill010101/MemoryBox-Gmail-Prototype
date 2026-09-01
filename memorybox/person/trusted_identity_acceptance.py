@@ -4601,10 +4601,358 @@ def run_prove_trusted_identity_retrieval(*, flightsim: bool = False) -> dict[str
     _check(
         "review_cli_and_gitignore_keep_paste_off_github",
         "prepare-trusted-email-review" in main_txt
+        and "prepare-trusted-email-review-chunks" in main_txt
+        and "resync-trusted-email-review-freeze" in main_txt
+        and "resync-trusted-email-review-chunk-manifest" in main_txt
         and "run-trusted-email-review-gemma" in main_txt
+        and "run-trusted-email-review-chunk-gemma" in main_txt
         and "trusted-email-review/**" in gi_txt,
         checks,
         problems,
+    )
+    from memorybox.ask.i11a.trusted_email_review_chunks import (
+        prepare_trusted_email_review_chunks,
+        plan_trusted_email_review_chunk_gemma,
+        resync_trusted_email_review_freeze,
+        resync_trusted_email_review_chunk_manifest,
+        run_trusted_email_review_chunk_gemma,
+    )
+
+    def _write_review_parent(td: _Ptmp, *, conversations, cites_extra=None) -> tuple[str, dict]:
+        system, user, cites = render_model_paste(
+            ask="tell me what you know about this person",
+            person_name="Peggy George",
+            trusted={"peggo417@hotmail.com"},
+            interval={"start": "2008-01-01", "end": "2012-12-31"},
+            conversations=conversations,
+        )
+        budget = {
+            "capacity_certainty": "advertised_only",
+            "proposed_request": {
+                "model": "gemma4:26b",
+                "provider": "ollama",
+                "num_ctx": 262144,
+                "num_predict": 4096,
+                "output_reserve": 4096,
+                "temperature": 0.1,
+            },
+            "prompt_tokens": 500000,
+            "usable_input_tokens": 255808,
+        }
+        smap = {
+            "budget": budget,
+            "citations": cites,
+            "conversations": cites_extra or [],
+            "person_name": "Peggy George",
+        }
+        digest = _write_bound_replay(td, system=system, user=user, source_map=smap)
+        smap["frozen_input_sha256"] = digest
+        smap["conversations"] = [
+            {
+                "grouping": c.get("grouping"),
+                "message_ids": [m.evidence_id for m in c["messages"]],
+            }
+            for c in conversations
+        ]
+        (td / "SOURCE_MAP.json").write_text(json.dumps(smap), encoding="utf-8")
+        return digest, smap
+
+    def _msg(eid: str, when: str, body: str) -> PreparedMessage:
+        return PreparedMessage(
+            evidence_id=eid,
+            sent_at=_parse_sent_at(when),
+            in_interval=True,
+            peggy_authored=True,
+            body_kind="plain_text",
+            authored=body,
+            quoted="",
+            quote_kept=False,
+            quote_uncertain=False,
+            payload={
+                "sent_at": when,
+                "body_text": body,
+                "from_parsed": [{"normalized": "peggo417@hotmail.com"}],
+            },
+            authorship_kind="personal",
+            peggy_personal=True,
+        )
+
+    _chunk_td = _Ptmp(tempfile.mkdtemp())
+    _early = _msg("e-2009", "2009-03-01T12:00:00Z", "Early note. " + ("a" * 4000))
+    _mid = _msg("e-2010", "2010-06-01T12:00:00Z", "Middle note. " + ("b" * 4000))
+    _late = _msg("e-2011", "2011-09-01T12:00:00Z", "Late note. " + ("c" * 4000))
+    _parent_hash, _ = _write_review_parent(
+        _chunk_td,
+        conversations=[
+            {
+                "grouping": "singleton",
+                "messages": [_late],
+            },
+            {
+                "grouping": "singleton",
+                "messages": [_early],
+            },
+            {
+                "grouping": "singleton",
+                "messages": [_mid],
+            },
+        ],
+    )
+    _chunk_a = prepare_trusted_email_review_chunks(
+        paste_dir=_chunk_td,
+        require_hash=_parent_hash,
+        target_estimated_tokens=2500,
+    )
+    _chunk_b = prepare_trusted_email_review_chunks(
+        paste_dir=_chunk_td,
+        require_hash=_parent_hash,
+        target_estimated_tokens=2500,
+    )
+    _manifest_a = json.loads((_chunk_td / "CHUNK_MANIFEST.json").read_text(encoding="utf-8"))
+    _manifest_b = json.loads((_chunk_td / "CHUNK_MANIFEST.json").read_text(encoding="utf-8"))
+    _first_dates = [
+        (c.get("date_range") or {}).get("start") for c in (_manifest_a.get("chunks") or [])
+    ]
+    _expected_dates = ["2009-03-01", "2010-06-01", "2011-09-01"]
+    _check(
+        "review_chunks_order_conversations_chronologically",
+        _chunk_a.get("ok") is True
+        and int(_chunk_a.get("chunk_count") or 0) >= 2
+        and _first_dates == sorted(_first_dates)
+        and _first_dates == _expected_dates
+        and _manifest_a["evidence_id_audit"]["ok"] is True,
+        checks,
+        problems,
+        detail={"dates": _first_dates, "chunks": _chunk_a.get("chunk_count")},
+    )
+    _within_target = all(
+        int(c.get("estimated_input_tokens") or 0) <= 2500
+        or bool(c.get("unavoidable_oversize"))
+        for c in (_manifest_a.get("chunks") or [])
+    )
+    _intact = all(
+        int(c.get("conversation_count") or 0) == 1 and int(c.get("message_count") or 0) == 1
+        for c in (_manifest_a.get("chunks") or [])
+    )
+    _check(
+        "review_chunks_keep_intact_conversations_when_fitting",
+        _intact and not (_manifest_a.get("conversation_splits") or []),
+        checks,
+        problems,
+        detail=_manifest_a.get("chunks"),
+    )
+    _check(
+        "review_chunks_respect_token_target_unless_unavoidable",
+        _within_target,
+        checks,
+        problems,
+        detail=[c.get("estimated_input_tokens") for c in (_manifest_a.get("chunks") or [])],
+    )
+    _check(
+        "review_chunks_evidence_ids_complete_no_dupes",
+        _manifest_a["evidence_id_audit"]["ok"] is True
+        and not _manifest_a["evidence_id_audit"]["missing_cite_as"]
+        and not _manifest_a["evidence_id_audit"]["duplicate_cite_as"],
+        checks,
+        problems,
+        detail=_manifest_a.get("evidence_id_audit"),
+    )
+    _check(
+        "review_chunks_are_deterministic",
+        _chunk_b.get("ok") is True
+        and _manifest_a.get("chunks") == _manifest_b.get("chunks"),
+        checks,
+        problems,
+    )
+    _chunk1_text = (_chunk_td / "CHUNK_001_MODEL_PASTE.txt").read_text(encoding="utf-8")
+    _check(
+        "review_chunk_prompt_warns_partial_evidence",
+        "chunk 1 of" in _chunk1_text.lower()
+        and "partial evidence" in _chunk1_text.lower()
+        and "incomplete by design" in _chunk1_text.lower()
+        and "No chunking" not in _chunk1_text.split("===== USER QUESTION AND EVIDENCE =====", 1)[0],
+        checks,
+        problems,
+    )
+    _bad_parent = prepare_trusted_email_review_chunks(
+        paste_dir=_chunk_td,
+        require_hash="0" * 64,
+        target_estimated_tokens=2500,
+    )
+    _check(
+        "review_chunks_fail_closed_on_parent_hash_mismatch",
+        _bad_parent.get("ok") is False
+        and "parent_hash_mismatch" in str(_bad_parent.get("error") or ""),
+        checks,
+        problems,
+        detail=_bad_parent,
+    )
+    _chunk1_sha = _manifest_a["chunks"][0]["chunk_sha256"]
+    _plan_ctx = plan_trusted_email_review_chunk_gemma(
+        paste_dir=_chunk_td,
+        require_parent_hash=_parent_hash,
+        chunk_index=1,
+        require_chunk_hash=_chunk1_sha,
+    )
+    _check(
+        "review_chunk_runner_requires_fev2_num_ctx",
+        _plan_ctx.get("ok") is False
+        and "fev2_num_ctx_required" in str(_plan_ctx.get("error") or ""),
+        checks,
+        problems,
+        detail=_plan_ctx,
+    )
+    _run_src = inspect.getsource(run_trusted_email_review_chunk_gemma)
+    _check(
+        "review_chunk_runner_emits_progress_diagnostics",
+        "CHUNK GEMMA: preparing" in _run_src
+        and "installed and ready" in _run_src
+        and "waiting for response" in _run_src
+        and "ollama_has_model" in _run_src
+        and "settings" not in _run_src,
+        checks,
+        problems,
+    )
+    _check(
+        "review_chunk_prepare_never_calls_models",
+        _chunk_a.get("models_called") is False and "models_called" in _manifest_a,
+        checks,
+        problems,
+    )
+    _smap_td = _Ptmp(tempfile.mkdtemp())
+    _smap_hash, _ = _write_review_parent(
+        _smap_td,
+        conversations=[
+            {"grouping": "singleton", "messages": [_early]},
+        ],
+    )
+    _smap_bad = json.loads((_smap_td / "SOURCE_MAP.json").read_text(encoding="utf-8"))
+    _smap_bad["frozen_input_sha256"] = "0" * 64
+    (_smap_td / "SOURCE_MAP.json").write_text(json.dumps(_smap_bad), encoding="utf-8")
+    _bad_smap = prepare_trusted_email_review_chunks(
+        paste_dir=_smap_td,
+        require_hash=_smap_hash,
+        target_estimated_tokens=2500,
+    )
+    _check(
+        "review_chunks_fail_closed_on_source_map_hash_mismatch",
+        _bad_smap.get("ok") is False
+        and "source_map_hash_mismatch" in str(_bad_smap.get("error") or ""),
+        checks,
+        problems,
+        detail=_bad_smap,
+    )
+    _desync_td = _Ptmp(tempfile.mkdtemp())
+    _desync_hash, _ = _write_review_parent(
+        _desync_td,
+        conversations=[
+            {"grouping": "singleton", "messages": [_early]},
+        ],
+    )
+    _desync_smap = json.loads((_desync_td / "SOURCE_MAP.json").read_text(encoding="utf-8"))
+    _desync_smap["frozen_input_sha256"] = "0" * 64
+    (_desync_td / "SOURCE_MAP.json").write_text(json.dumps(_desync_smap), encoding="utf-8")
+    _desync_chunk = prepare_trusted_email_review_chunks(
+        paste_dir=_desync_td,
+        require_hash=_desync_hash,
+        target_estimated_tokens=2500,
+    )
+    _check(
+        "review_chunks_fail_closed_until_sidecar_resynced",
+        _desync_chunk.get("ok") is False
+        and "source_map_hash_mismatch" in str(_desync_chunk.get("error") or ""),
+        checks,
+        problems,
+    )
+    _resync = resync_trusted_email_review_freeze(
+        paste_dir=_desync_td,
+        require_paste_hash=_desync_hash,
+    )
+    _after_resync = prepare_trusted_email_review_chunks(
+        paste_dir=_desync_td,
+        require_hash=_desync_hash,
+        target_estimated_tokens=2500,
+    )
+    _check(
+        "review_resync_aligns_sidecar_to_reviewed_paste",
+        _resync.get("ok") is True
+        and _resync.get("models_called") is False
+        and _after_resync.get("ok") is True,
+        checks,
+        problems,
+        detail=_resync,
+    )
+    _chunk_resync_td = _Ptmp(tempfile.mkdtemp())
+    _chunk_resync_hash, _ = _write_review_parent(
+        _chunk_resync_td,
+        conversations=[
+            {"grouping": "singleton", "messages": [_early]},
+        ],
+    )
+    _chunk_resync_prep = prepare_trusted_email_review_chunks(
+        paste_dir=_chunk_resync_td,
+        require_hash=_chunk_resync_hash,
+        target_estimated_tokens=2500,
+    )
+    _bad_manifest = json.loads(
+        (_chunk_resync_td / "CHUNK_MANIFEST.json").read_text(encoding="utf-8")
+    )
+    _bad_manifest["chunks"][0]["chunk_sha256"] = "0" * 64
+    (_chunk_resync_td / "CHUNK_MANIFEST.json").write_text(
+        json.dumps(_bad_manifest), encoding="utf-8"
+    )
+    _chunk_resync = resync_trusted_email_review_chunk_manifest(
+        paste_dir=_chunk_resync_td,
+        require_parent_hash=_chunk_resync_hash,
+    )
+    _fixed_manifest = json.loads(
+        (_chunk_resync_td / "CHUNK_MANIFEST.json").read_text(encoding="utf-8")
+    )
+    _on_disk = __import__("hashlib").sha256(
+        (_chunk_resync_td / "CHUNK_001_MODEL_PASTE.txt").read_bytes()
+    ).hexdigest()
+    _check(
+        "review_chunk_manifest_resync_matches_on_disk_hashes",
+        _chunk_resync.get("ok") is True
+        and _fixed_manifest["chunks"][0]["chunk_sha256"] == _on_disk,
+        checks,
+        problems,
+        detail=_chunk_resync,
+    )
+    _split_td = _Ptmp(tempfile.mkdtemp())
+    _big_turns = [
+        _msg(f"big-{i}", f"2012-0{(i % 9) + 1}-01T12:00:00Z", "X" * 5000)
+        for i in range(8)
+    ]
+    _split_hash, _ = _write_review_parent(
+        _split_td,
+        conversations=[
+            {
+                "grouping": "confirmed",
+                "grouping_detail": "shared_thread_id_or_in_reply_to_match",
+                "messages": _big_turns,
+            }
+        ],
+    )
+    _split_res = prepare_trusted_email_review_chunks(
+        paste_dir=_split_td,
+        require_hash=_split_hash,
+        target_estimated_tokens=6000,
+    )
+    _split_manifest = json.loads((_split_td / "CHUNK_MANIFEST.json").read_text(encoding="utf-8"))
+    _check(
+        "review_chunks_split_oversized_conversation_at_turns",
+        _split_res.get("ok") is True
+        and int(_split_res.get("chunk_count") or 0) >= 2
+        and (_split_manifest.get("conversation_splits") or [])
+        and (
+            "CONTINUATION" in (_split_td / "CHUNK_001_MODEL_PASTE.txt").read_text(encoding="utf-8")
+            or "CONTINUATION"
+            in (_split_td / "CHUNK_002_MODEL_PASTE.txt").read_text(encoding="utf-8")
+        ),
+        checks,
+        problems,
+        detail=_split_manifest.get("conversation_splits"),
     )
     _check(
         "review_prepare_cmd_refuses_unrelated_merge_and_rebase_fallback",
