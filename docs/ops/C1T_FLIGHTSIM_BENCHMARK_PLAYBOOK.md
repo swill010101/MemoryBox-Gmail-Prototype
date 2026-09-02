@@ -97,11 +97,14 @@ python -m memorybox c1t-run-benchmark `
   --stall-warning-seconds 300 `
   --heartbeat-seconds 10 `
   --warm-or-cold cold `
-  --quality-contract docs\ops\C1T_QUALITY_CONTRACT_TEMPLATE.json `
   --confirm-model-run
 ```
 
 Without `--confirm-model-run`, the command refuses before inference.
+Before quality-comparison runs, copy `C1T_QUALITY_CONTRACT_TEMPLATE.json`,
+replace its synthetic expectation with reviewed Chunk 1 expectations, and add
+`--quality-contract <reviewed-contract.json>`. Do not use the placeholder as a
+real scoring contract.
 
 ## Diagnostics and recovery
 
