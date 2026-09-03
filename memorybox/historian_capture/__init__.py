@@ -47,7 +47,7 @@ ASSESSMENT_CODES = frozenset(
         "uncertain",
     }
 )
-DEFAULT_FOLLOW_UP_SECONDS = 259200  # 72h
+DEFAULT_FOLLOW_UP_SECONDS = 604800  # 7 days
 
 _ACTIVE_DELIVERY_STATUSES = frozenset(
     {"pending", "sent", "waiting", "reminder_sent"}

@@ -4465,6 +4465,13 @@ def hc_respondent_options(limit: int = Query(200, ge=1, le=500)) -> dict[str, An
     return {"options": respondent_options(limit=limit)}
 
 
+@app.get("/historian-capture/starter-questions")
+def hc_starter_questions(limit: int = Query(12, ge=1, le=50)) -> dict[str, Any]:
+    from memorybox.historian_capture import starter_questions
+
+    return {"questions": starter_questions(limit=limit)}
+
+
 @app.get("/historian-capture/new-count")
 def hc_new_count() -> dict[str, Any]:
     from memorybox.historian_capture import HistorianCaptureError, new_capture_count
@@ -4494,7 +4501,7 @@ def hc_create_campaign(body: dict[str, Any]) -> dict[str, Any]:
         return create_campaign(
             title=body.get("title"),
             cadence_config_json=cadence,
-            follow_up_interval_seconds=int(body.get("follow_up_interval_seconds") or 259200),
+            follow_up_interval_seconds=int(body.get("follow_up_interval_seconds") or 604800),
             send_thank_you_ack=bool(body.get("send_thank_you_ack", True)),
             timezone_name=str(body.get("timezone_name") or "UTC"),
             respondents=[

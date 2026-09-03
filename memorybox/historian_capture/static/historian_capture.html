@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>MemoryBox — Historian Capture</title>
-  <link rel="stylesheet" href="/static/explore/explore.css?v=hc-i12-1" />
+  <link rel="stylesheet" href="/static/explore/explore.css?v=hc-i12-2" />
   <link rel="stylesheet" href="/static/shell/mb-narrative-field.css?v=i10a2-7" />
   <style>
     :root {
@@ -15,6 +15,18 @@
     html[data-mb-surface="historian-capture"] .mb-site-bar,
     html[data-mb-surface="historian-capture"] .mb-nav-system { display: none !important; }
     html[data-mb-surface="historian-capture"] body { background: var(--page) !important; color: var(--ink) !important; }
+    html[data-mb-surface="historian-capture"] {
+      --mb-ink: #e8edf5; --mb-muted: #9aa3b5; --mb-card: #1a2230; --mb-page: #0f141c;
+      --mb-line: rgba(255, 255, 255, 0.14);
+    }
+    html[data-mb-surface="historian-capture"] body.mb-shell,
+    html[data-mb-surface="historian-capture"] body {
+      background: #0f141c !important; color: #e8edf5 !important;
+    }
+    html[data-mb-surface="historian-capture"] .mb-explore-brand-name { color: #f3f6fb !important; }
+    html[data-mb-surface="historian-capture"] .mb-explore-tagline { color: #b7c0d0 !important; }
+    html[data-mb-surface="historian-capture"] .mb-explore-nav a { color: #b7c0d0 !important; }
+    html[data-mb-surface="historian-capture"] .mb-explore-nav a.is-active { color: #f3f6fb !important; }
     * { box-sizing: border-box; }
     body { margin: 0; min-height: 100vh; font-family: var(--ui); background: #0f141c; color: #e8edf5; }
     a { color: #93c5fd; text-decoration: none; }
@@ -25,14 +37,15 @@
     }
     textarea { min-height: 8rem; resize: vertical; white-space: pre-wrap; }
     .wrap { max-width: 1180px; margin: 0 auto; padding: 0 1.25rem 3rem; }
-    h1 { font-family: var(--display); font-size: 2.1rem; margin: 0; }
-    h2 { font-family: var(--display); font-size: 1.35rem; margin: 0 0 0.5rem; }
+    h1 { font-family: var(--display); font-size: 2.1rem; margin: 0; color: #e8edf5; }
+    h2 { font-family: var(--display); font-size: 1.35rem; margin: 0 0 0.5rem; color: #e8edf5; }
     .sub { color: var(--muted); margin: 0.25rem 0 0; max-width: 52rem; }
     .btn { border-radius: 10px; padding: 0.5rem 0.9rem; border: 1px solid var(--line); background: #141b27; color: var(--ink); }
     .btn.primary { background: var(--blue); border-color: var(--blue); color: #fff; }
     .btn.ghost { background: transparent; }
     .btn:disabled { opacity: 0.45; cursor: not-allowed; }
     .page-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 1rem; margin: 1.4rem 0 1rem; flex-wrap: wrap; }
+    .page-head .actions { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
     .crumb { color: var(--muted); font-size: 0.85rem; margin: 1rem 0 0.4rem; }
     .pill { display: inline-block; font-size: 0.72rem; padding: 0.15rem 0.5rem; border-radius: 999px; background: rgba(59,130,246,0.2); color: #93c5fd; margin-right: 0.25rem; }
     .pill.warn { background: rgba(251,146,60,0.15); color: #fdba74; }
@@ -40,17 +53,27 @@
     .tabs button { border: 0; background: #141b27; color: var(--muted); padding: 0.4rem 0.75rem; border-radius: 999px; margin-right: 0.25rem; }
     .tabs button.on { background: var(--blue); color: #fff; }
     .card {
-      background: #1a2230; border: 1px solid rgba(255,255,255,0.12); border-radius: 14px;
-      padding: 0.9rem 1rem; margin-bottom: 0.65rem; cursor: pointer;
+      background: #1a2230 !important; color: #e8edf5 !important;
+      border: 1px solid rgba(255,255,255,0.12) !important;
+      border-radius: 14px; padding: 0.9rem 1rem; margin-bottom: 0.65rem; cursor: pointer;
     }
-    .card:hover { border-color: rgba(147,197,253,0.35); }
-    .card h3 { font-family: var(--display); font-size: 1.1rem; margin: 0 0 0.35rem; }
-    .card p { color: var(--muted); font-size: 0.85rem; margin: 0; }
+    .card:hover { border-color: rgba(147,197,253,0.35) !important; }
+    .card h3 { font-family: var(--display); font-size: 1.1rem; margin: 0 0 0.35rem; color: #e8edf5 !important; }
+    .card p { color: #9aa3b5 !important; font-size: 0.85rem; margin: 0; }
     .layout { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
-    .panel { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 0.9rem; }
-    .panel.locked { background: #111827; border-style: dashed; }
+    .panel {
+      background: #1a2230 !important; color: #e8edf5 !important;
+      border: 1px solid rgba(255,255,255,0.12) !important;
+      border-radius: 14px; padding: 0.9rem;
+    }
+    .panel.locked { background: #111827 !important; border-style: dashed; }
     .panel h4 { margin: 0 0 0.5rem; font-size: 0.78rem; letter-spacing: 0.04em; color: var(--muted); text-transform: uppercase; }
-    .side { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 0.9rem; }
+    .panel textarea { background: #141b27 !important; color: #e8edf5 !important; }
+    .side {
+      background: #1a2230 !important; color: #e8edf5 !important;
+      border: 1px solid rgba(255,255,255,0.12) !important;
+      border-radius: 14px; padding: 0.9rem;
+    }
     .side h4 { margin: 0 0 0.6rem; font-size: 0.78rem; letter-spacing: 0.04em; color: var(--muted); }
     .banner { background: rgba(251,146,60,0.12); border: 1px solid rgba(251,146,60,0.35); color: #fdba74; border-radius: 10px; padding: 0.65rem 0.8rem; margin: 0.6rem 0; }
     .banner.info { background: rgba(59,130,246,0.1); border-color: rgba(59,130,246,0.35); color: #93c5fd; }
@@ -67,6 +90,19 @@
     }
     .person-row.on { outline: 2px solid var(--blue); }
     .person-row .av { width: 40px; height: 40px; border-radius: 99px; object-fit: cover; background: #334155; display: inline-flex; align-items: center; justify-content: center; }
+    .person-dropdown { position: relative; }
+    .person-dropdown-trigger {
+      width: 100%; text-align: left; display: flex; justify-content: space-between; align-items: center;
+      border: 1px solid var(--line); background: #141b27; color: var(--ink); border-radius: 10px;
+      padding: 0.55rem 0.75rem;
+    }
+    .person-dropdown-panel {
+      position: absolute; z-index: 30; left: 0; right: 0; top: calc(100% + 0.25rem);
+      background: #121826; border: 1px solid var(--line); border-radius: 12px;
+      padding: 0.5rem; box-shadow: 0 10px 28px rgba(0,0,0,0.35);
+    }
+    .q-tools { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; margin: 0.35rem 0 0.5rem; }
+    @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } }
     .editor-foot { position: sticky; bottom: 0; display: flex; justify-content: flex-end; gap: 0.6rem; padding: 0.75rem 1.25rem; background: #0c1118; border-top: 1px solid var(--line); }
     .toast { min-height: 1.2rem; color: var(--muted); font-size: 0.85rem; margin: 0.4rem 0; }
     .toast.err { color: #fca5a5; }
@@ -120,9 +156,10 @@
       mailbox: null,
       campaign: null,
       item: null,
-      draft: { personId: "", email: "", title: "", cadence: "weekly", followUpHours: 72, questions: "" },
+      draft: { personId: "", email: "", title: "", cadence: "weekly", followUpDays: 7, questions: "" },
       selectedPerson: null,
       personQuery: "",
+      personDropdownOpen: false,
     };
 
     function esc(s) {
@@ -147,7 +184,36 @@
       const c = cfg || {};
       const p = c.pattern || "weekly";
       const labels = { daily: "Daily", weekly: "Weekly", monthly: "Monthly" };
-      return labels[p] || p;
+      if (p === "seconds") return "Accelerated";
+      return labels[p] || "Scheduled";
+    }
+    function followUpLabel(seconds) {
+      const s = Number(seconds) || 604800;
+      if (s >= 86400 && s % 86400 === 0) {
+        const d = Math.round(s / 86400);
+        return `${d} day${d === 1 ? "" : "s"}`;
+      }
+      const h = Math.round(s / 3600);
+      return `${h} hour${h === 1 ? "" : "s"}`;
+    }
+    function displayCampaignTitle(title) {
+      const t = String(title || "").trim();
+      if (/^HC Stage[23]\s/i.test(t)) return "Test campaign";
+      return t || "Untitled campaign";
+    }
+    function displayPersonName(name) {
+      const n = String(name || "").trim();
+      return n.replace(/\s*\(Stage\d\)\s*/gi, "").trim() || "Family member";
+    }
+    async function personEmailFromProfile(personId) {
+      try {
+        const d = await api(`/people/${personId}/profile`);
+        const contacts = (d.profile && d.profile.contacts) || [];
+        const row = contacts.find((c) => String(c.contact_kind || "").toLowerCase() === "email" && c.value_text);
+        return row ? String(row.value_text).trim() : "";
+      } catch (_) {
+        return "";
+      }
     }
     async function api(path, opts) {
       const r = await fetch(path, { headers: { "Content-Type": "application/json" }, ...(opts || {}) });
@@ -192,8 +258,18 @@
     }
     async function loadPeople() {
       try {
-        const d = await api("/library/person-options?limit=300");
-        state.people = d.people || [];
+        const [peopleD, respD] = await Promise.all([
+          api("/library/person-options?limit=300"),
+          api("/historian-capture/respondent-options").catch(() => ({ options: [] })),
+        ]);
+        const emailById = {};
+        (respD.options || []).forEach((o) => {
+          if (o.people_id && o.email) emailById[o.people_id] = o.email;
+        });
+        state.people = (peopleD.people || []).map((p) => ({
+          ...p,
+          email: emailById[p.id] || p.email || "",
+        }));
       } catch (_) {
         try { state.people = (await api("/people?limit=300")).people || []; } catch (e) { state.people = []; }
       }
@@ -242,9 +318,30 @@
         return `<button type="button" class="person-row${on}" data-person="${esc(p.id)}">
           <img class="av" src="${esc(src)}" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='inline-flex'" />
           <span class="av" style="display:none">${initial(name)}</span>
-          <span><strong>${esc(name)}</strong><br><span class="hint">${esc(email || "No email on profile")}</span></span>
+          <span><strong>${esc(name)}</strong><br><span class="hint">${esc(email || "Email loaded after you choose")}</span></span>
         </button>`;
       }).join("")}</div>`;
+    }
+    function wirePersonDropdown() {
+      const trigger = document.getElementById("personTrigger");
+      const panel = document.getElementById("personPanel");
+      if (trigger) {
+        trigger.onclick = (e) => {
+          e.stopPropagation();
+          state.personDropdownOpen = !state.personDropdownOpen;
+          panel.classList.toggle("hidden", !state.personDropdownOpen);
+        };
+      }
+      const search = document.getElementById("personSearch");
+      if (search) {
+        search.onclick = (e) => e.stopPropagation();
+        search.oninput = (e) => {
+          state.personQuery = e.target.value;
+          document.getElementById("personPick").innerHTML = personRowsHtml();
+          wirePersonPick();
+        };
+      }
+      wirePersonPick();
     }
     function renderPanel() {
       const el = document.getElementById("view");
@@ -301,7 +398,7 @@
           body.innerHTML = list.map((it) => {
             const v = (it.latest_verdict || {}).verdict;
             const a = (it.latest_assessment || {}).assessment_code;
-            const title = it.respondent_name || it.from_address || "Family reply";
+            const title = displayPersonName(it.respondent_name || it.from_address || "Family reply");
             const excerpt = (it.extracted_text || "").slice(0, 140);
             const when = formatWhen(it.received_at);
             return `<div class="card" data-item="${it.id}">
@@ -327,15 +424,26 @@
     }
     function renderNewCampaign() {
       const el = document.getElementById("view");
+      const personLabel = state.selectedPerson
+        ? esc(state.selectedPerson.display_name || "Person")
+        : "Choose a person…";
       el.innerHTML = `
         <p class="crumb"><a href="#" id="backPanel">Historian Capture</a> › New campaign</p>
         <div class="page-head"><div><h1>New campaign</h1><p class="sub">Choose who you are inviting, how often questions go out, and what you would like to ask.</p></div></div>
         <div class="side">
           <label>Who is this for?</label>
-          <input id="personSearch" placeholder="Search People" value="${esc(state.personQuery)}" />
-          <div id="personPick">${personRowsHtml()}</div>
+          <div class="person-dropdown" id="personDropdown">
+            <button type="button" class="person-dropdown-trigger" id="personTrigger">
+              <span id="personTriggerLabel">${personLabel}</span><span aria-hidden="true">▾</span>
+            </button>
+            <div class="person-dropdown-panel${state.personDropdownOpen ? "" : " hidden"}" id="personPanel">
+              <input id="personSearch" placeholder="Search People" value="${esc(state.personQuery)}" />
+              <div id="personPick">${personRowsHtml()}</div>
+            </div>
+          </div>
           <label>Email for this person</label>
           <input id="cEmail" value="${esc(state.draft.email)}" placeholder="person@example.com" />
+          <p class="hint">We fill this from the Person profile when an email is on file. You can confirm or override.</p>
           <label>Campaign title</label>
           <input id="cTitle" value="${esc(state.draft.title)}" placeholder="Summer memories" />
           <div class="layout" style="margin-top:0.6rem">
@@ -348,19 +456,27 @@
               </select>
             </div>
             <div>
-              <label>Follow-up before reminder (hours)</label>
-              <input id="cFollowUpHours" type="number" min="1" value="${state.draft.followUpHours}" />
-              <p class="hint">Default 72 hours — one reminder, then no response before moving on.</p>
+              <label>Follow-up before reminder (days)</label>
+              <input id="cFollowUpDays" type="number" min="1" value="${state.draft.followUpDays}" />
+              <p class="hint">Default 7 days — one reminder, then no response before moving on.</p>
             </div>
           </div>
           <label>Questions</label>
-          <p class="hint">One question per line. Only one question is sent at a time.</p>
-          <textarea id="cQuestions" placeholder="What is your earliest memory?">${esc(state.draft.questions)}</textarea>
+          <div class="q-tools">
+            <button type="button" class="btn" id="btnStarter">Add starter questions</button>
+          </div>
+          <p class="hint">One question per line — press <strong>Enter</strong> to start a new question. Soft word-wrap does not create a new question.</p>
+          <textarea id="cQuestions" placeholder="What is your earliest memory?&#10;Who influenced you most growing up?">${esc(state.draft.questions)}</textarea>
         </div>
       `;
-      document.getElementById("backPanel").onclick = (e) => { e.preventDefault(); state.view = "panel"; render(); };
-      document.getElementById("personSearch").oninput = (e) => { state.personQuery = e.target.value; document.getElementById("personPick").innerHTML = personRowsHtml(); wirePersonPick(); };
-      wirePersonPick();
+      document.getElementById("backPanel").onclick = (e) => { e.preventDefault(); state.view = "panel"; state.personDropdownOpen = false; render(); };
+      wirePersonDropdown();
+      document.getElementById("btnStarter").onclick = async () => {
+        const d = await api("/historian-capture/starter-questions");
+        const ta = document.getElementById("cQuestions");
+        const add = (d.questions || []).join("\n");
+        ta.value = ta.value.trim() ? `${ta.value.trim()}\n${add}` : add;
+      };
       document.getElementById("editor-foot").classList.remove("hidden");
       document.getElementById("editor-foot").innerHTML = `
         <button type="button" class="btn ghost" id="btnCancel">Cancel</button>
@@ -373,13 +489,22 @@
     }
     function wirePersonPick() {
       document.querySelectorAll("[data-person]").forEach((btn) => {
-        btn.onclick = () => {
+        btn.onclick = async () => {
           const p = state.people.find((x) => x.id === btn.dataset.person);
           state.selectedPerson = p || null;
-          if (p && p.email) state.draft.email = p.email;
-          document.getElementById("cEmail").value = state.draft.email || "";
+          state.personDropdownOpen = false;
+          const email = p ? (p.email || await personEmailFromProfile(p.id)) : "";
+          state.draft.email = email;
+          if (p) p.email = email;
+          const emailEl = document.getElementById("cEmail");
+          if (emailEl) emailEl.value = email || "";
+          const label = document.getElementById("personTriggerLabel");
+          if (label) label.textContent = p ? (p.display_name || "Person") : "Choose a person…";
+          const panel = document.getElementById("personPanel");
+          if (panel) panel.classList.add("hidden");
           document.getElementById("personPick").innerHTML = personRowsHtml();
           wirePersonPick();
+          if (p && !email) toast("No email on this Person profile — add one on People or enter it here.", true);
         };
       });
     }
@@ -389,7 +514,7 @@
       if (!questions.length) { toast("Add at least one question.", true); return; }
       const email = document.getElementById("cEmail").value.trim();
       if (!email) { toast("Confirm an email address for this person.", true); return; }
-      const hours = Number(document.getElementById("cFollowUpHours").value) || 72;
+      const days = Number(document.getElementById("cFollowUpDays").value) || 7;
       const camp = await api("/historian-capture/campaigns", {
         method: "POST",
         body: JSON.stringify({
@@ -398,7 +523,7 @@
           email,
           display_name: state.selectedPerson.display_name,
           cadence_pattern: document.getElementById("cCadence").value,
-          follow_up_interval_seconds: Math.max(1, Math.round(hours * 3600)),
+          follow_up_interval_seconds: Math.max(86400, Math.round(days * 86400)),
           questions,
         }),
       });
@@ -419,10 +544,10 @@
       const c = state.campaign;
       const el = document.getElementById("view");
       const cadence = cadenceLabel(c.cadence_config_json);
-      const followHours = Math.round((c.follow_up_interval_seconds || 259200) / 3600);
+      const followLabel = followUpLabel(c.follow_up_interval_seconds);
       const respondents = (c.respondents || []).map((r) => `
         <div class="card" style="cursor:default">
-          <h3>${esc(r.display_name_snapshot)}</h3>
+          <h3>${esc(displayPersonName(r.display_name_snapshot))}</h3>
           <p><span class="pill">${esc(r.status === "opted_out" ? "Opted out" : (r.status || "Invited"))}</span> ${esc(r.contact_route_value || "")}</p>
           ${r.status === "opted_out" ? `<div class="banner">This person opted out — no further questions will be sent.</div>` : ""}
         </div>
@@ -432,17 +557,18 @@
       if (c.status === "stopped") banner = `<div class="banner">This campaign has been stopped. No further questions will be sent.</div>`;
       if (c.status === "completed") banner = `<div class="banner info">All questions have been sent. Review replies as they arrive.</div>`;
       el.innerHTML = `
-        <p class="crumb"><a href="#" id="backPanel">Historian Capture</a> › ${esc(c.title || "Campaign")}</p>
+        <p class="crumb"><a href="#" id="backPanel">Historian Capture</a> › Campaigns › ${esc(displayCampaignTitle(c.title))}</p>
         <div class="page-head">
           <div>
-            <h1>${esc(c.title || "Campaign")}</h1>
+            <button type="button" class="btn ghost" id="backCampaigns">← Campaigns</button>
+            <h1 style="margin-top:0.6rem">${esc(displayCampaignTitle(c.title))}</h1>
             <p class="sub">
               <span class="pill">${esc(statusLabel(c.status))}</span>
               <span class="pill muted">${esc(cadence)} questions</span>
-              <span class="pill muted">Follow-up after ${followHours}h</span>
+              <span class="pill muted">Follow-up after ${esc(followLabel)}</span>
             </p>
           </div>
-          <div>
+          <div class="actions">
             ${c.status === "running" ? `<button class="btn" id="btnPause">Pause</button>` : ""}
             ${c.status === "paused" ? `<button class="btn" id="btnResume">Resume</button>` : ""}
             ${c.status !== "stopped" && c.status !== "completed" ? `<button class="btn ghost" id="btnStop">Stop campaign</button>` : ""}
@@ -452,7 +578,8 @@
         <h2 style="margin-top:1rem">People in this campaign</h2>
         ${respondents || `<div class="empty">No respondents yet.</div>`}
       `;
-      document.getElementById("backPanel").onclick = (e) => { e.preventDefault(); state.view = "panel"; state.tab = "campaigns"; render(); };
+      document.getElementById("backPanel").onclick = (e) => { e.preventDefault(); state.view = "panel"; state.tab = "responses"; render(); };
+      document.getElementById("backCampaigns").onclick = (e) => { e.preventDefault(); state.view = "panel"; state.tab = "campaigns"; render(); };
       const act = async (name) => {
         await api(`/historian-capture/campaigns/${c.id}/${name}`, { method: "POST", body: "{}" });
         await openCampaign(c.id);
@@ -476,9 +603,13 @@
       const unmatched = it.match_status === "unmatched" || it.match_status === "ambiguous";
       const el = document.getElementById("view");
       el.innerHTML = `
-        <p class="crumb"><a href="#" id="backPanel">Historian Capture</a> › Review response</p>
-        <div class="page-head"><div><h1>${esc(it.respondent_name || it.from_address || "Family reply")}</h1>
-          <p class="sub">${esc(it.campaign_title || "")}${it.question_body ? " · " + esc(it.question_body.slice(0, 80)) : ""}</p></div></div>
+        <p class="crumb">
+          <a href="#" id="backPanel">Historian Capture</a> ›
+          ${it.campaign_id ? `<a href="#" id="backCampaign">${esc(displayCampaignTitle(it.campaign_title))}</a> › ` : ""}
+          Review response
+        </p>
+        <div class="page-head"><div><h1>${esc(displayPersonName(it.respondent_name || it.from_address || "Family reply"))}</h1>
+          <p class="sub">${it.question_body ? esc(it.question_body.slice(0, 120)) : ""}</p></div></div>
         ${optOut ? `<div class="banner">This person opted out of further questions.</div>` : ""}
         ${unmatched ? `<div class="banner">This message could not be matched to a campaign automatically. Review the source and decide what to keep.</div>` : ""}
         <div class="layout">
@@ -532,6 +663,13 @@
         state.tab = unmatched ? "unmatched" : "responses";
         render();
       };
+      const backCamp = document.getElementById("backCampaign");
+      if (backCamp && it.campaign_id) {
+        backCamp.onclick = async (e) => {
+          e.preventDefault();
+          await openCampaign(it.campaign_id);
+        };
+      }
       document.getElementById("btnDraft").onclick = async () => {
         await api(`/historian-capture/items/${it.id}/draft`, {
           method: "POST",
@@ -590,6 +728,13 @@
     };
     (async function boot() {
       renderNav();
+      document.addEventListener("click", () => {
+        if (state.personDropdownOpen) {
+          state.personDropdownOpen = false;
+          const panel = document.getElementById("personPanel");
+          if (panel) panel.classList.add("hidden");
+        }
+      });
       if (location.hash === "#unmatched") state.tab = "unmatched";
       await Promise.all([loadPeople(), refreshMailbox(), refreshCounts(), refreshCampaigns(), refreshItems()]);
       render();
