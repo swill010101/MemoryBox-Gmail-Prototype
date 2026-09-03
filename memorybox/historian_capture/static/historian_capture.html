@@ -28,13 +28,15 @@
     .pill { display:inline-block; font-size:.75rem; padding:.1rem .4rem; border:1px solid var(--line); border-radius:3px; margin-right:.25rem; }
     #status { padding: .5rem 1.25rem; font-size:.9rem; }
     .err { color: #b91c1c; }
+    .banner-optout { background: #fef3c7; border: 1px solid #f59e0b; color: #92400e; padding: .5rem .75rem; margin: .5rem 0; border-radius: 4px; font-size: .85rem; }
+    .full-width { grid-column: 1 / -1; }
   </style>
 </head>
 <body>
   <header>
     <h1>Historian Capture</h1>
     <span class="badge" id="newBadge">Needs review: 0</span>
-    <span class="muted">Review &amp; Learn · Campaigns · immutable capture · verdict · Story promotion</span>
+    <span class="muted">Review &amp; Learn · Campaigns · immutable capture · verdict · Story/Artifact promotion</span>
   </header>
   <p id="status" class="muted"></p>
   <p id="emailStatus" class="muted" style="padding:0 1.25rem 0.5rem"></p>
@@ -79,6 +81,11 @@
       <ul class="list" id="itemList"></ul>
       <div id="itemDetail"></div>
     </section>
+    <section class="full-width" id="unmatched">
+      <h2>Unmatched / Needs attention (HC-14)</h2>
+      <p class="hint">Inbound mail without reliable Historian Capture correlation — quarantined for owner review.</p>
+      <ul class="list" id="unmatchedList"></ul>
+    </section>
   </main>
   <script>
     const ASSESS = [
@@ -94,6 +101,7 @@
     ];
     let respondentOptions = [];
     let selectedCampaign = null;
+    let thankYouPreview = "";
 
     function status(msg, err) {
       const el = document.getElementById("status");
@@ -117,6 +125,10 @@
     async function refreshBadge() {
       const d = await api("/historian-capture/new-count");
       document.getElementById("newBadge").textContent = `Needs review: ${d.count ?? 0}`;
+    }
+    async function loadThankYouPreview() {
+      const d = await api("/historian-capture/thank-you/preview");
+      thankYouPreview = d.body || "";
     }
     async function loadPeople() {
       const d = await api("/historian-capture/respondent-options");
@@ -150,9 +162,25 @@
       const c = await api(`/historian-capture/campaigns/${id}`);
       selectedCampaign = c;
       const det = document.getElementById("campDetail");
-      const rs = (c.respondents||[]).map(r => `<li>${escapeHtml(r.display_name_snapshot)} · ${r.status} · ${escapeHtml(r.contact_route_value)}</li>`).join("");
+      const rs = (c.respondents||[]).map(r => {
+        const opt = r.status === "opted_out"
+          ? ` <span class="pill" style="border-color:#f59e0b">opted out</span>`
+          : "";
+        return `<li>${escapeHtml(r.display_name_snapshot)} · ${r.status} · ${escapeHtml(r.contact_route_value)}${opt}</li>`;
+      }).join("");
       const ds = (c.deliveries||[]).map(d => `<li><span class="pill">${d.status}</span> reminder=${d.reminder_sent_at||"—"} no_resp=${d.no_response_at||"—"}</li>`).join("");
       det.innerHTML = `<h3>Respondents</h3><ul class="list">${rs}</ul><h3>Deliveries</h3><ul class="list">${ds}</ul>`;
+    }
+    async function loadUnmatched() {
+      const d = await api("/historian-capture/unmatched");
+      const ul = document.getElementById("unmatchedList");
+      ul.innerHTML = "";
+      (d.items || []).forEach(it => {
+        const li = document.createElement("li");
+        li.innerHTML = `<span class="pill">${it.match_status}</span> ${escapeHtml(it.from_address||"")} · ${escapeHtml((it.subject||"").slice(0,60))}`;
+        li.onclick = () => showItem(it.id);
+        ul.appendChild(li);
+      });
     }
     async function loadItems() {
       const d = await api("/historian-capture/items?limit=50");
@@ -172,7 +200,12 @@
       const draft = it.current_draft || {};
       const assessOpts = ASSESS.map(([v,l]) => `<option value="${v}">${l}</option>`).join("");
       const verdictOpts = VERDICT.map(([v,l]) => `<option value="${v}">${l}</option>`).join("");
+      const optOutBanner = it.respondent_status === "opted_out"
+        ? `<div class="banner-optout">Respondent opted out (HC-12)${it.respondent_opt_out_source ? ` — ${escapeHtml(it.respondent_opt_out_source)}` : ""}. No further campaign sends.</div>`
+        : "";
+      const preview = thankYouPreview || "Thank you — we received and preserved your reply.";
       det.innerHTML = `
+        ${optOutBanner}
         <p class="muted">Immutable source (read-only)</p>
         <textarea readonly>${escapeHtml(it.extracted_text||"")}</textarea>
         <label>Review draft</label>
@@ -185,7 +218,11 @@
         <button type="button" id="btnAssess">Save assessment</button>
         <button type="button" id="btnVerdict">Save verdict</button>
         <button type="button" id="btnPromote">Promote to Story</button>
+        <button type="button" class="secondary" id="btnPromoteArt">Promote to Artifact</button>
         <button type="button" class="secondary" id="btnThankYou">Send thank-you</button>
+        <h3 style="margin-top:1rem;font-size:.9rem">Thank-you preview (HC-13)</h3>
+        <textarea readonly id="tyPreview">${escapeHtml(preview)}</textarea>
+        <p class="hint">Owner assessment and verdict text are never included in outbound thank-you.</p>
       `;
       document.getElementById("btnSaveDraft").onclick = async () => {
         await api(`/historian-capture/items/${id}/draft`, { method: "POST", body: JSON.stringify({ body_text: document.getElementById("draftBody").value }) });
@@ -204,6 +241,10 @@
       document.getElementById("btnPromote").onclick = async () => {
         const p = await api(`/historian-capture/items/${id}/promote-story`, { method: "POST", body: JSON.stringify({ title: "Historian testimony" }) });
         status(`Promoted story ${p.promoted_id}`);
+      };
+      document.getElementById("btnPromoteArt").onclick = async () => {
+        const p = await api(`/historian-capture/items/${id}/promote-artifact`, { method: "POST", body: JSON.stringify({ label: "Historian capture source" }) });
+        status(`Promoted artifact ${p.promoted_id}`);
       };
       document.getElementById("btnThankYou").onclick = async () => {
         const ty = await api(`/historian-capture/items/${id}/thank-you`, { method: "POST", body: "{}" });
@@ -246,15 +287,21 @@
         await loadCampaigns();
         if (selectedCampaign) await selectCampaign(selectedCampaign.id);
         await loadItems();
+        await loadUnmatched();
         await refreshBadge();
       };
     });
     (async () => {
       await loadPeople();
       await refreshEmailStatus();
+      await loadThankYouPreview();
       await refreshBadge();
       await loadCampaigns();
       await loadItems();
+      await loadUnmatched();
+      if (location.hash === "#unmatched") {
+        document.getElementById("unmatched").scrollIntoView({ behavior: "smooth" });
+      }
     })();
   </script>
 </body>

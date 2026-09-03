@@ -4664,3 +4664,32 @@ def hc_unmatched(limit: int = Query(100, ge=1, le=500)) -> dict[str, Any]:
     from memorybox.historian_capture import list_unmatched_items
 
     return {"items": list_unmatched_items(limit=limit)}
+
+
+@app.get("/historian-capture/connection-probe")
+def hc_connection_probe() -> dict[str, Any]:
+    from memorybox.historian_capture import connection_probe
+
+    return connection_probe()
+
+
+@app.get("/historian-capture/thank-you/preview")
+def hc_thank_you_preview() -> dict[str, Any]:
+    from memorybox.historian_capture import thank_you_preview_body
+
+    return {"body": thank_you_preview_body()}
+
+
+@app.post("/historian-capture/items/{item_id}/promote-artifact")
+def hc_promote_artifact(item_id: str, body: dict[str, Any]) -> dict[str, Any]:
+    from memorybox.historian_capture import HistorianCaptureError, promote_to_artifact
+
+    try:
+        return promote_to_artifact(
+            item_id,
+            kind=str(body.get("kind") or "document"),
+            label=body.get("label"),
+            description=body.get("description"),
+        )
+    except HistorianCaptureError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -1787,7 +1788,8 @@ def get_capture_item(capture_item_id: str) -> dict[str, Any]:
         if row.get("campaign_respondent_id"):
             resp = conn.execute(
                 """
-                SELECT display_name_snapshot, contact_route_value, people_id
+                SELECT display_name_snapshot, contact_route_value, people_id, status,
+                       opted_out_at, opt_out_source
                 FROM historian_capture_campaign_respondents WHERE id = %s
                 """,
                 (row["campaign_respondent_id"],),
@@ -1805,6 +1807,9 @@ def get_capture_item(capture_item_id: str) -> dict[str, Any]:
     out["respondent_people_id"] = (
         str(resp["people_id"]) if resp and resp.get("people_id") else None
     )
+    out["respondent_status"] = resp["status"] if resp else None
+    out["respondent_opted_out_at"] = _iso(resp.get("opted_out_at")) if resp else None
+    out["respondent_opt_out_source"] = resp.get("opt_out_source") if resp else None
     out["campaign_title"] = camp["title"] if camp else None
     out["campaign_status"] = camp["status"] if camp else None
     return out
@@ -2082,11 +2087,14 @@ def promote_to_story(
         if not draft:
             raise HistorianCaptureError("current review draft required for promotion")
         existing_promo = conn.execute(
-            "SELECT id FROM historian_capture_promotions WHERE capture_item_id = %s LIMIT 1",
+            """
+            SELECT id FROM historian_capture_promotions
+            WHERE capture_item_id = %s AND promoted_type = 'story'
+            """,
             (iid,),
         ).fetchone()
         if existing_promo:
-            raise HistorianCaptureError("capture item already promoted")
+            raise HistorianCaptureError("capture item already promoted to Story")
         narrator_person_id = None
         narrator_name = None
         if item.get("campaign_respondent_id"):
@@ -2143,6 +2151,160 @@ def promote_to_story(
             "story_id": str(story.id),
             "title": story.title,
         },
+    }
+
+
+def _read_raw_from_uri(uri: str | None) -> bytes | None:
+    if not uri:
+        return None
+    from urllib.parse import unquote, urlparse
+
+    parsed = urlparse(uri)
+    if parsed.scheme != "file":
+        return None
+    raw = unquote(parsed.path or "")
+    if os.name == "nt" and raw.startswith("/") and len(raw) >= 3 and raw[2] == ":":
+        raw = raw[1:]
+    path = Path(raw)
+    if path.is_file():
+        return path.read_bytes()
+    return None
+
+
+def promote_to_artifact(
+    capture_item_id: str,
+    *,
+    kind: str = "document",
+    label: str | None = None,
+    description: str | None = None,
+    actor_key: str = "owner",
+) -> dict[str, Any]:
+    """Promote reviewed capture to I10B Artifact with .eml representation + provenance."""
+    from memorybox.artifact import add_mb_managed_representation, create_artifact
+
+    iid = _parse_uuid(capture_item_id, field="capture_item_id")
+    with connection() as conn:
+        item = conn.execute(
+            "SELECT * FROM historian_capture_items WHERE id = %s", (iid,)
+        ).fetchone()
+        if not item:
+            raise HistorianCaptureError("capture item not found")
+        verdict = _latest_verdict(conn, iid)
+        if not verdict or verdict["verdict"] != "promotion_authorized":
+            raise HistorianCaptureError(
+                "promotion requires verdict=promotion_authorized"
+            )
+        draft = _current_draft(conn, iid)
+        if not draft:
+            raise HistorianCaptureError("current review draft required for promotion")
+        existing_promo = conn.execute(
+            """
+            SELECT id FROM historian_capture_promotions
+            WHERE capture_item_id = %s AND promoted_type = 'artifact'
+            """,
+            (iid,),
+        ).fetchone()
+        if existing_promo:
+            raise HistorianCaptureError("capture item already promoted to Artifact")
+        person_ids: list[str] = []
+        if item.get("campaign_respondent_id"):
+            resp = conn.execute(
+                "SELECT people_id FROM historian_capture_campaign_respondents WHERE id = %s",
+                (item["campaign_respondent_id"],),
+            ).fetchone()
+            if resp and resp.get("people_id"):
+                person_ids.append(str(resp["people_id"]))
+        body = (draft["body_text"] or item.get("extracted_text") or "").strip()
+        art_label = (label or body[:80] or "Historian capture").strip()
+        art_desc = (description or body[:2000] or None)
+
+    artifact = create_artifact(
+        kind=kind,
+        label=art_label,
+        description=art_desc,
+        person_ids=person_ids or None,
+        actor_key=actor_key,
+        unresolved_context={"person": not person_ids, "place": True, "event": True},
+    )
+    raw_bytes = _read_raw_from_uri(item.get("preserved_raw_uri"))
+    if raw_bytes:
+        add_mb_managed_representation(
+            str(artifact.id),
+            data=raw_bytes,
+            filename="capture_source.txt",
+            content_type="text/plain",
+            label="Original email source",
+            view_kind="document",
+            caption="Immutable Historian Capture inbound source (RFC822 bytes preserved)",
+        )
+    elif body:
+        add_mb_managed_representation(
+            str(artifact.id),
+            data=body.encode("utf-8"),
+            filename="capture_text.txt",
+            content_type="text/plain",
+            label="Extracted text",
+            view_kind="document",
+        )
+
+    promo_id = uuid4()
+    with connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO historian_capture_promotions (
+                id, capture_item_id, review_draft_id, verdict_id,
+                promoted_type, promoted_id, promoted_by, provenance_json
+            ) VALUES (%s, %s, %s, %s, 'artifact', %s, %s, %s::jsonb)
+            """,
+            (
+                promo_id,
+                iid,
+                draft["id"],
+                verdict["id"],
+                UUID(str(artifact.id)),
+                actor_key,
+                json.dumps(
+                    {
+                        "capture_item_id": str(iid),
+                        "review_draft_id": str(draft["id"]),
+                        "verdict_id": str(verdict["id"]),
+                        "preserved_raw_uri": item.get("preserved_raw_uri"),
+                    }
+                ),
+            ),
+        )
+    return {
+        "promotion_id": str(promo_id),
+        "promoted_type": "artifact",
+        "promoted_id": str(artifact.id),
+        "capture_item_id": str(iid),
+        "artifact": {
+            "artifact_id": str(artifact.id),
+            "label": artifact.label,
+        },
+    }
+
+
+def thank_you_preview_body() -> str:
+    return _THANK_YOU_TEMPLATE
+
+
+def unmatched_count() -> int:
+    return len(list_unmatched_items(limit=1000))
+
+
+def connection_probe() -> dict[str, Any]:
+    """Stage 1 FlightSim prove — Gmail profile + label without sending."""
+    adapter = get_email_adapter()
+    probe = getattr(adapter, "connection_probe", None)
+    if callable(probe):
+        return probe()
+    st = email_adapter_status()
+    return {
+        "ok": bool(st.get("ok")),
+        "live": bool(st.get("live")),
+        "detail": st.get("detail"),
+        "user_email": st.get("user_email"),
     }
 
 
@@ -2459,6 +2621,10 @@ __all__ = [
     "set_owner_assessment",
     "set_verdict",
     "promote_to_story",
+    "promote_to_artifact",
+    "thank_you_preview_body",
+    "unmatched_count",
+    "connection_probe",
     "send_thank_you_if_enabled",
     "search_historian_capture_for_ask",
     "re_split_tokens",

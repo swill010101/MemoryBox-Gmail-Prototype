@@ -832,7 +832,7 @@ def main(argv: list[str] | None = None) -> int:
     p_prove_hc.add_argument(
         "--flightsim",
         action="store_true",
-        help="S5 live mailbox prove (not authorized in S1–S4 build)",
+        help="S5 live mailbox prove (staged: connection → round-trip → campaign)",
     )
     p_prove12 = sub.add_parser(
         "prove-export",
