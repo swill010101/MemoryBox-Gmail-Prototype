@@ -621,6 +621,95 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Optional FlightSim flag",
     )
+    p_c1t_inventory = sub.add_parser(
+        "c1t-inventory",
+        help="Collect FlightSim hardware/Ollama inventory without invoking a model",
+    )
+    p_c1t_inventory.add_argument("--out-dir", required=True)
+    p_c1t_inventory.add_argument(
+        "--ollama-base-url", default="http://127.0.0.1:11434"
+    )
+    p_c1t_inventory.add_argument("--model", default="gemma4:26b")
+    p_c1t_inventory.add_argument("--include-msinfo32", action="store_true")
+    p_c1t_register = sub.add_parser(
+        "c1t-register-canonical",
+        help="Immutably register a reviewed, internally consistent email packet",
+    )
+    p_c1t_register.add_argument("--source-dir", required=True)
+    p_c1t_register.add_argument("--generations-dir", required=True)
+    p_c1t_chunks = sub.add_parser(
+        "c1t-prepare-chunks",
+        help="Prepare parameterized conversation-intact C1T chunks; no model",
+    )
+    p_c1t_chunks.add_argument("--generation-dir", required=True)
+    p_c1t_chunks.add_argument("--out-root", required=True)
+    p_c1t_chunks.add_argument("--target-input-tokens", type=int, required=True)
+    p_c1t_chunks.add_argument("--hard-input-tokens", type=int, required=True)
+    p_c1t_chunks.add_argument("--reserved-output-tokens", type=int, default=4096)
+    p_c1t_chunks.add_argument("--safety-margin-tokens", type=int, default=2048)
+    p_c1t_chunks.add_argument("--num-ctx", type=int, required=True)
+    p_c1t_chunks.add_argument("--overlap-messages", type=int, default=3)
+    p_c1t_chunks.add_argument("--prompt-overhead-tokens", type=int, default=0)
+    p_c1t_run = sub.add_parser(
+        "c1t-run-benchmark",
+        help="Run one monitored C1T Gemma case; requires explicit confirmation",
+    )
+    p_c1t_run.add_argument("--chunk-dir", required=True)
+    p_c1t_run.add_argument("--chunk-index", type=int, required=True)
+    p_c1t_run.add_argument("--require-chunk-hash", required=True)
+    p_c1t_run.add_argument("--inventory", required=True)
+    p_c1t_run.add_argument("--results-root", required=True)
+    p_c1t_run.add_argument("--experiment-id", required=True)
+    p_c1t_run.add_argument("--repetition", type=int, default=1)
+    p_c1t_run.add_argument("--model", default="gemma4:26b")
+    p_c1t_run.add_argument("--ollama-base-url", default="http://127.0.0.1:11434")
+    p_c1t_run.add_argument("--num-ctx", type=int, required=True)
+    p_c1t_run.add_argument("--num-predict", type=int, default=4096)
+    p_c1t_run.add_argument("--temperature", type=float, default=0.1)
+    p_c1t_run.add_argument("--top-p", type=float, default=0.9)
+    p_c1t_run.add_argument("--seed", type=int, default=42)
+    p_c1t_run.add_argument("--hard-timeout-seconds", type=int, default=1800)
+    p_c1t_run.add_argument("--stall-warning-seconds", type=int, default=300)
+    p_c1t_run.add_argument("--heartbeat-seconds", type=int, default=10)
+    p_c1t_run.add_argument("--timeout-grace-seconds", type=int, default=10)
+    p_c1t_run.add_argument("--keep-alive", default="30m")
+    p_c1t_run.add_argument("--warm-or-cold", choices=("warm", "cold"), default="cold")
+    p_c1t_run.add_argument("--safety-margin-tokens", type=int, default=2048)
+    p_c1t_run.add_argument(
+        "--quality-contract",
+        default=None,
+        help="Versioned representative-evidence expectations JSON",
+    )
+    p_c1t_run.add_argument("--confirm-model-run", action="store_true")
+    p_c1t_matrix = sub.add_parser(
+        "c1t-write-benchmark-matrix",
+        help="Write approved A-F sequential ladder template; does not execute",
+    )
+    p_c1t_matrix.add_argument("--out", required=True)
+    p_c1t_matrix_run = sub.add_parser(
+        "c1t-run-matrix",
+        help="Run explicitly selected C1T cases sequentially; confirmation required",
+    )
+    p_c1t_matrix_run.add_argument("--matrix", required=True)
+    p_c1t_matrix_run.add_argument("--results-root", required=True)
+    p_c1t_matrix_run.add_argument("--chunk-dir", required=True)
+    p_c1t_matrix_run.add_argument("--inventory", required=True)
+    p_c1t_matrix_run.add_argument(
+        "--case", action="append", required=True, help="Case ID; repeat to select several"
+    )
+    p_c1t_matrix_run.add_argument(
+        "--ollama-base-url", default="http://127.0.0.1:11434"
+    )
+    p_c1t_matrix_run.add_argument("--confirm-model-run", action="store_true")
+    p_c1t_worker = sub.add_parser("c1t-benchmark-worker", help=argparse.SUPPRESS)
+    p_c1t_worker.add_argument("--request", required=True)
+    p_c1t_worker.add_argument("--raw", required=True)
+    p_c1t_worker.add_argument("--partial", required=True)
+    p_c1t_worker.add_argument("--url", required=True)
+    sub.add_parser(
+        "prove-c1t-benchmark",
+        help="Safe synthetic C1T inventory/chunker/supervisor/artifact proofs; no model",
+    )
     p_prove_email_id = sub.add_parser(
         "prove-person-email-identity",
         help="Person communication-identity expansion acceptance (email)",
@@ -1305,6 +1394,133 @@ def main(argv: list[str] | None = None) -> int:
         if args.flightsim:
             os.environ["MEMORYBOX_P1_RUNTIME_HOST"] = "1"
         payload = run_prove_full_evidence_benchmark(flightsim=bool(args.flightsim))
+        print(json.dumps(payload, indent=2, default=str), flush=True)
+        return 0 if payload.get("ok") else 1
+
+    if args.cmd == "c1t-inventory":
+        from memorybox.ask.i11a.c1t_benchmark import collect_inventory
+
+        payload = collect_inventory(
+            out_dir=args.out_dir,
+            ollama_base_url=args.ollama_base_url,
+            model=args.model,
+            include_msinfo32=bool(args.include_msinfo32),
+        )
+        print(json.dumps(payload, indent=2, default=str), flush=True)
+        return 0 if payload.get("ok") else 1
+
+    if args.cmd == "c1t-register-canonical":
+        from memorybox.ask.i11a.c1t_benchmark import register_canonical_generation
+
+        payload = register_canonical_generation(
+            source_dir=args.source_dir,
+            generations_dir=args.generations_dir,
+        )
+        print(json.dumps(payload, indent=2, default=str), flush=True)
+        return 0 if payload.get("ok") else 1
+
+    if args.cmd == "c1t-prepare-chunks":
+        from memorybox.ask.i11a.c1t_benchmark import (
+            ChunkParameters,
+            prepare_parameterized_chunks,
+        )
+
+        payload = prepare_parameterized_chunks(
+            generation_dir=args.generation_dir,
+            out_root=args.out_root,
+            parameters=ChunkParameters(
+                target_input_tokens=args.target_input_tokens,
+                hard_input_tokens=args.hard_input_tokens,
+                reserved_output_tokens=args.reserved_output_tokens,
+                safety_margin_tokens=args.safety_margin_tokens,
+                num_ctx=args.num_ctx,
+                overlap_messages=args.overlap_messages,
+            ),
+            prompt_overhead_tokens=args.prompt_overhead_tokens,
+        )
+        print(json.dumps(payload, indent=2, default=str), flush=True)
+        return 0 if payload.get("ok") else 1
+
+    if args.cmd == "c1t-run-benchmark":
+        from memorybox.ask.i11a.c1t_benchmark import (
+            RunParameters,
+            preflight_benchmark,
+            run_supervised_benchmark,
+        )
+
+        params = RunParameters(
+            model=args.model,
+            num_ctx=args.num_ctx,
+            num_predict=args.num_predict,
+            temperature=args.temperature,
+            top_p=args.top_p,
+            seed=args.seed,
+            hard_timeout_seconds=args.hard_timeout_seconds,
+            stall_warning_seconds=args.stall_warning_seconds,
+            heartbeat_seconds=args.heartbeat_seconds,
+            timeout_grace_seconds=args.timeout_grace_seconds,
+            keep_alive=args.keep_alive,
+            warm_or_cold=args.warm_or_cold,
+            safety_margin_tokens=args.safety_margin_tokens,
+            quality_contract_path=args.quality_contract,
+        )
+        preflight = preflight_benchmark(
+            chunk_dir=args.chunk_dir,
+            chunk_index=args.chunk_index,
+            expected_chunk_hash=args.require_chunk_hash,
+            inventory_path=args.inventory,
+            parameters=params,
+            ollama_base_url=args.ollama_base_url,
+        )
+        if not preflight.get("ok"):
+            print(json.dumps(preflight, indent=2, default=str), flush=True)
+            return 1
+        payload = run_supervised_benchmark(
+            preflight=preflight,
+            results_root=args.results_root,
+            experiment_id=args.experiment_id,
+            repetition=args.repetition,
+            parameters=params,
+            confirm_model_run=bool(args.confirm_model_run),
+        )
+        print(json.dumps(payload, indent=2, default=str), flush=True)
+        return 0 if payload.get("ok") else 1
+
+    if args.cmd == "c1t-write-benchmark-matrix":
+        from memorybox.ask.i11a.c1t_benchmark import write_default_matrix
+
+        payload = write_default_matrix(args.out)
+        print(json.dumps(payload, indent=2, default=str), flush=True)
+        return 0
+
+    if args.cmd == "c1t-run-matrix":
+        from memorybox.ask.i11a.c1t_benchmark import run_experiment_matrix
+
+        payload = run_experiment_matrix(
+            matrix_path=args.matrix,
+            results_root=args.results_root,
+            chunk_dir=args.chunk_dir,
+            inventory_path=args.inventory,
+            selected_cases=set(args.case),
+            confirm_model_run=bool(args.confirm_model_run),
+            ollama_base_url=args.ollama_base_url,
+        )
+        print(json.dumps(payload, indent=2, default=str), flush=True)
+        return 0 if payload.get("ok") else 1
+
+    if args.cmd == "c1t-benchmark-worker":
+        from pathlib import Path
+
+        from memorybox.ask.i11a.c1t_benchmark import _worker_stream_ollama
+
+        return _worker_stream_ollama(
+            Path(args.request), Path(args.raw), Path(args.partial), args.url
+        )
+
+    if args.cmd == "prove-c1t-benchmark":
+        from memorybox.ask.c1t_benchmark_acceptance import run_prove_c1t_benchmark
+
+        payload = run_prove_c1t_benchmark()
         print(json.dumps(payload, indent=2, default=str), flush=True)
         return 0 if payload.get("ok") else 1
 

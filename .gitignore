@@ -10,6 +10,10 @@ exports/
 backup/
 logs/
 
+# Private C1T benchmark inputs/results (inventory, email chunks, model outputs).
+docs/test-output/c1t-benchmark/**
+docs/test-output/trusted-email-review/**
+
 # Archive: track Takeout originals + checksums only (zips via Git LFS).
 # Ignore other archive contents if added later.
 archive/**

@@ -1,0 +1,23 @@
+{
+  "contract_version": "c1t-quality-v1",
+  "status": "operator_must_replace_synthetic_examples_before_real_comparison",
+  "requirements": {
+    "citation_validity": "Every cited [email_N] must exist in the selected chunk.",
+    "groundedness": "Human review: every material factual claim has cited support.",
+    "chronology": "Human review: dated events and resolutions are ordered correctly.",
+    "continuity": "Human review: no resolution is invented across a chunk boundary.",
+    "repeatability": "Compare repeated low-temperature runs materially."
+  },
+  "expectations": [
+    {
+      "expectation_id": "replace-with-reviewed-expectation-1",
+      "required_terms": [
+        "replace-me"
+      ],
+      "evidence_ids": [
+        "email_1"
+      ],
+      "review_notes": "Replace this row with a reviewed representative fact before Case A."
+    }
+  ]
+}
