@@ -101,6 +101,8 @@ python -m memorybox c1t-run-benchmark `
 ```
 
 Without `--confirm-model-run`, the command refuses before inference.
+Without `--think true|false`, the command refuses during parameter validation.
+
 Before quality-comparison runs, copy `C1T_QUALITY_CONTRACT_TEMPLATE.json`,
 replace its synthetic expectation with reviewed Chunk 1 expectations, and add
 `--quality-contract <reviewed-contract.json>`. Do not use the placeholder as a

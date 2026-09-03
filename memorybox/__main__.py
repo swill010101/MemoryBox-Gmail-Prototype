@@ -665,6 +665,17 @@ def main(argv: list[str] | None = None) -> int:
     p_c1t_run.add_argument("--ollama-base-url", default="http://127.0.0.1:11434")
     p_c1t_run.add_argument("--num-ctx", type=int, required=True)
     p_c1t_run.add_argument("--num-predict", type=int, default=4096)
+    p_c1t_run.add_argument(
+        "--think",
+        choices=("true", "false"),
+        required=True,
+        help="Explicit Ollama think flag (top-level request field, not options)",
+    )
+    p_c1t_run.add_argument(
+        "--prompt-schema",
+        default="trusted-email-review-v1",
+        help="Versioned benchmark prompt schema (e.g. historian-evidence-ledger-v1)",
+    )
     p_c1t_run.add_argument("--temperature", type=float, default=0.1)
     p_c1t_run.add_argument("--top-p", type=float, default=0.9)
     p_c1t_run.add_argument("--seed", type=int, default=42)
@@ -705,6 +716,7 @@ def main(argv: list[str] | None = None) -> int:
     p_c1t_worker.add_argument("--request", required=True)
     p_c1t_worker.add_argument("--raw", required=True)
     p_c1t_worker.add_argument("--partial", required=True)
+    p_c1t_worker.add_argument("--thinking", required=True)
     p_c1t_worker.add_argument("--url", required=True)
     sub.add_parser(
         "prove-c1t-benchmark",
@@ -1463,6 +1475,8 @@ def main(argv: list[str] | None = None) -> int:
             warm_or_cold=args.warm_or_cold,
             safety_margin_tokens=args.safety_margin_tokens,
             quality_contract_path=args.quality_contract,
+            prompt_schema_version=args.prompt_schema,
+            think=args.think == "true",
         )
         preflight = preflight_benchmark(
             chunk_dir=args.chunk_dir,
@@ -1514,7 +1528,11 @@ def main(argv: list[str] | None = None) -> int:
         from memorybox.ask.i11a.c1t_benchmark import _worker_stream_ollama
 
         return _worker_stream_ollama(
-            Path(args.request), Path(args.raw), Path(args.partial), args.url
+            Path(args.request),
+            Path(args.raw),
+            Path(args.partial),
+            Path(args.thinking),
+            args.url,
         )
 
     if args.cmd == "prove-c1t-benchmark":
