@@ -18,14 +18,15 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 try:
-    from application.marvin_capture.plus_address import build_plus_address, parse_plus_tag
+    from application.marvin_capture.plus_address import (
+        build_plus_address as _poc_build_plus_address,
+        parse_plus_tag,
+    )
     from application.marvin_capture.reply_extract import extract_reply_text
 except ImportError:  # pragma: no cover
+    _poc_build_plus_address = None
 
-    def build_plus_address(local: str, domain: str, tag: str) -> str:
-        return f"{local}+{tag}@{domain}"
-
-    def parse_plus_tag(addr: str) -> str | None:
+    def parse_plus_tag(addr: str) -> str | None:  # type: ignore[misc]
         if "+" not in (addr or ""):
             return None
         local = (addr or "").split("@", 1)[0]
@@ -36,6 +37,14 @@ except ImportError:  # pragma: no cover
         if isinstance(raw, bytes):
             raw = raw.decode("utf-8", errors="replace")
         return (raw or "").strip()
+
+
+def build_plus_address(user_email: str, tag: str) -> str:
+    """PoC-compatible plus-address: build_plus_address(user_email, tag)."""
+    if _poc_build_plus_address is not None:
+        return _poc_build_plus_address(user_email, tag)
+    local, domain = user_email.split("@", 1)
+    return f"{local}+{tag}@{domain}"
 
 
 HC_PLUS_PREFIX = "hc-"
@@ -187,9 +196,7 @@ class FakeHistorianEmailAdapter:
         if self.fail_next_send:
             self.fail_next_send = False
             return OutboundSendResult(ok=False, fail_detail="synthetic_send_failure")
-        reply_to = build_plus_address(
-            self.user_email.split("@")[0], self.user_email.split("@")[1], f"{HC_PLUS_PREFIX}{correlation_token}"
-        )
+        reply_to = build_plus_address(self.user_email, f"{HC_PLUS_PREFIX}{correlation_token}")
         subject = f"[MB-HC-{correlation_token}] {campaign_title or 'MemoryBox question'}"
         if is_reminder:
             body = (

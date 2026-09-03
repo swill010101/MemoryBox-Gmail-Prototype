@@ -18,16 +18,15 @@ from memorybox.historian_capture.email_adapter import (
     InboundMailItem,
     OutboundSendResult,
     _preserve_bytes,
+    build_plus_address,
     extract_correlation_token,
 )
 
 try:
-    from application.marvin_capture.plus_address import build_plus_address
+    from application.marvin_capture.plus_address import build_plus_address as _poc_build_plus_address
     from application.marvin_capture.reply_extract import extract_reply_text
 except ImportError:  # pragma: no cover
-
-    def build_plus_address(local: str, domain: str, tag: str) -> str:
-        return f"{local}+{tag}@{domain}"
+    _poc_build_plus_address = None
 
     def extract_reply_text(raw: str | bytes, *, is_html: bool = False) -> str:
         if isinstance(raw, bytes):
@@ -141,8 +140,7 @@ class MarvinGmailHistorianEmailAdapter:
         campaign_title: str | None = None,
         is_reminder: bool = False,
     ) -> OutboundSendResult:
-        local, domain = self.user_email.split("@", 1)
-        reply_to = build_plus_address(local, domain, f"{HC_PLUS_PREFIX}{correlation_token}")
+        reply_to = build_plus_address(self.user_email, f"{HC_PLUS_PREFIX}{correlation_token}")
         subject = f"[MB-HC-{correlation_token}] {campaign_title or 'MemoryBox question'}"
         if is_reminder:
             body = (
