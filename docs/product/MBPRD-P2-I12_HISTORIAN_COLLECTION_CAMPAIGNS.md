@@ -1,6 +1,6 @@
 # MBPRD-P2-I12 — Historian Collection & Campaigns V1
 
-**Status:** PRD **LOCKED FOR PLANNING** 2026-09-03 (founder cadence/assessment/opt-out/ack **2026-09-03**) · **BUILD NOT AUTHORIZED**  
+**Status:** PRD **LOCKED FOR PLANNING** 2026-09-03 · **BUILD AUTHORIZED S1–S4** 2026-09-03 (founder O3–O8 locked) · **S5 NOT AUTHORIZED**  
 **Definition:** [MBBS-P2_INCREMENT_12_DEFINITION.md](MBBS-P2_INCREMENT_12_DEFINITION.md)  
 **Roadmap:** [MBRM-001B](MBRM-001B_P2_HISTORIAN_COLLECTION_AND_CAMPAIGNS.md)  
 **Domain:** [MBDC-P2-I12_DOMAIN_MODEL.md](MBDC-P2-I12_DOMAIN_MODEL.md)  
@@ -330,24 +330,22 @@ See [MBMP-P2-I12_MIGRATION_REPLAY.md](MBMP-P2-I12_MIGRATION_REPLAY.md).
 
 ## 13. Open questions for Tom
 
-| # | Question | Recommendation | Tradeoff |
-|---|----------|----------------|----------|
-| O3 | **Promotion scope in first build slice** | **Story only** in S4; Artifact/evidence in S5 if needed | Faster acceptance; Artifact path needs I10B wiring |
-| O4 | **Default follow-up interval** | 72h before reminder; 72h after reminder before `no_response` (harness: 60s) | Independent of weekly/daily question cadence |
-| O5 | **Partial / multi-question replies** | Single Capture Item; owner may split into multiple Review Drafts manually in V1 | Auto-split is V2 |
-| O6 | **Unmatched failure surfacing** | Review inbox badge + Archive Health row “Capture unmatched (N)” | Needs I2 hook — can ship inbox-only in S2 |
-| O7 | **PoC data required for V1 acceptance?** | **No** — acceptance uses fresh FlightSim campaign; PoC replay optional | Replay proves migration only |
-| O8 | **Optimized communications ingestion placement** | Ingestion/backfill stays with P2-I6 decision ([2026-09-03 comms ADR](../decisions/2026-09-03-comms-preparation-and-unified-gallery.md)); I12 uses **Capture mailbox path** only, not family mbox rewrite | Avoid blocking I12 on Gallery/comms backfill |
+**Founder decisions locked 2026-09-03 (BUILD AUTHORIZED S1–S4):**
 
----
+| # | Decision |
+|---|----------|
+| O3 | Story promotion **required** in S4; Artifact promotion **deferred** to S5 |
+| O4 | Default follow-up interval **72 hours** (reminder after first 72h; no-response after second 72h) |
+| O5 | Partial/multi-question replies = **one immutable Capture Item**; owner may split Review Drafts manually |
+| O6 | Unmatched inbound surfaces in **Capture Review inbox / Needs Attention** first; Archive Health secondary |
+| O7 | MarvinCapture PoC data **not required** for V1 acceptance — fresh MB-native campaigns |
+| O8 | Family communications ingestion **separate**; I12 uses dedicated Historian Capture mailbox path only |
 
 ## 14. Build authorization gate
 
-This PRD does **not** authorize implementation. Required before build:
+S1–S4 **BUILD AUTHORIZED** 2026-09-03 on branch `cursor/p2-i12-s1-s4-implementation-7f27`.
 
-1. Tom sign-off on open questions (or defaults accepted).  
-2. Explicit **BUILD AUTHORIZED** message for P2-I12 (whole or per slice).  
-3. FlightSim credential readiness for `memorybox@marvinbot.net` (when live prove required).
+**S5 NOT AUTHORIZED** — no live FlightSim prove, real email, credential changes, deployment, or Artifact promotion without explicit founder authorization.
 
 ---
 

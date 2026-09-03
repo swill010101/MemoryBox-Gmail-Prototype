@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Historian Capture — MemoryBox</title>
+  <style>
+    :root { --bg:#f6f3ee; --ink:#1c1917; --muted:#78716c; --line:#d6d3d1; --acc:#2c4a6e; --warn:#b45309; }
+    * { box-sizing: border-box; }
+    body { font-family: "Segoe UI", system-ui, sans-serif; margin: 0; background: var(--bg); color: var(--ink); }
+    header { padding: 1rem 1.25rem; border-bottom: 1px solid var(--line); background: #fff; display:flex; gap:1rem; align-items:baseline; flex-wrap:wrap; }
+    header h1 { font-size: 1.15rem; margin: 0; }
+    header .badge { background: #e0e7ef; color: var(--acc); padding: .15rem .5rem; border-radius: 4px; font-size: .85rem; }
+    main { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; padding: 1rem; max-width: 1200px; margin: 0 auto; }
+    @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+    section { background: #fff; border: 1px solid var(--line); padding: 1rem; }
+    h2 { font-size: 1rem; margin: 0 0 .75rem; }
+    label { display:block; font-size:.8rem; color:var(--muted); margin-top:.5rem; }
+    input, textarea, select, button { font: inherit; }
+    input, textarea, select { width: 100%; padding: .4rem .5rem; border: 1px solid var(--line); background:#fff; }
+    textarea { min-height: 6rem; white-space: pre-wrap; }
+    button { margin-top: .5rem; margin-right: .35rem; padding: .4rem .7rem; background: var(--acc); color:#fff; border:0; cursor:pointer; }
+    button.secondary { background: #44403c; }
+    button.warn { background: #b45309; }
+    .muted { color: var(--muted); font-size: .85rem; }
+    .hint { color: var(--muted); font-size: .78rem; margin: .2rem 0 .4rem; }
+    ul.list { list-style:none; padding:0; margin:0; }
+    ul.list li { border-top: 1px solid var(--line); padding: .55rem 0; cursor:pointer; }
+    .pill { display:inline-block; font-size:.75rem; padding:.1rem .4rem; border:1px solid var(--line); border-radius:3px; margin-right:.25rem; }
+    #status { padding: .5rem 1.25rem; font-size:.9rem; }
+    .err { color: #b91c1c; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Historian Capture</h1>
+    <span class="badge" id="newBadge">Needs review: 0</span>
+    <span class="muted">Review &amp; Learn · Campaigns · immutable capture · verdict · Story promotion</span>
+  </header>
+  <p id="status" class="muted"></p>
+  <p id="emailStatus" class="muted" style="padding:0 1.25rem 0.5rem"></p>
+  <main>
+    <section>
+      <h2>Campaigns (HC-01 / HC-02)</h2>
+      <label>MB Person (required)</label>
+      <select id="cPerson"><option value="">— select canonical MB Person —</option></select>
+      <label>Confirmed email route</label>
+      <input id="cEmail" placeholder="person@example.com" />
+      <label>Title</label>
+      <input id="cTitle" placeholder="Family interview" />
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem">
+        <div>
+          <label>Question cadence</label>
+          <select id="cCadence">
+            <option value="daily">Daily</option>
+            <option value="weekly" selected>Weekly</option>
+            <option value="monthly">Monthly</option>
+          </select>
+        </div>
+        <div>
+          <label>Follow-up interval (hours)</label>
+          <input id="cFollowUpHours" type="number" value="72" min="1" />
+          <p class="hint">Reminder after first interval; no-response after second (72h default).</p>
+        </div>
+      </div>
+      <label>Questions (one per line)</label>
+      <textarea id="cQuestions" placeholder="What is your earliest memory?"></textarea>
+      <button type="button" id="btnCreate">Create draft</button>
+      <button type="button" id="btnStart">Start</button>
+      <button type="button" class="secondary" id="btnPause">Pause</button>
+      <button type="button" class="secondary" id="btnResume">Resume</button>
+      <button type="button" class="warn" id="btnStop">Stop</button>
+      <button type="button" class="secondary" id="btnTick">Tick</button>
+      <button type="button" class="secondary" id="btnPoll">Poll inbound</button>
+      <ul class="list" id="campList"></ul>
+      <div id="campDetail" class="muted"></div>
+    </section>
+    <section>
+      <h2>Capture review (HC-05 / HC-09)</h2>
+      <ul class="list" id="itemList"></ul>
+      <div id="itemDetail"></div>
+    </section>
+  </main>
+  <script>
+    const ASSESS = [
+      ["high_confidence", "High confidence"],
+      ["moderate_confidence", "Moderate confidence"],
+      ["low_confidence", "Low confidence"],
+      ["uncertain", "Uncertain"],
+    ];
+    const VERDICT = [
+      ["retained", "Keep in archive"],
+      ["rejected", "Reject as evidence"],
+      ["promotion_authorized", "Promote to MemoryBox"],
+    ];
+    let respondentOptions = [];
+    let selectedCampaign = null;
+
+    function status(msg, err) {
+      const el = document.getElementById("status");
+      el.textContent = msg || "";
+      el.className = err ? "err" : "muted";
+    }
+    function escapeHtml(s) {
+      return String(s || "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+    }
+    async function api(path, opts) {
+      const r = await fetch(path, { headers: { "Content-Type": "application/json" }, ...opts });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(data.detail || r.statusText);
+      return data;
+    }
+    async function refreshEmailStatus() {
+      const d = await api("/historian-capture/email-status");
+      document.getElementById("emailStatus").textContent =
+        d.live ? `Mailbox LIVE: ${d.user_email}` : `Harness: ${d.detail || d.provider_key}`;
+    }
+    async function refreshBadge() {
+      const d = await api("/historian-capture/new-count");
+      document.getElementById("newBadge").textContent = `Needs review: ${d.count ?? 0}`;
+    }
+    async function loadPeople() {
+      const d = await api("/historian-capture/respondent-options");
+      respondentOptions = d.options || [];
+      const sel = document.getElementById("cPerson");
+      sel.innerHTML = '<option value="">— select canonical MB Person —</option>';
+      respondentOptions.forEach((o, i) => {
+        const opt = document.createElement("option");
+        opt.value = String(i);
+        opt.textContent = o.label || o.display_name;
+        sel.appendChild(opt);
+      });
+    }
+    document.getElementById("cPerson").onchange = () => {
+      const o = respondentOptions[Number(document.getElementById("cPerson").value)];
+      if (!o) return;
+      if (o.email) document.getElementById("cEmail").value = o.email;
+    };
+    async function loadCampaigns() {
+      const d = await api("/historian-capture/campaigns");
+      const ul = document.getElementById("campList");
+      ul.innerHTML = "";
+      (d.campaigns || []).forEach(c => {
+        const li = document.createElement("li");
+        li.innerHTML = `<span class="pill">${c.status}</span> <strong>${escapeHtml(c.title||"(untitled)")}</strong> · new ${c.new_capture_count||0}`;
+        li.onclick = () => selectCampaign(c.id);
+        ul.appendChild(li);
+      });
+    }
+    async function selectCampaign(id) {
+      const c = await api(`/historian-capture/campaigns/${id}`);
+      selectedCampaign = c;
+      const det = document.getElementById("campDetail");
+      const rs = (c.respondents||[]).map(r => `<li>${escapeHtml(r.display_name_snapshot)} · ${r.status} · ${escapeHtml(r.contact_route_value)}</li>`).join("");
+      const ds = (c.deliveries||[]).map(d => `<li><span class="pill">${d.status}</span> reminder=${d.reminder_sent_at||"—"} no_resp=${d.no_response_at||"—"}</li>`).join("");
+      det.innerHTML = `<h3>Respondents</h3><ul class="list">${rs}</ul><h3>Deliveries</h3><ul class="list">${ds}</ul>`;
+    }
+    async function loadItems() {
+      const d = await api("/historian-capture/items?limit=50");
+      const ul = document.getElementById("itemList");
+      ul.innerHTML = "";
+      (d.items || []).forEach(it => {
+        const li = document.createElement("li");
+        const v = (it.latest_verdict||{}).verdict || "—";
+        li.innerHTML = `<span class="pill">${it.match_status}</span> <span class="pill">${v}</span> ${escapeHtml((it.extracted_text||"").slice(0,80))}`;
+        li.onclick = () => showItem(it.id);
+        ul.appendChild(li);
+      });
+    }
+    async function showItem(id) {
+      const it = await api(`/historian-capture/items/${id}`);
+      const det = document.getElementById("itemDetail");
+      const draft = it.current_draft || {};
+      const assessOpts = ASSESS.map(([v,l]) => `<option value="${v}">${l}</option>`).join("");
+      const verdictOpts = VERDICT.map(([v,l]) => `<option value="${v}">${l}</option>`).join("");
+      det.innerHTML = `
+        <p class="muted">Immutable source (read-only)</p>
+        <textarea readonly>${escapeHtml(it.extracted_text||"")}</textarea>
+        <label>Review draft</label>
+        <textarea id="draftBody">${escapeHtml(draft.body_text||it.extracted_text||"")}</textarea>
+        <label>Private assessment</label>
+        <select id="assessSel">${assessOpts}</select>
+        <label>Verdict</label>
+        <select id="verdictSel">${verdictOpts}</select>
+        <button type="button" id="btnSaveDraft">Save draft</button>
+        <button type="button" id="btnAssess">Save assessment</button>
+        <button type="button" id="btnVerdict">Save verdict</button>
+        <button type="button" id="btnPromote">Promote to Story</button>
+        <button type="button" class="secondary" id="btnThankYou">Send thank-you</button>
+      `;
+      document.getElementById("btnSaveDraft").onclick = async () => {
+        await api(`/historian-capture/items/${id}/draft`, { method: "POST", body: JSON.stringify({ body_text: document.getElementById("draftBody").value }) });
+        status("Draft saved");
+        await loadItems();
+      };
+      document.getElementById("btnAssess").onclick = async () => {
+        await api(`/historian-capture/items/${id}/assessment`, { method: "POST", body: JSON.stringify({ assessment_code: document.getElementById("assessSel").value }) });
+        status("Assessment saved (private)");
+      };
+      document.getElementById("btnVerdict").onclick = async () => {
+        await api(`/historian-capture/items/${id}/verdict`, { method: "POST", body: JSON.stringify({ verdict: document.getElementById("verdictSel").value }) });
+        status("Verdict saved");
+        await loadItems();
+      };
+      document.getElementById("btnPromote").onclick = async () => {
+        const p = await api(`/historian-capture/items/${id}/promote-story`, { method: "POST", body: JSON.stringify({ title: "Historian testimony" }) });
+        status(`Promoted story ${p.promoted_id}`);
+      };
+      document.getElementById("btnThankYou").onclick = async () => {
+        const ty = await api(`/historian-capture/items/${id}/thank-you`, { method: "POST", body: "{}" });
+        status(ty.skipped_reason ? `Thank-you skipped: ${ty.skipped_reason}` : "Thank-you sent");
+      };
+    }
+    document.getElementById("btnCreate").onclick = async () => {
+      const idx = document.getElementById("cPerson").value;
+      const o = respondentOptions[Number(idx)];
+      if (!o || !o.people_id) { status("MB Person required", true); return; }
+      const questions = document.getElementById("cQuestions").value.split(/\n+/).map(s => s.trim()).filter(Boolean);
+      const hours = Number(document.getElementById("cFollowUpHours").value) || 72;
+      await api("/historian-capture/campaigns", {
+        method: "POST",
+        body: JSON.stringify({
+          title: document.getElementById("cTitle").value,
+          people_id: o.people_id,
+          email: document.getElementById("cEmail").value,
+          display_name: o.display_name,
+          cadence_pattern: document.getElementById("cCadence").value,
+          follow_up_interval_seconds: Math.max(1, Math.round(hours * 3600)),
+          questions,
+        }),
+      });
+      status("Campaign created");
+      await loadCampaigns();
+    };
+    ["Start","Pause","Resume","Stop","Tick","Poll"].forEach(name => {
+      const id = "btn" + name;
+      document.getElementById(id).onclick = async () => {
+        if (!selectedCampaign && name !== "Poll") { status("Select a campaign", true); return; }
+        const map = { Start: "start", Pause: "pause", Resume: "resume", Stop: "stop", Tick: "tick", Poll: "poll" };
+        const action = map[name];
+        if (action === "tick" || action === "poll") {
+          await api(`/historian-capture/${action}`, { method: "POST", body: "{}" });
+        } else {
+          await api(`/historian-capture/campaigns/${selectedCampaign.id}/${action}`, { method: "POST", body: "{}" });
+        }
+        status(name + " OK");
+        await loadCampaigns();
+        if (selectedCampaign) await selectCampaign(selectedCampaign.id);
+        await loadItems();
+        await refreshBadge();
+      };
+    });
+    (async () => {
+      await loadPeople();
+      await refreshEmailStatus();
+      await refreshBadge();
+      await loadCampaigns();
+      await loadItems();
+    })();
+  </script>
+</body>
+</html>
