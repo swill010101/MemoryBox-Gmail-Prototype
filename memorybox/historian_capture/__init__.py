@@ -2298,7 +2298,13 @@ def send_thank_you_if_enabled(
                 result.preserved_raw_uri,
             ),
         )
-    return {"ok": True, "ack_id": str(ack_id), "outbound_message_id": result.outbound_message_id}
+    return {
+        "ok": True,
+        "ack_id": str(ack_id),
+        "outbound_message_id": result.outbound_message_id,
+        "sent_at": _iso(_now()),
+        "body_snapshot": send_body,
+    }
 
 
 # --- Ask search --------------------------------------------------------------
@@ -2319,10 +2325,12 @@ def search_historian_capture_for_ask(
     tokens = [t for t in re_split_tokens(q) if len(t) > 2][:8]
     clauses = [
         "i.match_status = 'matched'",
-        """(
-            latest_v.verdict IS NULL
-            OR latest_v.verdict <> 'rejected'
-        )""",
+        """COALESCE((
+            SELECT v.verdict FROM historian_capture_verdicts v
+            WHERE v.capture_item_id = i.id
+            ORDER BY v.decided_at DESC, v.id DESC
+            LIMIT 1
+        ), '') <> 'rejected'""",
     ]
     params: list[Any] = []
     if tokens:

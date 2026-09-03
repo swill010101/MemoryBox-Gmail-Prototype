@@ -3929,12 +3929,43 @@ def search_artifacts(plan: QueryPlan, *, limit: int = 12) -> list[dict[str, Any]
 
 
 def search_guided_capture(plan: QueryPlan, *, limit: int = 12) -> list[dict[str, Any]]:
-    """I11: cite Guided Capture Responses directly (no Story promotion required)."""
+    """I11/I12: cite Guided Capture Responses and Historian Capture testimony."""
     if not getattr(plan, "want_guided_capture", False):
         return []
     from memorybox.guided_capture import search_responses_for_ask
+    from memorybox.historian_capture import search_historian_capture_for_ask
 
-    return search_responses_for_ask(
+    eff_limit = (
+        _provider_fetch_n(0) if (_bounded_period_tell(plan) or int(limit) <= 0) else limit
+    )
+    hits = search_responses_for_ask(
+        query=plan.original_ask or "",
+        person_names=tuple(plan.person_names or ()),
+        limit=eff_limit,
+    )
+    hc_hits = search_historian_capture_for_ask(
+        query=plan.original_ask or "",
+        person_names=tuple(plan.person_names or ()),
+        limit=eff_limit,
+    )
+    seen: set[str] = set()
+    merged: list[dict[str, Any]] = []
+    for h in hits + hc_hits:
+        key = str(h.get("response_id") or h.get("capture_item_id") or h.get("excerpt") or "")
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append(h)
+    return merged[:eff_limit]
+
+
+def search_historian_capture(plan: QueryPlan, *, limit: int = 12) -> list[dict[str, Any]]:
+    """P2-I12: cite promoted/retained Historian Capture testimony; exclude rejected."""
+    if not getattr(plan, "want_historian_capture", False):
+        return []
+    from memorybox.historian_capture import search_historian_capture_for_ask
+
+    return search_historian_capture_for_ask(
         query=plan.original_ask or "",
         person_names=tuple(plan.person_names or ()),
         limit=_provider_fetch_n(0) if (_bounded_period_tell(plan) or int(limit) <= 0) else limit,
