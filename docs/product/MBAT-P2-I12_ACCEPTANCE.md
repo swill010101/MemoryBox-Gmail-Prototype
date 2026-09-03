@@ -1,7 +1,7 @@
 # MBAT-P2-I12 — Historian Collection Acceptance
 
 **Increment:** P2-I12 Historian Collection & Campaigns V1  
-**Status:** Planning **LOCKED** 2026-09-03 · **BUILD NOT AUTHORIZED**  
+**Status:** Planning **LOCKED** 2026-09-03 (founder cadence/assessment/opt-out/ack **2026-09-03**) · **BUILD NOT AUTHORIZED**  
 **Prove (proposed):** `python -m memorybox prove-historian-capture` · `--flightsim` for live mailbox  
 **Definition:** [MBBS-P2_INCREMENT_12_DEFINITION.md](MBBS-P2_INCREMENT_12_DEFINITION.md)  
 **PRD:** [MBPRD-P2-I12_HISTORIAN_COLLECTION_CAMPAIGNS.md](MBPRD-P2-I12_HISTORIAN_COLLECTION_CAMPAIGNS.md)
@@ -26,6 +26,9 @@ Tom executes on FlightSim with real `memorybox@marvinbot.net` channel when live 
 | A-10 | Pause, resume, stop, completion, duplicate handling, unmatched-reply handling work |
 | A-11 | PoC SQLite is not a second source of truth |
 | A-12 | Existing MemoryBox functionality remains operational |
+| A-13 | Unanswered lifecycle: sent → waiting → **one** reminder → waiting → no_response → next question per **question cadence** (follow-up interval separate) |
+| A-14 | Respondent STOP opts out with logged provenance; no further sends to that respondent |
+| A-15 | Thank-you acknowledgment after adjudication may confirm receipt only; never leaks assessment, rejection rationale, or draft/Story text |
 
 ---
 
@@ -41,10 +44,10 @@ python -m memorybox prove-historian-capture [--slice s1|s2|s3|s4|s5] [--flightsi
 
 | Slice | Automated tests (representative) |
 |-------|----------------------------------|
-| **S1** | Create campaign + multi-question; start/pause/resume/stop; fake send creates delivery + question snapshot; schema migration applies |
-| **S2** | Fake inbound correlates by token; idempotent duplicate Message-ID; unmatched → quarantine; raw uri + hash stored |
-| **S3** | Review Draft versioning; source immutable on edit; assessment history; verdict retained/rejected/promotion_authorized |
-| **S4** | Promote to Story; provenance junction populated; Ask search returns hit with attribution; `believe_incorrect` excluded from affirmative Ask |
+| **S1** | Campaign + multi-question; cadence config + follow-up interval stored separately; start/pause/resume/stop; fake send creates delivery + snapshot; **waiting → one reminder → no_response** harness (compressed timers); schema applies |
+| **S2** | Fake inbound correlates by token; idempotent duplicate Message-ID; unmatched → quarantine; STOP → opt-out + send halt; raw uri + hash stored |
+| **S3** | Review Draft versioning; source immutable; **four assessment labels** (separate from verdict); verdict retained/rejected/promotion_authorized |
+| **S4** | Promote to Story; provenance chain; Ask attribution; **rejected** verdict excluded from affirmative Ask; thank-you sent with forbidden-content check |
 | **S5** | Full harness A-01..A-12 mapping; `--flightsim` requires live creds (skip with clear message if absent) |
 
 ### 2.3 Regression suite
@@ -82,8 +85,8 @@ JSON payload:
 | C-05 | Inbound → Capture Item immutable | A-03, A-04 |
 | C-06 | Attachment preservation + hash | A-04 |
 | C-07 | Review Draft versions; source pane read-only | A-05 |
-| C-08 | Owner assessment private + history | A-06 |
-| C-09 | Explicit verdict required before promotion | A-07 |
+| C-08 | Owner assessment: High / Moderate / Low / Uncertain; private + history; **orthogonal to verdict** | A-06 |
+| C-09 | Verdict: Keep in archive / Reject as evidence / Promote; required before promotion | A-07 |
 | C-10 | Story promotion + provenance chain | A-08 |
 | C-11 | Ask retrieval attribution + uncertainty | A-09 |
 | C-12 | Pause/resume/stop/completed behavior | A-10 |
@@ -91,6 +94,11 @@ JSON payload:
 | C-14 | Unmatched queue + resolution | A-10 |
 | C-15 | No SQLite SoT | A-11 |
 | C-16 | Regression: core MB proves pass | A-12 |
+| C-17 | Follow-up interval separate from question cadence (daily/weekly/monthly/weekday/time) | A-13 |
+| C-18 | Unanswered lifecycle: at most **one** reminder per delivery | A-13 |
+| C-19 | After `no_response`, next question scheduled per question cadence only | A-13 |
+| C-20 | STOP opt-out: audit row + `opted_out` respondent + cancelled pending sends | A-14 |
+| C-21 | Thank-you after verdict: generic receipt only; automated leak guard | A-15 |
 
 ---
 
@@ -106,6 +114,9 @@ When `--flightsim` authorized:
 6. Complete review → assessment → verdict → Story promotion.  
 7. Ask: query that should cite promoted testimony; verify attribution.  
 8. Test pause mid-campaign and unmatched reply (mis-subject).  
+9. Leave one question unanswered through reminder → `no_response`; verify next question follows **cadence**, not follow-up interval.  
+10. Reply `STOP` from respondent; verify opt-out audit and no further sends.  
+11. Complete adjudication with thank-you enabled; verify ack body contains no assessment/verdict/draft/Story text.  
 
 Record run id under `docs/test-output/historian-capture/` (implementation phase).
 
@@ -117,7 +128,7 @@ Record run id under `docs/test-output/historian-capture/` (implementation phase)
 |---|----------|--------------------------|
 | O3 | Story-only vs Story+Artifact in first acceptance | **Story-only** required; Artifact optional bonus |
 | O7 | PoC data required? | **No** — fresh campaign only |
-| O4 | Cadence | 24h default; prove may use 60s cadence in harness |
+| O4 | Default follow-up interval | 72h before reminder; 72h after reminder before `no_response` (harness: 60s) |
 
 ---
 

@@ -1,6 +1,6 @@
 # MBDC-P2-I12 — Historian Collection Domain Model
 
-**Status:** Planning **LOCKED** 2026-09-03 · **BUILD NOT AUTHORIZED**  
+**Status:** Planning **LOCKED** 2026-09-03 (founder cadence/assessment/opt-out/ack **2026-09-03**) · **BUILD NOT AUTHORIZED**  
 **PRD:** [MBPRD-P2-I12_HISTORIAN_COLLECTION_CAMPAIGNS.md](MBPRD-P2-I12_HISTORIAN_COLLECTION_CAMPAIGNS.md)  
 **Definition:** [MBBS-P2_INCREMENT_12_DEFINITION.md](MBBS-P2_INCREMENT_12_DEFINITION.md)
 
@@ -36,13 +36,16 @@ historian_capture_campaigns
   ├── historian_capture_questions (ordered)
   └── historian_capture_deliveries (per respondent × question send)
         └── question_snapshot (immutable at send)
+        └── waiting / reminder / no_response lifecycle
 
 historian_capture_items (immutable inbound)
   ├── historian_capture_attachments
   ├── historian_capture_review_drafts (versioned)
   ├── historian_capture_verdicts
   ├── historian_capture_owner_assessments (history)
-  └── historian_capture_promotions → stories | artifacts | evidence
+  ├── historian_capture_promotions → stories | artifacts | evidence
+  ├── historian_capture_respondent_opt_outs (audit)
+  └── historian_capture_thank_you_acknowledgments
 ```
 
 ---
@@ -57,11 +60,14 @@ historian_capture_items (immutable inbound)
 | `owner_person_id` | UUID FK → `people` | No after create | Tom |
 | `title` | TEXT | Yes (draft only) | |
 | `status` | ENUM | Yes | `draft`, `running`, `paused`, `stopped`, `completed` |
-| `cadence_seconds` | INT | Yes (draft/paused) | Default 86400 |
-| `send_mode` | ENUM | Yes (draft) | `time_driven`, `wait_for_response` (V1 may ship time_driven only) |
-| `timezone_name` | TEXT | Yes (draft) | |
+| `cadence_config_json` | JSONB | Yes (draft/paused) | Pattern: `daily` \| `weekly` \| `monthly` \| `weekdays`; `weekdays`: [0–6]; `send_time_local`: `HH:MM` |
+| `follow_up_interval_seconds` | INT | Yes (draft/paused) | Wait before reminder and before `no_response` (separate from question cadence) |
+| `send_thank_you_ack` | BOOL | Yes (draft) | Default **true** |
+| `timezone_name` | TEXT | Yes (draft) | For cadence send time |
 | `provenance_json` | JSONB | Append | |
 | `created_at` / `updated_at` | TIMESTAMPTZ | Auto | |
+
+**Deprecated for V1:** `cadence_seconds` alone — retain only for harness backward compat if needed; logical cadence is `cadence_config_json`.
 
 **Uniqueness:** none beyond PK.
 
@@ -75,8 +81,11 @@ historian_capture_items (immutable inbound)
 | `display_name_snapshot` | TEXT | No after confirm | From Person at add time |
 | `contact_route_kind` | TEXT | No after confirm | `email` in V1 |
 | `contact_route_value` | TEXT | No after confirm | Confirmed address |
-| `status` | ENUM | Yes | `active`, `removed` |
-| `progress_json` | JSONB | Yes | Per-question sent/answered summary |
+| `status` | ENUM | Yes | `active`, `removed`, `opted_out` |
+| `opted_out_at` | TIMESTAMPTZ | Set once | When STOP processed or owner marks |
+| `opt_out_inbound_message_id` | TEXT | Set once | Provenance |
+| `opt_out_source` | ENUM | Set once | `respondent_stop`, `owner_manual` |
+| `progress_json` | JSONB | Yes | Per-question sent/answered/no_response summary |
 
 **Uniqueness:** `UNIQUE (campaign_id, people_id)` — one row per Person per campaign.
 
@@ -102,10 +111,15 @@ historian_capture_items (immutable inbound)
 | `question_id` | UUID FK | No | |
 | `campaign_respondent_id` | UUID FK | No | |
 | `channel` | TEXT | No | `email` V1 |
-| `scheduled_for` | TIMESTAMPTZ | Yes while pending | |
-| `sent_at` | TIMESTAMPTZ | Set once | |
-| `status` | ENUM | Yes | `pending`, `sent`, `failed`, `cancelled` |
-| `correlation_token` | TEXT | No | **UNIQUE** |
+| `scheduled_for` | TIMESTAMPTZ | Yes while pending | Next **question** send slot (cadence-driven) |
+| `sent_at` | TIMESTAMPTZ | Set once | Initial question send |
+| `status` | ENUM | Yes | See lifecycle below |
+| `waiting_started_at` | TIMESTAMPTZ | Yes | Enter `waiting` after `sent` |
+| `reminder_sent_at` | TIMESTAMPTZ | Set once | **At most one** reminder per delivery |
+| `reminder_outbound_message_id` | TEXT | Set once | Reminder transport id |
+| `no_response_at` | TIMESTAMPTZ | Set once | When declared `no_response` or `exhausted` |
+| `follow_up_deadline_at` | TIMESTAMPTZ | Yes | Next timer fire (reminder or no_response) |
+| `correlation_token` | TEXT | No | **UNIQUE** — same token for question + reminder thread |
 | `question_snapshot_text` | TEXT | No after send | Exact text sent |
 | `question_snapshot_hash` | TEXT | No after send | SHA-256 of snapshot |
 | `outbound_message_id` | TEXT | Set on send | Provider transport id |
@@ -114,6 +128,10 @@ historian_capture_items (immutable inbound)
 | `fail_detail` | TEXT | Yes on failure | |
 | `retry_count` | INT | Yes | |
 | `provenance_json` | JSONB | Append | |
+
+**Delivery `status` enum (V1):** `pending`, `sent`, `waiting`, `reminder_sent`, `answered`, `no_response`, `exhausted`, `failed`, `cancelled`.
+
+**Lifecycle constraint:** `reminder_sent_at` IS NOT NULL implies at most one reminder; scheduler must not enqueue a second reminder for the same delivery.
 
 **Uniqueness:** `UNIQUE (correlation_token)`; optional `UNIQUE (outbound_message_id)` where not null.
 
@@ -189,7 +207,7 @@ Latest verdict wins for Ask eligibility rules.
 |-------|------|---------|-------|
 | `id` | UUID PK | No | |
 | `capture_item_id` | UUID FK | No | |
-| `assessment_code` | ENUM | No | See PRD O1 |
+| `assessment_code` | ENUM | No | `high_confidence`, `moderate_confidence`, `low_confidence`, `uncertain` (plus internal `not_rated` before first save) |
 | `note_private` | TEXT | No | |
 | `set_by` | TEXT | No | |
 | `set_at` | TIMESTAMPTZ | No | |
@@ -197,7 +215,41 @@ Latest verdict wins for Ask eligibility rules.
 
 **Not** on contributor-visible fields. History is append-only.
 
-### 3.10 `historian_capture_promotions`
+**Not** on contributor-visible fields. History is append-only. **Orthogonal to verdict** — store separately.
+
+### 3.10 `historian_capture_respondent_opt_outs` (audit)
+
+Append-only log when respondent STOP detected or owner marks opt-out.
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `id` | UUID PK | |
+| `campaign_respondent_id` | UUID FK | |
+| `capture_item_id` | UUID FK NULL | Inbound STOP message if preserved |
+| `keyword_matched` | TEXT | e.g. `STOP` |
+| `recorded_at` | TIMESTAMPTZ | |
+| `source` | ENUM | `respondent_stop`, `owner_manual` |
+| `provenance_json` | JSONB | Raw headers snippet, actor |
+
+Setting opt-out updates `campaign_respondents.status = opted_out` and cancels pending/waiting deliveries for that respondent.
+
+### 3.11 `historian_capture_thank_you_acknowledgments`
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `id` | UUID PK | |
+| `capture_item_id` | UUID FK | |
+| `verdict_id` | UUID FK | Sent after this verdict |
+| `campaign_respondent_id` | UUID FK | Must not be `opted_out` |
+| `sent_at` | TIMESTAMPTZ | |
+| `outbound_message_id` | TEXT | |
+| `body_snapshot` | TEXT | Exact sent text (audit) |
+| `preserved_outbound_raw_uri` | TEXT | |
+| `skipped_reason` | TEXT NULL | e.g. `opted_out`, `disabled`, `forbidden_content` |
+
+**Forbidden in `body_snapshot`:** assessment codes/labels, rejection rationale, Review Draft text, promoted Story text.
+
+### 3.12 `historian_capture_promotions`
 
 | Field | Type | Mutable | Notes |
 |-------|------|---------|-------|
@@ -213,7 +265,7 @@ Latest verdict wins for Ask eligibility rules.
 
 **Uniqueness:** allow multiple promotions only if founder later authorizes split promotions; V1 default **one primary promotion per Capture Item**.
 
-### 3.11 `historian_capture_unmatched_queue` (optional view or table)
+### 3.13 `historian_capture_unmatched_queue` (optional view or table)
 
 May be implemented as `capture_items WHERE match_status IN ('unmatched','ambiguous')` plus resolution audit log.
 
@@ -252,7 +304,8 @@ May be implemented as `capture_items WHERE match_status IN ('unmatched','ambiguo
 
 ## 6. Indexes (minimum)
 
-- `deliveries (status, scheduled_for)` — scheduler  
+- `deliveries (status, follow_up_deadline_at)` — waiting/reminder scheduler  
+- `deliveries (status, scheduled_for)` — question cadence scheduler  
 - `deliveries (correlation_token)` — inbound match  
 - `capture_items (inbound_message_id)` partial unique  
 - `capture_items (match_status, received_at DESC)` — inbox/quarantine  

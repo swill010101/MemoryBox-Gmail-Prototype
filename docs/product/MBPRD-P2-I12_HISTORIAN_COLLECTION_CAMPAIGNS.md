@@ -1,6 +1,6 @@
 # MBPRD-P2-I12 — Historian Collection & Campaigns V1
 
-**Status:** PRD **LOCKED FOR PLANNING** 2026-09-03 · **BUILD NOT AUTHORIZED**  
+**Status:** PRD **LOCKED FOR PLANNING** 2026-09-03 (founder cadence/assessment/opt-out/ack **2026-09-03**) · **BUILD NOT AUTHORIZED**  
 **Definition:** [MBBS-P2_INCREMENT_12_DEFINITION.md](MBBS-P2_INCREMENT_12_DEFINITION.md)  
 **Roadmap:** [MBRM-001B](MBRM-001B_P2_HISTORIAN_COLLECTION_AND_CAMPAIGNS.md)  
 **Domain:** [MBDC-P2-I12_DOMAIN_MODEL.md](MBDC-P2-I12_DOMAIN_MODEL.md)  
@@ -58,29 +58,51 @@ draft ──start──► running ◄──resume── paused
 
 `exhausted` may alias `completed` in UI copy; canonical status = `completed`.
 
-### 3.2 Per-respondent question cycle
+### 3.2 Cadence vs response follow-up (founder lock)
 
-Each **Campaign Respondent** tracks independent progress:
+Two **independent** timing controls:
+
+| Control | Purpose | V1 configurability |
+|---------|---------|-------------------|
+| **Question cadence** | When the **next question** may be sent after the prior question cycle completes | Daily · weekly · monthly · weekday-specific · selected send time (campaign timezone) |
+| **Response follow-up interval** | How long to wait for an answer **before** reminder and before declaring no-response | Configurable per campaign (separate from question cadence) |
+
+`cadence_seconds` alone is **insufficient** — store structured `cadence_config_json` (pattern + weekdays + local send time) and `follow_up_interval_seconds` (or equivalent) as distinct fields.
+
+### 3.3 Per-respondent unanswered-question lifecycle (founder lock)
+
+Each **Delivery** (one question × one respondent) follows this **required V1** lifecycle when no Capture Item arrives:
 
 ```text
-for each active question in sort_order:
-  schedule Delivery (pending)
-    → send (sent | failed)
-    → await Capture Item (optional; late replies OK)
-    → advance to next question on cadence policy
+pending → sent → waiting
+              → (follow_up_interval elapses, no reply)
+              → reminder_sent  [exactly one friendly reminder — never more than one]
+              → waiting
+              → (follow_up_interval elapses again, no reply)
+              → no_response / exhausted
+              → schedule next question per question cadence
 ```
 
-V1 default cadence: **time-driven** (existing `guided_capture` pattern) — one question per interval per respondent unless founder selects wait-for-response mode (open question).
+Rules:
 
-### 3.3 Delivery state machine
+1. **Never send more than one reminder** per question per respondent.  
+2. If a Capture Item arrives during `waiting` (before or after reminder), transition to `answered` and **do not** send reminder or mark `no_response`.  
+3. Late replies after `no_response` still create immutable Capture Items (linked to delivery); they do **not** rewind outbound cadence automatically.  
+4. **Opted-out** respondents skip all future sends (§3.8).  
+5. Campaign **pause** freezes timers; **resume** continues from frozen state.
+
+### 3.4 Delivery state machine
 
 ```text
-pending → sent
+pending → sent → waiting ⇄ (one reminder) → waiting → no_response | exhausted
 pending → failed → (owner retry) → pending
-pending → cancelled (campaign stop/skip)
+pending | waiting → cancelled (campaign stop / skip / opt-out)
+waiting | reminder_sent → answered (Capture Item received)
 ```
 
-### 3.4 Capture Item
+Canonical terminal outcomes per delivery: `answered`, `no_response`, `exhausted`, `cancelled`, `failed`.
+
+### 3.5 Capture Item
 
 ```text
 received → (immutable; no state mutation of source fields)
@@ -94,7 +116,7 @@ Holding states for unmatched inbound:
 - `ambiguous` — multiple candidate deliveries  
 - `resolved` — owner linked to delivery/campaign  
 
-### 3.5 Review Draft
+### 3.6 Review Draft
 
 ```text
 draft_v1 → draft_v2 → … → current_proposed
@@ -102,15 +124,60 @@ draft_v1 → draft_v2 → … → current_proposed
 
 Immutable link to `capture_item_id`. Only one `is_current` per Capture Item.
 
-### 3.6 Verdict
+### 3.7 Owner assessment vs verdict (founder lock)
+
+**Owner assessment** (private qualitative confidence) and **verdict** (disposition) are **separate** controls. Either may be set without the other, but promotion requires both assessment (recommended) and verdict.
+
+#### Owner assessment (locked labels)
+
+| UI label | Code | Notes |
+|----------|------|-------|
+| **High confidence** | `high_confidence` | Private to owner |
+| **Moderate confidence** | `moderate_confidence` | |
+| **Low confidence** | `low_confidence` | |
+| **Uncertain** | `uncertain` | |
+
+Not rated is a UI default before first save (`not_rated` internal only). Assessment is **never** sent to the contributor.
+
+#### Verdict (locked labels)
+
+| UI label | Code |
+|----------|------|
+| **Keep in archive** | `retained` |
+| **Reject as evidence** | `rejected` |
+| **Promote to MemoryBox** | `promotion_authorized` |
 
 ```text
 none → retained | rejected | promotion_authorized
 ```
 
-`promotion_authorized` does not itself create knowledge objects; owner completes promotion action separately (may be same UI step with confirmation).
+`promotion_authorized` does not itself create knowledge objects; owner completes promotion action separately (may be same UI step with confirmation). **Reject as evidence** blocks affirmative Ask/narration use regardless of assessment.
 
-### 3.7 Promotion
+### 3.8 Respondent STOP / opt-out (founder lock)
+
+Respondents may opt out via inbound **STOP** (subject/body keyword per adapter rules, case-insensitive).
+
+| Behavior | Rule |
+|----------|------|
+| Detection | Inbound poll classifies STOP; creates audit row + Capture Item if needed |
+| Provenance | Log `opted_out_at`, `opt_out_inbound_message_id`, matched keyword, respondent Person |
+| Sends | **No further question or reminder** emails to that **campaign respondent** |
+| Campaign | Other respondents continue unless they also opt out |
+| Owner | HC-05 shows opted-out badge; owner may manually mark opt-out from UI with audit |
+
+### 3.9 Thank-you acknowledgment (founder lock)
+
+After owner records a **verdict**, MemoryBox may send an optional **thank-you** email to the respondent.
+
+| Rule | Detail |
+|------|--------|
+| Default | **On** per campaign (`send_thank_you_ack` default true); owner may disable |
+| Allowed content | Thank you; response received/preserved |
+| **Forbidden** | Private owner assessment · rejection rationale · Review Draft edits · promoted Story wording |
+| Timing | After verdict saved; one ack per Capture Item unless owner resends manually (out of V1) |
+| Opt-out | Never send thank-you to opted-out respondents |
+
+### 3.10 Promotion
 
 ```text
 promotion_authorized → promoted (Story | Artifact | accepted_evidence)
@@ -150,7 +217,7 @@ On send, persist `question_snapshot_text` (+ optional `question_snapshot_hash`) 
 
 ```json
 {
-  "assessment_code": "generally_trust",
+  "assessment_code": "moderate_confidence",
   "note_private": "optional owner note",
   "set_by": "owner",
   "set_at": "ISO-8601",
@@ -158,7 +225,24 @@ On send, persist `question_snapshot_text` (+ optional `question_snapshot_hash`) 
 }
 ```
 
-Not exposed to contributor. Narration may reference assessment category with uncertainty framing.
+Allowed `assessment_code` values: `not_rated` (internal pre-save only), `high_confidence`, `moderate_confidence`, `low_confidence`, `uncertain`.
+
+Not exposed to contributor or thank-you email. Narration may reference assessment category with uncertainty framing.
+
+### 4.5 Thank-you acknowledgment contract
+
+```json
+{
+  "capture_item_id": "uuid",
+  "verdict_id": "uuid",
+  "sent_at": "ISO-8601",
+  "outbound_message_id": "provider-id",
+  "body_snapshot": "exact sent text",
+  "preserved_outbound_raw_uri": "file://..."
+}
+```
+
+Body template is system-controlled; must pass automated forbidden-content checks (no assessment, verdict rationale, or draft/Story text).
 
 ---
 
@@ -181,7 +265,7 @@ Not exposed to contributor. Narration may reference assessment category with unc
 
 **V1 minimum:** Story promotion required for acceptance. Artifact/evidence promotion = **open question** (§12).
 
-No auto-promotion on inbound. `believe_incorrect` blocks affirmative evidence use in Ask/narration.
+No auto-promotion on inbound. Verdict `rejected` blocks affirmative evidence use in Ask/narration (assessment alone does not).
 
 ---
 
@@ -189,7 +273,7 @@ No auto-promotion on inbound. `believe_incorrect` blocks affirmative evidence us
 
 - Single owner; no contributor login  
 - Credentials for `memorybox@marvinbot.net` and Gmail integration: env/files outside Git  
-- Private owner assessment never in outbound email  
+- Private owner assessment never in outbound email (including thank-you acknowledgments)  
 - Raw mail storage path not web-public  
 - FlightSim prove uses real mailbox only when explicitly configured; harness uses fake adapter  
 - No silent person creation from inbound From: address — reconcile in UI  
@@ -205,7 +289,10 @@ No auto-promotion on inbound. `believe_incorrect` blocks affirmative evidence us
 | Unmatched reply | Quarantine queue; owner manual link or dismiss |
 | Duplicate Message-ID | Idempotent skip; no second Capture Item |
 | Promotion failure | Transaction rollback on promotion row; capture/draft intact |
-| Scheduler crash | Pending deliveries remain; tick resumes |
+| Scheduler crash | Pending deliveries remain; tick resumes; waiting timers recover from stored deadlines |
+| Duplicate reminder attempt | Block second reminder; log provenance |
+| STOP received | Opt-out respondent; cancel pending/waiting deliveries for that respondent |
+| Thank-you template leak | Block send; surface error to owner |
 | Migration replay | Idempotent on transport ids ([MBMP-P2-I12](MBMP-P2-I12_MIGRATION_REPLAY.md)) |
 
 ---
@@ -228,14 +315,25 @@ See [MBMP-P2-I12_MIGRATION_REPLAY.md](MBMP-P2-I12_MIGRATION_REPLAY.md).
 
 ---
 
-## 12. Open questions for Tom
+## 12. Founder decisions locked (2026-09-03)
+
+| Topic | Decision |
+|-------|----------|
+| Question cadence vs follow-up | **Separate** controls; see §3.2–3.3 |
+| Unanswered lifecycle | `sent → waiting → one reminder → waiting → no_response/exhausted → next question` |
+| Reminder cap | **One** friendly reminder per question — never more |
+| Cadence patterns | Daily · weekly · monthly · weekday-specific · selected send time |
+| Owner assessment | **High confidence** · **Moderate confidence** · **Low confidence** · **Uncertain** (separate from verdict) |
+| Verdict | **Keep in archive** · **Reject as evidence** · **Promote to MemoryBox** |
+| STOP / opt-out | Logged provenance; no further sends to that respondent |
+| Thank-you ack | Optional/default on after adjudication; never leak assessment, rejection rationale, or draft/Story text |
+
+## 13. Open questions for Tom
 
 | # | Question | Recommendation | Tradeoff |
 |---|----------|----------------|----------|
-| O1 | **Final V1 assessment labels** | Adopt existing `guided_capture` six-value set: `not_rated`, `trust_strongly`, `generally_trust`, `uncertain`, `doubt`, `believe_incorrect` | Familiar from I11 partial build; rename to “owner assessment” in UI |
-| O2 | **Final verdict labels** | UI: **Keep in archive** · **Reject as evidence** · **Promote to MemoryBox** (confirm subtype) | Clear verbs; map to `retained` / `rejected` / `promotion_authorized` |
 | O3 | **Promotion scope in first build slice** | **Story only** in S4; Artifact/evidence in S5 if needed | Faster acceptance; Artifact path needs I10B wiring |
-| O4 | **Default cadence and resend policy** | 24h cadence (configurable); failed send manual retry only; no auto-resend of same question | Simple; avoids spam |
+| O4 | **Default follow-up interval** | 72h before reminder; 72h after reminder before `no_response` (harness: 60s) | Independent of weekly/daily question cadence |
 | O5 | **Partial / multi-question replies** | Single Capture Item; owner may split into multiple Review Drafts manually in V1 | Auto-split is V2 |
 | O6 | **Unmatched failure surfacing** | Review inbox badge + Archive Health row “Capture unmatched (N)” | Needs I2 hook — can ship inbox-only in S2 |
 | O7 | **PoC data required for V1 acceptance?** | **No** — acceptance uses fresh FlightSim campaign; PoC replay optional | Replay proves migration only |
@@ -243,7 +341,7 @@ See [MBMP-P2-I12_MIGRATION_REPLAY.md](MBMP-P2-I12_MIGRATION_REPLAY.md).
 
 ---
 
-## 13. Build authorization gate
+## 14. Build authorization gate
 
 This PRD does **not** authorize implementation. Required before build:
 

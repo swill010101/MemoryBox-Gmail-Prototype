@@ -119,20 +119,21 @@ Rejection **never** deletes the Capture Item.
 
 ---
 
-## Owner assessment (V1)
+## Owner assessment (V1 — founder lock)
 
-One overall owner-assigned qualitative confidence/trust assessment for the accepted contribution or promoted Story:
+One overall owner-assigned qualitative confidence assessment for the accepted contribution or promoted Story.
+
+**Locked labels:** **High confidence** · **Moderate confidence** · **Low confidence** · **Uncertain**
 
 - Private to owner  
-- Separate from contributor’s words  
+- Separate from contributor’s words and from **verdict**  
 - Separate from MemoryBox system/evidence confidence  
-- Not sent back to contributor  
+- Not sent back to contributor (including thank-you acknowledgments)  
 - Reversible with history/provenance  
 - Available to retrieval, aggregation, narration  
 - Never transformed into automatic numeric truth percentage  
-- “Believe incorrect” material preserved but cannot serve as affirmative evidence  
 
-**Proposed label set for founder review** (not locked): see PRD §12.
+**Verdict** (separate): **Keep in archive** · **Reject as evidence** · **Promote to MemoryBox**
 
 ---
 

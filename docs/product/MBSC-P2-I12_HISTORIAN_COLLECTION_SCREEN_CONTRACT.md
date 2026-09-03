@@ -1,6 +1,6 @@
 # MBSC-P2-I12 — Historian Collection Screen Contract
 
-**Status:** Planning **LOCKED** 2026-09-03 · **BUILD NOT AUTHORIZED**  
+**Status:** Planning **LOCKED** 2026-09-03 (founder cadence/assessment/opt-out/ack **2026-09-03**) · **BUILD NOT AUTHORIZED**  
 **PRD:** [MBPRD-P2-I12_HISTORIAN_COLLECTION_CAMPAIGNS.md](MBPRD-P2-I12_HISTORIAN_COLLECTION_CAMPAIGNS.md)  
 **UX baseline:** [MBUX-001 v0.4](MBUX-001_v0.4.md) dark-theme MemoryBox shell — **not** a separate Marvin app visual system
 
@@ -21,17 +21,18 @@ Follow I10A-family chrome: left context panel, main canvas, evidence drawer patt
 | ID | Screen | Purpose |
 |----|--------|---------|
 | HC-01 | Campaign list | All campaigns with status, respondent count, new response badge |
-| HC-02 | Create / edit campaign | Title, cadence, timezone; draft-only edits |
+| HC-02 | Create / edit campaign | Title; **question cadence**; **follow-up interval**; timezone; thank-you default |
 | HC-03 | Select respondents | Pick canonical MB People; confirm contact route per Person |
 | HC-04 | Question editor | Ordered questions; starter templates; reorder while unsent |
 | HC-05 | Campaign detail | Status, per-respondent progress matrix, delivery log |
 | HC-06 | Response / review inbox | Filter: new · retained · rejected · unmatched |
 | HC-07 | Capture Item viewer | **Read-only** immutable source: raw headers, body, attachments |
 | HC-08 | Review Draft editor | Versioned working copy; notes; proposed links |
-| HC-09 | Assessment & verdict | Private assessment control; explicit verdict buttons |
+| HC-09 | Assessment & verdict | **Separate** private assessment + explicit verdict; thank-you toggle |
 | HC-10 | Promotion flow | Choose Story (required V1) / Artifact / evidence; confirm |
 | HC-11 | Unmatched resolution | Link to delivery, dismiss, or ad-hoc assign |
-| HC-12 | Paused / stopped / completed states | Clear banners; explain what still accepts inbound |
+| HC-12 | Paused / stopped / completed / opted-out states | Clear banners; explain what still accepts inbound |
+| HC-13 | Thank-you preview (optional) | Confirm generic ack before send; no private fields |
 
 Reference mockups: `codex/historian-capture-reference-screens-20260829` @ `fe913a4` (August 22 screens — **layout reference only**, not authoritative product spec).
 
@@ -47,7 +48,8 @@ Reference mockups: `codex/historian-capture-reference-screens-20260829` @ `fe913
 
 ### HC-02 — Create / edit campaign
 
-- Fields: title (optional), cadence (days/hours), timezone, send mode (if enabled)  
+- Fields: title (optional); **question cadence** (daily · weekly · monthly · weekday picker · local send time); **response follow-up interval** (separate control — e.g. days before reminder / before no-response); timezone; **send thank-you after adjudication** (default **on**)  
+- Help copy: explain cadence controls **next question** timing; follow-up controls **reminder and no-response** only  
 - Save as draft only until Start  
 - Cannot start without ≥1 respondent and ≥1 question  
 
@@ -68,10 +70,10 @@ Reference mockups: `codex/historian-capture-reference-screens-20260829` @ `fe913
 
 ### HC-05 — Campaign detail
 
-- Header: status, cadence, started/stopped timestamps  
-- **Per-respondent table:** question # · delivery status · capture received? · review state  
-- Delivery log: expandable rows with correlation token, sent_at, fail_detail, retry  
-- Actions: Pause, Resume, Stop (confirm), Add question (if policy allows)  
+- Header: status, question cadence summary, follow-up interval, started/stopped timestamps  
+- **Per-respondent table:** question # · delivery status (`waiting` · `reminder sent` · `no response` · `answered`) · capture received? · review state · **opted out** badge  
+- Delivery log: expandable rows with correlation token, sent_at, reminder_sent_at, no_response_at, fail_detail, retry  
+- Actions: Pause, Resume, Stop (confirm), mark respondent opted out (audit), Add question (if policy allows)  
 
 ### HC-06 — Review inbox
 
@@ -97,13 +99,16 @@ Reference mockups: `codex/historian-capture-reference-screens-20260829` @ `fe913
 
 ### HC-09 — Assessment & verdict
 
-- **Owner assessment** (private): proposed 6-value select + optional note  
+**Two separate sections** — assessment does not imply verdict and vice versa.
+
+- **Owner assessment** (private): **High confidence** · **Moderate confidence** · **Low confidence** · **Uncertain** + optional private note  
 - History link: prior assessments  
-- **Verdict** (explicit, separate step):  
+- **Verdict** (explicit, separate control):  
   - **Keep in archive** (`retained`)  
   - **Reject as evidence** (`rejected`)  
   - **Promote to MemoryBox** (`promotion_authorized`) → opens HC-10  
-- `believe_incorrect` assessment + reject: show warning that Ask will not use as affirmative evidence  
+- **Reject as evidence** shows warning that Ask will not use as affirmative evidence (independent of assessment level)  
+- After verdict save: if campaign `send_thank_you_ack` and respondent not opted out → offer HC-13 preview/send  
 
 ### HC-10 — Promotion flow
 
@@ -121,11 +126,20 @@ Reference mockups: `codex/historian-capture-reference-screens-20260829` @ `fe913
 
 ### HC-12 — State banners
 
-| Campaign status | Banner |
-|-----------------|--------|
+| Campaign / respondent status | Banner |
+|----------------------------|--------|
 | `paused` | “Outbound paused — inbound replies still accepted” |
 | `stopped` | “Campaign stopped — no further questions will be sent” |
 | `completed` | “All questions sent — awaiting or reviewing replies” |
+| Respondent `opted_out` | “Respondent opted out — no further emails to this person in this campaign” |
+
+### HC-13 — Thank-you preview
+
+- Shown after verdict when thank-you is enabled  
+- Display **fixed template** only (e.g. “Thank you — we received and preserved your reply.”)  
+- **No** assessment, verdict rationale, draft edits, or Story text — preview must match sent body  
+- Owner may disable for this send or turn off default in campaign settings  
+- If respondent opted out: hide send; show why skipped  
 
 ---
 
@@ -134,9 +148,10 @@ Reference mockups: `codex/historian-capture-reference-screens-20260829` @ `fe913
 1. Dark theme, MB shell components — reuse Journal/Story panel patterns.  
 2. Immutable source always visually distinct (muted panel, lock icon).  
 3. Never imply contributor text is verified fact.  
-4. Assessment labels never shown to contributor (N/A in V1 — no contributor UI).  
+4. Assessment labels never shown to contributor; thank-you must not leak private fields (HC-13).  
 5. Promotion never one-click from inbox row without review + verdict.  
 6. Return navigation preserves campaign/inbox context (I1 context stack).  
+7. Question cadence and follow-up interval are distinct fields — do not collapse in UI.  
 
 ---
 

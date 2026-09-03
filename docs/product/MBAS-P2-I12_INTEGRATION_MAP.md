@@ -90,7 +90,7 @@ V1 acceptance may be Story-only; Artifact path wired in S5 if authorized.
 |-------------|----------|
 | **Retrieval** | `search_historian_capture_for_ask()` — promoted Stories + optionally retained items per policy |
 | **Attribution string** | “{Person} wrote in response to historian question … (owner assessment: {code})” |
-| **Uncertainty** | `believe_incorrect` / `rejected` excluded from affirmative narration |
+| **Uncertainty** | Verdict `rejected` excluded from affirmative narration; assessment informs framing only |
 | **Narrative pack** | Add unit kind `historian_testimony` or extend `story` with capture provenance |
 | **Guided capture hits** | Migrate `guided_capture` search to historian capture model |
 
