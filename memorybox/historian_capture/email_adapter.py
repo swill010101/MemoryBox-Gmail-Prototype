@@ -385,10 +385,62 @@ def get_email_adapter() -> HistorianEmailAdapter:
         )
         return _ADAPTER
 
-    detail = (
-        "Historian Capture live mailbox not authorized in S1–S4 build. "
-        "Set MEMORYBOX_HC_EMAIL_PROVIDER=fake for harness."
-    )
+    last_err = ""
+    if mode in ("auto", "marvin", "gmail", "live"):
+        try:
+            from memorybox.historian_capture.gmail_live import (
+                MarvinGmailHistorianEmailAdapter,
+                build_historian_gmail_client,
+                load_historian_gmail_config,
+                resolve_historian_user_email,
+            )
+
+            cfg = load_historian_gmail_config()
+            gmail = cfg.get("gmail") or {}
+            creds_path = Path(gmail.get("credentials_file") or "")
+            token_path = Path(gmail.get("token_file") or "")
+            user_email = resolve_historian_user_email(cfg)
+            has_creds = creds_path.is_file()
+            has_token = token_path.is_file()
+
+            if has_creds and has_token:
+                client = build_historian_gmail_client(cfg)
+                try:
+                    profile = client.service.users().getProfile(userId="me").execute()
+                    profile_email = (profile or {}).get("emailAddress") or ""
+                    if profile_email and "@" in profile_email:
+                        user_email = profile_email
+                except Exception:
+                    pass
+                _ADAPTER = MarvinGmailHistorianEmailAdapter(client, user_email=user_email)
+                _ADAPTER_STATUS.update(
+                    {
+                        "provider_key": "marvin_historian_gmail",
+                        "ok": True,
+                        "detail": (
+                            f"Live Historian Capture Gmail ({user_email}); "
+                            "poll uses label MemoryBox/HC-Processed — never Trash"
+                        ),
+                        "user_email": user_email,
+                        "live": True,
+                    }
+                )
+                return _ADAPTER
+            if mode in ("marvin", "gmail", "live"):
+                last_err = (
+                    f"MEMORYBOX_HC_EMAIL_PROVIDER={mode} but credentials/token missing "
+                    f"(creds={has_creds} token={has_token} at {creds_path} / {token_path})"
+                )
+            elif mode == "auto":
+                last_err = (
+                    "No Historian Capture Gmail credentials/token; "
+                    "set MEMORYBOX_HC_GMAIL_CREDENTIALS + MEMORYBOX_HC_GMAIL_TOKEN "
+                    "or MEMORYBOX_HC_EMAIL_PROVIDER=fake for harness."
+                )
+        except Exception as exc:  # noqa: BLE001
+            last_err = f"Historian Gmail adapter failed: {exc}"
+
+    detail = last_err or "Historian Capture email provider unavailable"
     _ADAPTER = UnavailableHistorianEmailAdapter(detail, user_email=HC_MAILBOX)
     _ADAPTER_STATUS.update(
         {
