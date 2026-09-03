@@ -43,6 +43,16 @@ from memorybox.providers.llm.fake import FakeLlmProvider
 from memorybox.providers.photo.fake import FakePhotoProvider
 
 
+def _outbound_sent_for_campaign(campaign_id: str) -> int:
+    """Count deliveries with sent_at — includes send from start_campaign(auto_tick)."""
+    camp = get_campaign(campaign_id)
+    return sum(
+        1
+        for d in (camp.get("deliveries") or [])
+        if d.get("sent_at")
+    )
+
+
 def _check(
     criteria: dict[str, bool],
     cid: str,
@@ -721,8 +731,24 @@ def _prove_historian_capture_flightsim(*, slice_norm: str) -> dict[str, Any]:
             meta["stage2_campaign_id"] = camp["id"]
             t0 = datetime.now(timezone.utc)
             start_campaign(camp["id"], now=t0)
+            # start_campaign auto_ticks; a second tick at the same instant is usually a no-op.
             tick = tick_scheduler(now=t0, adapter=adapter)
-            counts["outbound_sent"] += len(tick.get("sent") or [])
+            counts["outbound_sent"] = _outbound_sent_for_campaign(camp["id"])
+            meta["stage2_tick"] = {
+                "sent": tick.get("sent") or [],
+                "failed": tick.get("failed") or [],
+            }
+            if counts["outbound_sent"] < 1:
+                failed = [
+                    d
+                    for d in (get_campaign(camp["id"]).get("deliveries") or [])
+                    if d.get("status") == "failed"
+                ]
+                if failed:
+                    meta["stage2_send_failures"] = [
+                        {"id": d["id"], "fail_detail": d.get("fail_detail")}
+                        for d in failed
+                    ]
             _check(criteria, "FS-10", counts["outbound_sent"] >= 1, problems, "outbound sent")
 
             timeout = int(os.environ.get("MEMORYBOX_HC_STAGE2_REPLY_TIMEOUT") or "900")
