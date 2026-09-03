@@ -349,6 +349,9 @@ _ADAPTER_STATUS: dict[str, Any] = {
     "provider_key": None,
     "ok": False,
     "detail": "not_initialized",
+    "capture_mailbox": HC_MAILBOX,
+    "configured_email": HC_MAILBOX,
+    "transport_email": None,
     "user_email": HC_MAILBOX,
     "live": False,
 }
@@ -363,6 +366,9 @@ def set_email_adapter(adapter: HistorianEmailAdapter | None) -> None:
                 "provider_key": None,
                 "ok": False,
                 "detail": "cleared",
+                "capture_mailbox": HC_MAILBOX,
+                "configured_email": HC_MAILBOX,
+                "transport_email": None,
                 "user_email": HC_MAILBOX,
                 "live": False,
             }
@@ -385,7 +391,10 @@ def get_email_adapter() -> HistorianEmailAdapter:
             {
                 "provider_key": "fake_historian_email",
                 "ok": True,
-                "detail": "MEMORYBOX_HC_EMAIL_PROVIDER=fake (harness only)",
+                "detail": f"Historian Capture channel {HC_MAILBOX} (harness fake provider)",
+                "capture_mailbox": HC_MAILBOX,
+                "configured_email": HC_MAILBOX,
+                "transport_email": HC_MAILBOX,
                 "user_email": HC_MAILBOX,
                 "live": False,
             }
@@ -407,15 +416,18 @@ def get_email_adapter() -> HistorianEmailAdapter:
             creds_path = Path(gmail.get("credentials_file") or "")
             token_path = Path(gmail.get("token_file") or "")
             user_email = resolve_historian_user_email(cfg)
+            configured_email = user_email
             has_creds = creds_path.is_file()
             has_token = token_path.is_file()
 
             if has_creds and has_token:
                 client = build_historian_gmail_client(cfg)
+                transport_email = user_email
                 try:
                     profile = client.service.users().getProfile(userId="me").execute()
                     profile_email = (profile or {}).get("emailAddress") or ""
                     if profile_email and "@" in profile_email:
+                        transport_email = profile_email
                         user_email = profile_email
                 except Exception:
                     pass
@@ -425,10 +437,13 @@ def get_email_adapter() -> HistorianEmailAdapter:
                         "provider_key": "marvin_historian_gmail",
                         "ok": True,
                         "detail": (
-                            f"Live Historian Capture Gmail ({user_email}); "
-                            "poll uses label MemoryBox/HC-Processed — never Trash"
+                            f"Historian Capture channel {HC_MAILBOX}; "
+                            f"Gmail API transport {transport_email}"
                         ),
-                        "user_email": user_email,
+                        "capture_mailbox": HC_MAILBOX,
+                        "configured_email": configured_email,
+                        "transport_email": transport_email,
+                        "user_email": transport_email,
                         "live": True,
                     }
                 )
@@ -454,6 +469,9 @@ def get_email_adapter() -> HistorianEmailAdapter:
             "provider_key": "unavailable",
             "ok": False,
             "detail": detail,
+            "capture_mailbox": HC_MAILBOX,
+            "configured_email": HC_MAILBOX,
+            "transport_email": None,
             "user_email": HC_MAILBOX,
             "live": False,
         }
