@@ -647,7 +647,7 @@
           </div>
         </div>
         ${banner}
-        ${c.status === "running" ? `<p class="hint">${waiting ? "The next question cannot be sent while MemoryBox is waiting for the current reply." : (pending ? "The next question is waiting for its scheduled date. You can send it now." : "There is no next question waiting to send.")} <span class="inline-msg" id="msgAdvance"></span></p>` : ""}
+        ${c.status === "running" ? `<p class="hint">${!pending ? "There is no next question waiting to send." : (waiting ? "The next question cannot be sent while MemoryBox is waiting for the current reply." : "The next question is waiting for its scheduled date. You can send it now.")} <span class="inline-msg" id="msgAdvance"></span></p>` : ""}
         <div class="review-grid">
           <div class="metric"><strong>${captureItems.length}</strong><span class="hint">Replies received</span></div>
           <div class="metric"><strong>${reviewed}</strong><span class="hint">Reviewed (${retained} kept · ${rejected} rejected)</span></div>
