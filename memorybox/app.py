@@ -4527,6 +4527,40 @@ def hc_get_campaign(campaign_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
+@app.put("/historian-capture/campaigns/{campaign_id}")
+def hc_update_campaign(campaign_id: str, body: dict[str, Any]) -> dict[str, Any]:
+    from memorybox.historian_capture import HistorianCaptureError, update_draft_campaign
+
+    try:
+        pattern = str(body.get("cadence_pattern") or "weekly")
+        cadence = {"pattern": pattern, "send_time_local": "09:00"}
+        if pattern == "seconds":
+            cadence["interval_seconds"] = int(body.get("cadence_interval_seconds") or 60)
+        follow = body.get("follow_up_interval_seconds")
+        return update_draft_campaign(
+            campaign_id,
+            title=body.get("title"),
+            cadence_config_json=cadence,
+            follow_up_interval_seconds=int(follow) if follow is not None else None,
+            people_id=body.get("people_id"),
+            email=body.get("email"),
+            display_name=body.get("display_name"),
+            questions=list(body.get("questions")) if body.get("questions") is not None else None,
+        )
+    except HistorianCaptureError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.delete("/historian-capture/campaigns/{campaign_id}")
+def hc_delete_campaign(campaign_id: str) -> dict[str, Any]:
+    from memorybox.historian_capture import HistorianCaptureError, delete_campaign
+
+    try:
+        return delete_campaign(campaign_id)
+    except HistorianCaptureError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
 @app.post("/historian-capture/campaigns/{campaign_id}/{action}")
 def hc_campaign_action(campaign_id: str, action: str) -> dict[str, Any]:
     from memorybox.historian_capture import (
@@ -4590,6 +4624,21 @@ def hc_get_item(item_id: str) -> dict[str, Any]:
         return get_capture_item(item_id)
     except HistorianCaptureError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/historian-capture/items/{item_id}/source")
+def hc_item_source(item_id: str) -> Response:
+    from memorybox.historian_capture import HistorianCaptureError, capture_item_source_bytes
+
+    try:
+        raw = capture_item_source_bytes(item_id)
+    except HistorianCaptureError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return Response(
+        content=raw,
+        media_type="message/rfc822",
+        headers={"Content-Disposition": 'attachment; filename="historian-capture.eml"'},
+    )
 
 
 @app.post("/historian-capture/items/{item_id}/draft")
@@ -4657,11 +4706,18 @@ def hc_promote_story(item_id: str, body: dict[str, Any]) -> dict[str, Any]:
 
 
 @app.post("/historian-capture/items/{item_id}/thank-you")
-def hc_thank_you(item_id: str) -> dict[str, Any]:
-    from memorybox.historian_capture import HistorianCaptureError, send_thank_you_if_enabled
+def hc_thank_you(item_id: str, body: dict[str, Any] | None = None) -> dict[str, Any]:
+    from memorybox.historian_capture import (
+        HistorianCaptureError,
+        send_thank_you_if_enabled,
+        thank_you_preview_body,
+    )
 
+    extra = str((body or {}).get("extra_text") or "").strip()
+    canned = thank_you_preview_body()
+    send_body = f"{canned}\n\n{extra}".strip() if extra else canned
     try:
-        return send_thank_you_if_enabled(item_id)
+        return send_thank_you_if_enabled(item_id, body=send_body)
     except HistorianCaptureError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

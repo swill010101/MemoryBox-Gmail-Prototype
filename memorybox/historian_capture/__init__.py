@@ -934,6 +934,107 @@ def resume_campaign(
     return start_campaign(campaign_id, now=now, auto_tick=auto_tick)
 
 
+def delete_campaign(campaign_id: str) -> dict[str, Any]:
+    """Remove a campaign. Capture items stay in the archive, unlinked."""
+    cid = _parse_uuid(campaign_id, field="campaign_id")
+    with connection() as conn:
+        camp = conn.execute(
+            "SELECT id, title FROM historian_capture_campaigns WHERE id = %s",
+            (cid,),
+        ).fetchone()
+        if not camp:
+            raise HistorianCaptureError("campaign not found")
+        conn.execute(
+            "DELETE FROM historian_capture_campaigns WHERE id = %s", (cid,)
+        )
+    return {"ok": True, "deleted_id": str(cid), "title": camp.get("title")}
+
+
+def update_draft_campaign(
+    campaign_id: str,
+    *,
+    title: str | None = None,
+    cadence_config_json: dict[str, Any] | None = None,
+    follow_up_interval_seconds: int | None = None,
+    people_id: str | None = None,
+    email: str | None = None,
+    display_name: str | None = None,
+    questions: list[str] | None = None,
+) -> dict[str, Any]:
+    """Edit a draft campaign before Start. Started campaigns stay read-only here."""
+    cid = _parse_uuid(campaign_id, field="campaign_id")
+    if follow_up_interval_seconds is not None and follow_up_interval_seconds < 1:
+        raise HistorianCaptureError("follow_up_interval_seconds must be >= 1")
+    with connection() as conn:
+        camp = conn.execute(
+            "SELECT * FROM historian_capture_campaigns WHERE id = %s", (cid,)
+        ).fetchone()
+        if not camp:
+            raise HistorianCaptureError("campaign not found")
+        if camp["status"] != "draft":
+            raise HistorianCaptureError("only draft campaigns can be edited")
+        sets: list[str] = ["updated_at = now()"]
+        params: list[Any] = []
+        if title is not None:
+            sets.append("title = %s")
+            params.append((title or "").strip() or None)
+        if cadence_config_json is not None:
+            sets.append("cadence_config_json = %s::jsonb")
+            params.append(json.dumps(cadence_config_json))
+        if follow_up_interval_seconds is not None:
+            sets.append("follow_up_interval_seconds = %s")
+            params.append(int(follow_up_interval_seconds))
+        params.append(cid)
+        conn.execute(
+            f"UPDATE historian_capture_campaigns SET {', '.join(sets)} WHERE id = %s",
+            params,
+        )
+        if email or people_id or display_name:
+            row = conn.execute(
+                """
+                SELECT id FROM historian_capture_campaign_respondents
+                WHERE campaign_id = %s ORDER BY created_at ASC LIMIT 1
+                """,
+                (cid,),
+            ).fetchone()
+            if row:
+                rsets = ["updated_at = now()"]
+                rparams: list[Any] = []
+                if email:
+                    rsets.append("contact_route_value = %s")
+                    rparams.append(email.strip())
+                if display_name:
+                    rsets.append("display_name_snapshot = %s")
+                    rparams.append(display_name.strip())
+                if people_id:
+                    rsets.append("people_id = %s")
+                    rparams.append(_parse_uuid(people_id, field="people_id"))
+                rparams.append(row["id"])
+                conn.execute(
+                    f"UPDATE historian_capture_campaign_respondents SET {', '.join(rsets)} WHERE id = %s",
+                    rparams,
+                )
+        if questions is not None:
+            sent = conn.execute(
+                """
+                SELECT 1 FROM historian_capture_deliveries
+                WHERE campaign_id = %s AND sent_at IS NOT NULL LIMIT 1
+                """,
+                (cid,),
+            ).fetchone()
+            if sent:
+                raise HistorianCaptureError("cannot replace questions after send")
+            conn.execute(
+                "DELETE FROM historian_capture_questions WHERE campaign_id = %s",
+                (cid,),
+            )
+            for body in questions:
+                text = (body or "").strip()
+                if text:
+                    _insert_question(conn, cid, text, sort_order=None)
+    return get_campaign(str(cid))
+
+
 def stop_campaign(campaign_id: str) -> dict[str, Any]:
     cid = _parse_uuid(campaign_id, field="campaign_id")
     with connection() as conn:
@@ -1824,24 +1925,71 @@ def list_capture_items(
     clauses = ["1=1"]
     params: list[Any] = []
     if campaign_id:
-        clauses.append("campaign_id = %s")
+        clauses.append("i.campaign_id = %s")
         params.append(_parse_uuid(campaign_id, field="campaign_id"))
     if match_status:
-        clauses.append("match_status = %s")
+        clauses.append("i.match_status = %s")
         params.append(match_status)
     params.append(limit)
     where = " AND ".join(clauses)
     with connection() as conn:
         rows = conn.execute(
             f"""
-            SELECT id FROM historian_capture_items
+            SELECT i.id, i.campaign_id, i.from_address, i.subject, i.extracted_text,
+                   i.received_at, i.match_status, i.preserved_raw_uri, i.content_hash,
+                   r.display_name_snapshot AS respondent_name,
+                   c.title AS campaign_title,
+                   q.body_text AS question_body,
+                   latest_v.verdict,
+                   latest_a.assessment_code
+            FROM historian_capture_items i
+            LEFT JOIN historian_capture_campaign_respondents r
+                ON r.id = i.campaign_respondent_id
+            LEFT JOIN historian_capture_campaigns c ON c.id = i.campaign_id
+            LEFT JOIN historian_capture_questions q ON q.id = i.question_id
+            LEFT JOIN LATERAL (
+                SELECT verdict FROM historian_capture_verdicts v
+                WHERE v.capture_item_id = i.id
+                ORDER BY v.decided_at DESC, v.id DESC
+                LIMIT 1
+            ) latest_v ON TRUE
+            LEFT JOIN LATERAL (
+                SELECT assessment_code FROM historian_capture_owner_assessments a
+                WHERE a.capture_item_id = i.id
+                ORDER BY a.set_at DESC, a.id DESC
+                LIMIT 1
+            ) latest_a ON TRUE
             WHERE {where}
-            ORDER BY received_at DESC
+            ORDER BY i.received_at DESC
             LIMIT %s
             """,
             params,
         ).fetchall()
-    return [get_capture_item(str(r["id"])) for r in rows]
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        verdict = row.get("verdict")
+        assess = row.get("assessment_code")
+        out.append(
+            {
+                "id": str(row["id"]),
+                "campaign_id": str(row["campaign_id"]) if row.get("campaign_id") else None,
+                "from_address": row.get("from_address"),
+                "subject": row.get("subject"),
+                "extracted_text": row.get("extracted_text"),
+                "received_at": _iso(row.get("received_at")),
+                "match_status": row.get("match_status"),
+                "preserved_raw_uri": row.get("preserved_raw_uri"),
+                "content_hash": row.get("content_hash"),
+                "respondent_name": row.get("respondent_name"),
+                "campaign_title": row.get("campaign_title"),
+                "question_body": row.get("question_body"),
+                "latest_verdict": {"verdict": verdict} if verdict else None,
+                "latest_assessment": (
+                    {"assessment_code": assess} if assess else None
+                ),
+            }
+        )
+    return out
 
 
 def list_unmatched_items(*, limit: int = 100) -> list[dict[str, Any]]:
@@ -2154,18 +2302,27 @@ def promote_to_story(
     }
 
 
+def capture_item_source_bytes(capture_item_id: str) -> bytes:
+    item = get_capture_item(capture_item_id)
+    raw = _read_raw_from_uri(item.get("preserved_raw_uri"))
+    if raw is None:
+        raise HistorianCaptureError("preserved source is not available")
+    return raw
+
+
 def _read_raw_from_uri(uri: str | None) -> bytes | None:
     if not uri:
         return None
     from urllib.parse import unquote, urlparse
 
     parsed = urlparse(uri)
-    if parsed.scheme != "file":
-        return None
-    raw = unquote(parsed.path or "")
-    if os.name == "nt" and raw.startswith("/") and len(raw) >= 3 and raw[2] == ":":
-        raw = raw[1:]
-    path = Path(raw)
+    if parsed.scheme == "file":
+        raw = unquote(parsed.path or "")
+        if os.name == "nt" and raw.startswith("/") and len(raw) >= 3 and raw[2] == ":":
+            raw = raw[1:]
+        path = Path(raw)
+    else:
+        path = Path(uri)
     if path.is_file():
         return path.read_bytes()
     return None
@@ -2599,6 +2756,8 @@ __all__ = [
     "create_campaign",
     "get_campaign",
     "list_campaigns",
+    "update_draft_campaign",
+    "delete_campaign",
     "add_questions",
     "add_respondents",
     "update_question",
@@ -2613,6 +2772,7 @@ __all__ = [
     "record_capture_item",
     "poll_and_ingest",
     "get_capture_item",
+    "capture_item_source_bytes",
     "list_capture_items",
     "list_unmatched_items",
     "new_capture_count",

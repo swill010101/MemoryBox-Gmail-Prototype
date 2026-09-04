@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>MemoryBox — Historian Capture</title>
-  <link rel="stylesheet" href="/static/explore/explore.css?v=hc-i12-2" />
+  <link rel="stylesheet" href="/static/explore/explore.css?v=hc-i12-3" />
   <link rel="stylesheet" href="/static/shell/mb-narrative-field.css?v=i10a2-7" />
   <style>
     :root {
@@ -27,6 +27,16 @@
     html[data-mb-surface="historian-capture"] .mb-explore-tagline { color: #b7c0d0 !important; }
     html[data-mb-surface="historian-capture"] .mb-explore-nav a { color: #b7c0d0 !important; }
     html[data-mb-surface="historian-capture"] .mb-explore-nav a.is-active { color: #f3f6fb !important; }
+    html[data-mb-surface="historian-capture"] body.mb-shell .card,
+    html[data-mb-surface="historian-capture"] body.mb-shell .panel,
+    html[data-mb-surface="historian-capture"] body.mb-shell .side,
+    html[data-mb-surface="historian-capture"] .card,
+    html[data-mb-surface="historian-capture"] .panel,
+    html[data-mb-surface="historian-capture"] .side {
+      background: #1a2230 !important;
+      color: #e8edf5 !important;
+      border-color: rgba(255,255,255,0.12) !important;
+    }
     * { box-sizing: border-box; }
     body { margin: 0; min-height: 100vh; font-family: var(--ui); background: #0f141c; color: #e8edf5; }
     a { color: #93c5fd; text-decoration: none; }
@@ -43,9 +53,15 @@
     .btn { border-radius: 10px; padding: 0.5rem 0.9rem; border: 1px solid var(--line); background: #141b27; color: var(--ink); }
     .btn.primary { background: var(--blue); border-color: var(--blue); color: #fff; }
     .btn.ghost { background: transparent; }
+    .btn.danger { color: #fca5a5; border-color: rgba(252,165,165,0.3); background: transparent; }
     .btn:disabled { opacity: 0.45; cursor: not-allowed; }
     .page-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 1rem; margin: 1.4rem 0 1rem; flex-wrap: wrap; }
     .page-head .actions { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
+    .badge { display: inline-flex; align-items: center; gap: 0.3rem; border: 1px solid var(--line); border-radius: 999px; padding: 0.15rem 0.55rem; font-size: 0.75rem; margin-right: 0.3rem; color: #e8edf5; }
+    .dot { width: 7px; height: 7px; border-radius: 99px; display: inline-block; }
+    .dot.saved { background: var(--green); }
+    .dot.draft { background: var(--orange); }
+    .dot.run { background: var(--blue); }
     .crumb { color: var(--muted); font-size: 0.85rem; margin: 1rem 0 0.4rem; }
     .pill { display: inline-block; font-size: 0.72rem; padding: 0.15rem 0.5rem; border-radius: 999px; background: rgba(59,130,246,0.2); color: #93c5fd; margin-right: 0.25rem; }
     .pill.warn { background: rgba(251,146,60,0.15); color: #fdba74; }
@@ -106,6 +122,13 @@
     .editor-foot { position: sticky; bottom: 0; display: flex; justify-content: flex-end; gap: 0.6rem; padding: 0.75rem 1.25rem; background: #0c1118; border-top: 1px solid var(--line); }
     .toast { min-height: 1.2rem; color: var(--muted); font-size: 0.85rem; margin: 0.4rem 0; }
     .toast.err { color: #fca5a5; }
+    .inline-msg { display: inline-block; margin-left: 0.55rem; color: #86efac; font-size: 0.82rem; }
+    .inline-msg.err { color: #fca5a5; }
+    .modal-back { position: fixed; inset: 0; background: rgba(0,0,0,0.62); display: flex; align-items: center; justify-content: center; z-index: 40; padding: 1.2rem; }
+    .modal { width: min(640px, 100%); max-height: 88vh; overflow: auto; background: #121826; color: #e8edf5; border: 1px solid var(--line); border-radius: 16px; padding: 1.1rem 1.2rem; }
+    .modal h2 { font-family: var(--display); margin: 0 0 0.5rem; }
+    .modal .actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1rem; }
+    .modal textarea { min-height: 5rem; }
   </style>
 </head>
 <body>
@@ -132,6 +155,7 @@
     </section>
   </div>
   <div id="view" class="wrap"></div>
+  <div id="modals"></div>
   <div id="editor-foot" class="editor-foot hidden"></div>
   <script src="/static/shell/mb-narrative-field.js?v=i10a2-7"></script>
   <script>
@@ -155,6 +179,7 @@
       newCount: 0,
       mailbox: null,
       campaign: null,
+      editingCampaignId: null,
       item: null,
       draft: { personId: "", email: "", title: "", cadence: "weekly", followUpDays: 7, questions: "" },
       selectedPerson: null,
@@ -257,6 +282,7 @@
       return `<div class="banner ok">Capture channel <strong>${esc(channel)}</strong> is connected.</div>`;
     }
     async function loadPeople() {
+      if (state.people.length) return state.people;
       try {
         const [peopleD, respD] = await Promise.all([
           api("/library/person-options?limit=300"),
@@ -269,10 +295,11 @@
         state.people = (peopleD.people || []).map((p) => ({
           ...p,
           email: emailById[p.id] || p.email || "",
-        }));
+        })).sort((a, b) => String(a.display_name || "").localeCompare(String(b.display_name || ""), undefined, { sensitivity: "base" }));
       } catch (_) {
         try { state.people = (await api("/people?limit=300")).people || []; } catch (e) { state.people = []; }
       }
+      return state.people;
     }
     async function refreshMailbox() {
       state.mailbox = await api("/historian-capture/email-status");
@@ -381,9 +408,9 @@
         } else {
           body.innerHTML = state.campaigns.map((c) => `
             <div class="card" data-campaign="${c.id}">
-              <h3>${esc(c.title || "Untitled campaign")}</h3>
+              <h3>${esc(displayCampaignTitle(c.title))}</h3>
               <p>
-                <span class="pill">${esc(statusLabel(c.status))}</span>
+                <span class="badge"><span class="dot ${c.status === "draft" ? "draft" : (c.status === "running" ? "run" : "saved")}"></span>${esc(statusLabel(c.status))}</span>
                 ${c.new_capture_count ? `<span class="pill warn">${c.new_capture_count} new</span>` : ""}
               </p>
             </div>
@@ -414,7 +441,13 @@
         }
         body.querySelectorAll("[data-item]").forEach((n) => n.onclick = () => openReview(n.dataset.item));
       }
-      document.getElementById("btnNewCampaign").onclick = () => { state.view = "new"; render(); };
+      document.getElementById("btnNewCampaign").onclick = () => {
+        state.editingCampaignId = null;
+        state.selectedPerson = null;
+        state.draft = { personId: "", email: "", title: "", cadence: "weekly", followUpDays: 7, questions: "" };
+        state.view = "new";
+        render();
+      };
       el.querySelectorAll("[data-tab]").forEach((b) => b.onclick = () => {
         state.tab = b.dataset.tab;
         if (state.tab === "unmatched") location.hash = "unmatched";
@@ -422,7 +455,8 @@
         renderPanel();
       });
     }
-    function renderNewCampaign() {
+    async function renderNewCampaign() {
+      await loadPeople();
       const el = document.getElementById("view");
       const personLabel = state.selectedPerson
         ? esc(state.selectedPerson.display_name || "Person")
@@ -442,10 +476,10 @@
             </div>
           </div>
           <label>Email for this person</label>
-          <input id="cEmail" value="${esc(state.draft.email)}" placeholder="person@example.com" />
+          <input id="cEmail" name="hc-respondent-email" autocomplete="off" data-1p-ignore="true" data-lpignore="true" value="${esc(state.draft.email)}" placeholder="person@example.com" />
           <p class="hint">We fill this from the Person profile when an email is on file. You can confirm or override.</p>
           <label>Campaign title</label>
-          <input id="cTitle" value="${esc(state.draft.title)}" placeholder="Summer memories" />
+          <input id="cTitle" name="hc-campaign-title" type="text" autocomplete="off" data-1p-ignore="true" data-lpignore="true" value="${esc(state.draft.title)}" placeholder="Summer memories" />
           <div class="layout" style="margin-top:0.6rem">
             <div>
               <label>How often should the next question go out?</label>
@@ -467,6 +501,7 @@
           </div>
           <p class="hint">One question per line — press <strong>Enter</strong> to start a new question. Soft word-wrap does not create a new question.</p>
           <textarea id="cQuestions" placeholder="What is your earliest memory?&#10;Who influenced you most growing up?">${esc(state.draft.questions)}</textarea>
+          <p class="toast" id="toast"></p>
         </div>
       `;
       document.getElementById("backPanel").onclick = (e) => { e.preventDefault(); state.view = "panel"; state.personDropdownOpen = false; render(); };
@@ -480,7 +515,7 @@
       document.getElementById("editor-foot").classList.remove("hidden");
       document.getElementById("editor-foot").innerHTML = `
         <button type="button" class="btn ghost" id="btnCancel">Cancel</button>
-        <button type="button" class="btn" id="btnSaveDraft">Save draft</button>
+        <button type="button" class="btn" id="btnSaveDraft">${state.editingCampaignId ? "Save changes" : "Save draft"}</button>
         <button type="button" class="btn primary" id="btnStart">Start campaign</button>
       `;
       document.getElementById("btnCancel").onclick = () => { state.view = "panel"; hideFoot(); render(); };
@@ -515,19 +550,20 @@
       const email = document.getElementById("cEmail").value.trim();
       if (!email) { toast("Confirm an email address for this person.", true); return; }
       const days = Number(document.getElementById("cFollowUpDays").value) || 7;
-      const camp = await api("/historian-capture/campaigns", {
-        method: "POST",
-        body: JSON.stringify({
-          title: document.getElementById("cTitle").value,
-          people_id: state.selectedPerson.id,
-          email,
-          display_name: state.selectedPerson.display_name,
-          cadence_pattern: document.getElementById("cCadence").value,
-          follow_up_interval_seconds: Math.max(86400, Math.round(days * 86400)),
-          questions,
-        }),
-      });
+      const payload = {
+        title: document.getElementById("cTitle").value,
+        people_id: state.selectedPerson.id,
+        email,
+        display_name: state.selectedPerson.display_name,
+        cadence_pattern: document.getElementById("cCadence").value,
+        follow_up_interval_seconds: Math.max(86400, Math.round(days * 86400)),
+        questions,
+      };
+      const camp = state.editingCampaignId
+        ? await api(`/historian-capture/campaigns/${state.editingCampaignId}`, { method: "PUT", body: JSON.stringify(payload) })
+        : await api("/historian-capture/campaigns", { method: "POST", body: JSON.stringify(payload) });
       if (start) await api(`/historian-capture/campaigns/${camp.id}/start`, { method: "POST", body: "{}" });
+      state.editingCampaignId = null;
       state.view = "panel";
       state.tab = "campaigns";
       hideFoot();
@@ -563,15 +599,18 @@
             <button type="button" class="btn ghost" id="backCampaigns">← Campaigns</button>
             <h1 style="margin-top:0.6rem">${esc(displayCampaignTitle(c.title))}</h1>
             <p class="sub">
-              <span class="pill">${esc(statusLabel(c.status))}</span>
-              <span class="pill muted">${esc(cadence)} questions</span>
-              <span class="pill muted">Follow-up after ${esc(followLabel)}</span>
+              <span class="badge"><span class="dot ${c.status === "draft" ? "draft" : (c.status === "running" ? "run" : "saved")}"></span>${esc(statusLabel(c.status))}</span>
+              <span class="badge">${esc(cadence)} questions</span>
+              <span class="badge">Follow-up after ${esc(followLabel)}</span>
             </p>
           </div>
           <div class="actions">
+            ${c.status === "draft" ? `<button class="btn primary" id="btnStartNow">Start campaign</button>` : ""}
+            ${c.status === "draft" ? `<button class="btn" id="btnEditDraft">Edit draft</button>` : ""}
             ${c.status === "running" ? `<button class="btn" id="btnPause">Pause</button>` : ""}
             ${c.status === "paused" ? `<button class="btn" id="btnResume">Resume</button>` : ""}
-            ${c.status !== "stopped" && c.status !== "completed" ? `<button class="btn ghost" id="btnStop">Stop campaign</button>` : ""}
+            ${c.status === "running" || c.status === "paused" ? `<button class="btn ghost" id="btnStop">Stop campaign</button>` : ""}
+            <button class="btn danger" id="btnDelete">Delete campaign</button>
           </div>
         </div>
         ${banner}
@@ -587,7 +626,47 @@
       const p = document.getElementById("btnPause"); if (p) p.onclick = () => act("pause");
       const r = document.getElementById("btnResume"); if (r) r.onclick = () => act("resume");
       const s = document.getElementById("btnStop"); if (s) s.onclick = () => { if (confirm("Stop this campaign? No further questions will be sent.")) act("stop"); };
+      const startNow = document.getElementById("btnStartNow");
+      if (startNow) startNow.onclick = () => act("start");
+      const editDraft = document.getElementById("btnEditDraft");
+      if (editDraft) editDraft.onclick = () => beginEditDraft(c);
+      document.getElementById("btnDelete").onclick = () => confirmDeleteCampaign(c);
       hideFoot();
+    }
+    async function beginEditDraft(c) {
+      await loadPeople();
+      const resp = (c.respondents || [])[0];
+      state.editingCampaignId = c.id;
+      state.draft.title = c.title || "";
+      state.draft.cadence = (c.cadence_config_json || {}).pattern || "weekly";
+      if (state.draft.cadence === "seconds") state.draft.cadence = "weekly";
+      state.draft.followUpDays = Math.max(1, Math.round((c.follow_up_interval_seconds || 604800) / 86400));
+      state.draft.questions = (c.questions || []).map((q) => q.body_text).filter(Boolean).join("\n");
+      state.draft.email = (resp && resp.contact_route_value) || "";
+      state.selectedPerson = resp
+        ? (state.people.find((p) => p.id === resp.people_id) || { id: resp.people_id, display_name: resp.display_name_snapshot, email: resp.contact_route_value })
+        : null;
+      state.view = "new";
+      render();
+    }
+    function confirmDeleteCampaign(c) {
+      document.getElementById("modals").innerHTML = `<div class="modal-back"><div class="modal">
+        <h2>Delete this campaign?</h2>
+        <p class="hint">${esc(displayCampaignTitle(c.title))} will leave Historian Capture. Replies already received stay in the archive.</p>
+        <div class="actions">
+          <button class="btn" id="d-no">Keep</button>
+          <button class="btn danger" id="d-yes">Delete campaign</button>
+        </div>
+      </div></div>`;
+      document.getElementById("d-no").onclick = () => { document.getElementById("modals").innerHTML = ""; };
+      document.getElementById("d-yes").onclick = async () => {
+        await api(`/historian-capture/campaigns/${c.id}`, { method: "DELETE" });
+        document.getElementById("modals").innerHTML = "";
+        state.view = "panel";
+        state.tab = "campaigns";
+        await refreshCampaigns();
+        render();
+      };
     }
     async function openReview(id) {
       state.item = await api(`/historian-capture/items/${id}`);
@@ -604,12 +683,20 @@
       const el = document.getElementById("view");
       el.innerHTML = `
         <p class="crumb">
-          <a href="#" id="backPanel">Historian Capture</a> ›
-          ${it.campaign_id ? `<a href="#" id="backCampaign">${esc(displayCampaignTitle(it.campaign_title))}</a> › ` : ""}
-          Review response
+          <a href="#" id="backPanel">Historian Capture</a> /
+          ${it.campaign_id ? `<a href="#" id="backCampaign">${esc(displayCampaignTitle(it.campaign_title))}</a> / ` : ""}
+          Review
         </p>
-        <div class="page-head"><div><h1>${esc(displayPersonName(it.respondent_name || it.from_address || "Family reply"))}</h1>
-          <p class="sub">${it.question_body ? esc(it.question_body.slice(0, 120)) : ""}</p></div></div>
+        <div class="page-head">
+          <div>
+            <h1>${esc(displayPersonName(it.respondent_name || it.from_address || "Family reply"))}</h1>
+            <p class="sub">${it.question_body ? esc(it.question_body.slice(0, 120)) : ""}</p>
+          </div>
+          <div class="actions">
+            <button type="button" class="btn" id="btnDash">Historian Capture</button>
+            ${it.campaign_id ? `<button type="button" class="btn" id="btnCamp">Campaign</button>` : ""}
+          </div>
+        </div>
         ${optOut ? `<div class="banner">This person opted out of further questions.</div>` : ""}
         ${unmatched ? `<div class="banner">This message could not be matched to a campaign automatically. Review the source and decide what to keep.</div>` : ""}
         <div class="layout">
@@ -620,7 +707,7 @@
             <strong>Subject:</strong> ${esc(it.subject || "—")}<br>
             <strong>Received:</strong> ${esc(formatWhen(it.received_at) || "—")}</p>
             <textarea readonly id="sourceText">${esc(it.extracted_text || "")}</textarea>
-            ${it.preserved_raw_uri ? `<p class="hint"><a href="${esc(it.preserved_raw_uri)}" target="_blank" rel="noopener">View preserved source</a></p>` : ""}
+            <p class="hint"><a href="/historian-capture/items/${esc(it.id)}/source" download="historian-capture.eml">Download original email</a></p>
           </div>
           <div class="panel">
             <h4>Your working draft</h4>
@@ -629,15 +716,17 @@
             <label>Private notes (only you see these)</label>
             <textarea id="draftNotes" style="min-height:4rem">${esc(draft.notes_private || "")}</textarea>
             <button type="button" class="btn" id="btnDraft" style="margin-top:0.5rem">Save working draft</button>
+            <span class="inline-msg" id="msgDraft"></span>
           </div>
         </div>
         <div class="layout" style="margin-top:1rem">
           <div class="side">
-            <h4>Your private read</h4>
+            <h4>Owner confidence</h4>
             <label>How much do you trust this as family evidence?</label>
             <select id="assessSel">${ASSESS.map(([v,l]) => `<option value="${v}" ${assess===v?"selected":""}>${l}</option>`).join("")}</select>
             <p class="hint">Only you see this. It is separate from what you decide to keep or share.</p>
-            <button type="button" class="btn" id="btnAssess">Save private read</button>
+            <button type="button" class="btn" id="btnAssess">Save owner confidence</button>
+            <span class="inline-msg" id="msgAssess"></span>
           </div>
           <div class="side">
             <h4>Decision</h4>
@@ -645,6 +734,7 @@
             <select id="verdictSel">${VERDICT.map(([v,l]) => `<option value="${v}" ${verdict===v?"selected":""}>${l}</option>`).join("")}</select>
             <p class="hint">Rejecting means Ask will not treat this as affirmative evidence.</p>
             <button type="button" class="btn" id="btnVerdict">Save decision</button>
+            <span class="inline-msg" id="msgVerdict"></span>
           </div>
         </div>
         <div class="side" style="margin-top:1rem" id="promoBlock">
@@ -653,23 +743,22 @@
           <button type="button" class="btn primary" id="btnStory" ${verdict !== "promotion_authorized" ? "disabled" : ""}>Create Story</button>
           <button type="button" class="btn" id="btnArtifact" ${verdict !== "promotion_authorized" ? "disabled" : ""}>Create Artifact</button>
           <button type="button" class="btn ghost" id="btnThankYou" ${verdict && !optOut ? "" : "disabled"}>Send thank-you</button>
-          <div id="tyPreview" class="hint" style="margin-top:0.6rem"></div>
+          <span class="inline-msg" id="msgThankYou"></span>
         </div>
         <p class="toast" id="toast"></p>
       `;
-      document.getElementById("backPanel").onclick = (e) => {
-        e.preventDefault();
+      const goDash = async (tab) => {
         state.view = "panel";
-        state.tab = unmatched ? "unmatched" : "responses";
+        state.tab = tab;
+        await Promise.all([refreshItems(), refreshCounts(), refreshCampaigns()]);
         render();
       };
+      document.getElementById("backPanel").onclick = (e) => { e.preventDefault(); goDash(unmatched ? "unmatched" : "responses"); };
+      document.getElementById("btnDash").onclick = () => goDash("responses");
       const backCamp = document.getElementById("backCampaign");
-      if (backCamp && it.campaign_id) {
-        backCamp.onclick = async (e) => {
-          e.preventDefault();
-          await openCampaign(it.campaign_id);
-        };
-      }
+      if (backCamp && it.campaign_id) backCamp.onclick = async (e) => { e.preventDefault(); await openCampaign(it.campaign_id); };
+      const btnCamp = document.getElementById("btnCamp");
+      if (btnCamp && it.campaign_id) btnCamp.onclick = () => openCampaign(it.campaign_id);
       document.getElementById("btnDraft").onclick = async () => {
         await api(`/historian-capture/items/${it.id}/draft`, {
           method: "POST",
@@ -678,16 +767,20 @@
             notes_private: document.getElementById("draftNotes").value,
           }),
         });
-        toast("Working draft saved.");
+        flash("msgDraft", "Working draft saved.");
       };
       document.getElementById("btnAssess").onclick = async () => {
         await api(`/historian-capture/items/${it.id}/assessment`, { method: "POST", body: JSON.stringify({ assessment_code: document.getElementById("assessSel").value }) });
-        toast("Private read saved.");
+        flash("msgAssess", "Owner confidence saved.");
       };
       document.getElementById("btnVerdict").onclick = async () => {
-        await api(`/historian-capture/items/${it.id}/verdict`, { method: "POST", body: JSON.stringify({ verdict: document.getElementById("verdictSel").value }) });
+        const v = document.getElementById("verdictSel").value;
+        await api(`/historian-capture/items/${it.id}/verdict`, { method: "POST", body: JSON.stringify({ verdict: v }) });
+        const idx = state.items.findIndex((x) => x.id === it.id);
+        if (idx >= 0) state.items[idx].latest_verdict = { verdict: v };
+        flash("msgVerdict", "Decision saved.");
         await openReview(it.id);
-        toast("Decision saved.");
+        flash("msgVerdict", "Decision saved.");
       };
       document.getElementById("btnStory").onclick = async () => {
         const p = await api(`/historian-capture/items/${it.id}/promote-story`, { method: "POST", body: JSON.stringify({ title: (it.respondent_name || "Family") + " — historian reply" }) });
@@ -697,18 +790,50 @@
         const p = await api(`/historian-capture/items/${it.id}/promote-artifact`, { method: "POST", body: JSON.stringify({ label: "Historian capture" }) });
         location.href = `/artifact/ui?id=${encodeURIComponent(p.promoted_id)}`;
       };
-      document.getElementById("btnThankYou").onclick = async () => {
-        const ty = await api(`/historian-capture/items/${it.id}/thank-you`, { method: "POST", body: "{}" });
-        toast(ty.skipped_reason ? `Thank-you not sent (${ty.skipped_reason}).` : "Thank-you sent.");
-      };
-      api("/historian-capture/thank-you/preview").then((d) => {
-        document.getElementById("tyPreview").textContent = `Thank-you preview: “${d.body || ""}”`;
-      }).catch(() => {});
+      document.getElementById("btnThankYou").onclick = () => openThankYouModal(it);
       hideFoot();
+    }
+    function openThankYouModal(it) {
+      api("/historian-capture/thank-you/preview").then((d) => {
+        const canned = d.body || "Thank you — we received and preserved your reply.";
+        document.getElementById("modals").innerHTML = `<div class="modal-back"><div class="modal">
+          <h2>Send thank-you</h2>
+          <p class="hint">This is the message that will be sent. You may add a short personal note.</p>
+          <label>Thank-you message</label>
+          <textarea readonly id="tyCanned">${esc(canned)}</textarea>
+          <label>Add a personal note (optional)</label>
+          <textarea id="tyExtra" placeholder="A sentence of your own, if you want."></textarea>
+          <div class="actions">
+            <button type="button" class="btn" id="tyCancel">Cancel</button>
+            <button type="button" class="btn primary" id="tySend">Send thank-you</button>
+            <span class="inline-msg" id="msgTyModal"></span>
+          </div>
+        </div></div>`;
+        document.getElementById("tyCancel").onclick = () => { document.getElementById("modals").innerHTML = ""; };
+        document.getElementById("tySend").onclick = async () => {
+          const extra = document.getElementById("tyExtra").value.trim();
+          const ty = await api(`/historian-capture/items/${it.id}/thank-you`, {
+            method: "POST",
+            body: JSON.stringify({ extra_text: extra }),
+          });
+          const msg = ty.skipped_reason ? `Thank-you not sent (${ty.skipped_reason}).` : "Thank-you sent.";
+          flash("msgTyModal", msg, !!ty.skipped_reason);
+          flash("msgThankYou", msg, !!ty.skipped_reason);
+          if (!ty.skipped_reason) document.getElementById("modals").innerHTML = "";
+        };
+      }).catch((e) => flash("msgThankYou", e.message || "Could not load thank-you preview.", true));
     }
     function hideFoot() {
       document.getElementById("editor-foot").classList.add("hidden");
       document.getElementById("editor-foot").innerHTML = "";
+    }
+    function flash(id, msg, err) {
+      const el = document.getElementById(id);
+      if (el) {
+        el.textContent = msg || "";
+        el.className = "inline-msg" + (err ? " err" : "");
+      }
+      toast(msg, err);
     }
     function toast(msg, err) {
       const el = document.getElementById("toast") || document.querySelector(".toast");
@@ -736,7 +861,7 @@
         }
       });
       if (location.hash === "#unmatched") state.tab = "unmatched";
-      await Promise.all([loadPeople(), refreshMailbox(), refreshCounts(), refreshCampaigns(), refreshItems()]);
+      await Promise.all([refreshMailbox(), refreshCounts(), refreshCampaigns(), refreshItems()]);
       render();
     })();
   </script>
