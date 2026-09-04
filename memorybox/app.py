@@ -4567,6 +4567,7 @@ def hc_campaign_action(campaign_id: str, action: str) -> dict[str, Any]:
         HistorianCaptureError,
         pause_campaign,
         resume_campaign,
+        advance_campaign,
         start_campaign,
         stop_campaign,
     )
@@ -4578,6 +4579,8 @@ def hc_campaign_action(campaign_id: str, action: str) -> dict[str, Any]:
             return pause_campaign(campaign_id)
         if action == "resume":
             return resume_campaign(campaign_id)
+        if action == "advance":
+            return advance_campaign(campaign_id)
         if action == "stop":
             return stop_campaign(campaign_id)
         raise HistorianCaptureError(f"unknown action: {action}")
@@ -4628,16 +4631,16 @@ def hc_get_item(item_id: str) -> dict[str, Any]:
 
 @app.get("/historian-capture/items/{item_id}/source")
 def hc_item_source(item_id: str) -> Response:
-    from memorybox.historian_capture import HistorianCaptureError, capture_item_source_bytes
+    from memorybox.historian_capture import HistorianCaptureError, capture_item_source_text
 
     try:
-        raw = capture_item_source_bytes(item_id)
+        text = capture_item_source_text(item_id)
     except HistorianCaptureError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return Response(
-        content=raw,
-        media_type="message/rfc822",
-        headers={"Content-Disposition": 'attachment; filename="historian-capture.eml"'},
+        content=text,
+        media_type="text/plain; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="historian-capture.txt"'},
     )
 
 

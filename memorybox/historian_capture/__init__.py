@@ -548,7 +548,7 @@ def get_campaign(campaign_id: str) -> dict[str, Any]:
             """,
             (cid,),
         ).fetchone()["n"]
-    return {
+    campaign = {
         "id": str(row["id"]),
         "owner_person_id": str(row["owner_person_id"])
         if row["owner_person_id"]
@@ -566,6 +566,8 @@ def get_campaign(campaign_id: str) -> dict[str, Any]:
         "created_at": _iso(row["created_at"]),
         "updated_at": _iso(row["updated_at"]),
     }
+    campaign["capture_items"] = list_capture_items(campaign_id=str(cid), limit=250)
+    return campaign
 
 
 def list_campaigns(*, limit: int = 50) -> list[dict[str, Any]]:
@@ -932,6 +934,64 @@ def resume_campaign(
     campaign_id: str, *, now: datetime | None = None, auto_tick: bool = True
 ) -> dict[str, Any]:
     return start_campaign(campaign_id, now=now, auto_tick=auto_tick)
+
+
+def advance_campaign(
+    campaign_id: str, *, now: datetime | None = None, adapter: Any | None = None
+) -> dict[str, Any]:
+    """Send the next scheduled question now, but never skip an outstanding reply."""
+    cid = _parse_uuid(campaign_id, field="campaign_id")
+    now = now or _now()
+    with connection() as conn:
+        camp = conn.execute(
+            "SELECT status FROM historian_capture_campaigns WHERE id = %s", (cid,)
+        ).fetchone()
+        if not camp:
+            raise HistorianCaptureError("campaign not found")
+        if camp["status"] != "running":
+            raise HistorianCaptureError("only an in-progress campaign can advance")
+        waiting = conn.execute(
+            """
+            SELECT 1 FROM historian_capture_deliveries
+            WHERE campaign_id = %s
+              AND status IN ('sent', 'waiting', 'reminder_sent')
+            LIMIT 1
+            """,
+            (cid,),
+        ).fetchone()
+        if waiting:
+            raise HistorianCaptureError(
+                "cannot advance while waiting for a response to the current question"
+            )
+        pending = conn.execute(
+            """
+            SELECT id FROM historian_capture_deliveries
+            WHERE campaign_id = %s AND status = 'pending'
+            ORDER BY scheduled_for ASC
+            LIMIT 1
+            """,
+            (cid,),
+        ).fetchone()
+        if not pending:
+            raise HistorianCaptureError("there is no next question waiting to send")
+        conn.execute(
+            """
+            UPDATE historian_capture_deliveries
+            SET scheduled_for = %s, updated_at = now()
+            WHERE id = %s
+            """,
+            (now, pending["id"]),
+        )
+    result = tick_scheduler(now=now, adapter=adapter)
+    if str(pending["id"]) not in (result.get("sent") or []):
+        refreshed = get_campaign(str(cid))
+        delivery = next(
+            (d for d in refreshed["deliveries"] if d["id"] == str(pending["id"])),
+            None,
+        )
+        detail = (delivery or {}).get("fail_detail")
+        raise HistorianCaptureError(detail or "next question could not be sent")
+    return get_campaign(str(cid))
 
 
 def delete_campaign(campaign_id: str) -> dict[str, Any]:
@@ -1935,7 +1995,7 @@ def list_capture_items(
     with connection() as conn:
         rows = conn.execute(
             f"""
-            SELECT i.id, i.campaign_id, i.from_address, i.subject, i.extracted_text,
+            SELECT i.id, i.campaign_id, i.delivery_id, i.from_address, i.subject, i.extracted_text,
                    i.received_at, i.match_status, i.preserved_raw_uri, i.content_hash,
                    r.display_name_snapshot AS respondent_name,
                    c.title AS campaign_title,
@@ -1973,6 +2033,7 @@ def list_capture_items(
             {
                 "id": str(row["id"]),
                 "campaign_id": str(row["campaign_id"]) if row.get("campaign_id") else None,
+                "delivery_id": str(row["delivery_id"]) if row.get("delivery_id") else None,
                 "from_address": row.get("from_address"),
                 "subject": row.get("subject"),
                 "extracted_text": row.get("extracted_text"),
@@ -2308,6 +2369,21 @@ def capture_item_source_bytes(capture_item_id: str) -> bytes:
     if raw is None:
         raise HistorianCaptureError("preserved source is not available")
     return raw
+
+
+def capture_item_source_text(capture_item_id: str) -> str:
+    """Human-readable download of the immutable inbound email."""
+    item = get_capture_item(capture_item_id)
+    headers = item.get("header_json") or {}
+    lines = [
+        f"From: {item.get('from_address') or headers.get('from') or ''}",
+        f"Subject: {item.get('subject') or ''}",
+        f"Received: {item.get('received_at') or ''}",
+        f"Message-ID: {headers.get('message-id') or item.get('inbound_message_id') or ''}",
+        "",
+        item.get("extracted_text") or "",
+    ]
+    return "\r\n".join(lines)
 
 
 def _read_raw_from_uri(uri: str | None) -> bytes | None:
@@ -2765,6 +2841,7 @@ __all__ = [
     "start_campaign",
     "pause_campaign",
     "resume_campaign",
+    "advance_campaign",
     "stop_campaign",
     "skip_question",
     "tick_scheduler",
@@ -2773,6 +2850,7 @@ __all__ = [
     "poll_and_ingest",
     "get_capture_item",
     "capture_item_source_bytes",
+    "capture_item_source_text",
     "list_capture_items",
     "list_unmatched_items",
     "new_capture_count",

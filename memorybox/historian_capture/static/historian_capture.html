@@ -118,7 +118,17 @@
       padding: 0.5rem; box-shadow: 0 10px 28px rgba(0,0,0,0.35);
     }
     .q-tools { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; margin: 0.35rem 0 0.5rem; }
+    .review-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.8rem; margin: 0.8rem 0 1.2rem; }
+    .metric { background: #141b27; border: 1px solid var(--line); border-radius: 12px; padding: 0.75rem; }
+    .metric strong { display: block; font-family: var(--display); font-size: 1.35rem; color: var(--ink); }
+    .progress-list { display: flex; flex-direction: column; gap: 0.55rem; margin-bottom: 1.2rem; }
+    .progress-row { background: #1a2230; border: 1px solid var(--line); border-radius: 12px; padding: 0.75rem 0.9rem; }
+    .progress-row-head { display: flex; justify-content: space-between; gap: 0.8rem; align-items: flex-start; }
+    .progress-row p { color: var(--muted); margin: 0.25rem 0 0; font-size: 0.85rem; }
+    details.delivery { margin-top: 0.45rem; color: var(--muted); font-size: 0.78rem; }
+    details.delivery summary { cursor: pointer; color: #93c5fd; }
     @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } }
+    @media (max-width: 700px) { .review-grid { grid-template-columns: 1fr; } }
     .editor-foot { position: sticky; bottom: 0; display: flex; justify-content: flex-end; gap: 0.6rem; padding: 0.75rem 1.25rem; background: #0c1118; border-top: 1px solid var(--line); }
     .toast { min-height: 1.2rem; color: var(--muted); font-size: 0.85rem; margin: 0.4rem 0; }
     .toast.err { color: #fca5a5; }
@@ -581,6 +591,28 @@
       const el = document.getElementById("view");
       const cadence = cadenceLabel(c.cadence_config_json);
       const followLabel = followUpLabel(c.follow_up_interval_seconds);
+      const deliveries = c.deliveries || [];
+      const captureItems = c.capture_items || [];
+      const itemByDelivery = {};
+      captureItems.forEach((it) => { if (it.delivery_id) itemByDelivery[it.delivery_id] = it; });
+      const waiting = deliveries.some((d) => ["sent", "waiting", "reminder_sent"].includes(d.status));
+      const pending = deliveries.some((d) => d.status === "pending");
+      const canAdvance = c.status === "running" && pending && !waiting;
+      const reviewed = captureItems.filter((it) => (it.latest_verdict || {}).verdict).length;
+      const retained = captureItems.filter((it) => {
+        const v = (it.latest_verdict || {}).verdict;
+        return v === "retained" || v === "promotion_authorized";
+      }).length;
+      const rejected = captureItems.filter((it) => (it.latest_verdict || {}).verdict === "rejected").length;
+      const deliveryStatus = (d) => {
+        const labels = {
+          pending: "Scheduled", sent: "Sent", waiting: "Waiting for reply",
+          reminder_sent: "Reminder sent", answered: "Answered",
+          no_response: "No response", exhausted: "No response",
+          failed: "Send failed", cancelled: "Cancelled",
+        };
+        return labels[d.status] || d.status;
+      };
       const respondents = (c.respondents || []).map((r) => `
         <div class="card" style="cursor:default">
           <h3>${esc(displayPersonName(r.display_name_snapshot))}</h3>
@@ -608,14 +640,57 @@
             ${c.status === "draft" ? `<button class="btn primary" id="btnStartNow">Start campaign</button>` : ""}
             ${c.status === "draft" ? `<button class="btn" id="btnEditDraft">Edit draft</button>` : ""}
             ${c.status === "running" ? `<button class="btn" id="btnPause">Pause</button>` : ""}
+            ${c.status === "running" ? `<button class="btn primary" id="btnAdvance" ${canAdvance ? "" : "disabled"}>Send next question now</button>` : ""}
             ${c.status === "paused" ? `<button class="btn" id="btnResume">Resume</button>` : ""}
             ${c.status === "running" || c.status === "paused" ? `<button class="btn ghost" id="btnStop">Stop campaign</button>` : ""}
             <button class="btn danger" id="btnDelete">Delete campaign</button>
           </div>
         </div>
         ${banner}
+        ${c.status === "running" ? `<p class="hint">${waiting ? "The next question cannot be sent while MemoryBox is waiting for the current reply." : (pending ? "The next question is waiting for its scheduled date. You can send it now." : "There is no next question waiting to send.")} <span class="inline-msg" id="msgAdvance"></span></p>` : ""}
+        <div class="review-grid">
+          <div class="metric"><strong>${captureItems.length}</strong><span class="hint">Replies received</span></div>
+          <div class="metric"><strong>${reviewed}</strong><span class="hint">Reviewed (${retained} kept · ${rejected} rejected)</span></div>
+          <div class="metric"><strong>${deliveries.filter((d) => d.sent_at).length}/${(c.questions || []).length}</strong><span class="hint">Questions sent</span></div>
+        </div>
+        <h2>Campaign settings</h2>
+        <div class="side" style="margin-bottom:1.2rem">
+          <p><span class="badge">${esc(cadence)} question cadence</span><span class="badge">${esc(followLabel)} before reminder</span><span class="badge">${c.send_thank_you_ack ? "Thank-you enabled" : "Thank-you disabled"}</span><span class="badge">${esc(c.timezone_name || "UTC")}</span></p>
+        </div>
         <h2 style="margin-top:1rem">People in this campaign</h2>
         ${respondents || `<div class="empty">No respondents yet.</div>`}
+        <h2 style="margin-top:1.2rem">Questions and progress</h2>
+        <div class="progress-list">
+          ${(c.questions || []).map((q, idx) => {
+            const ds = deliveries.filter((d) => d.question_id === q.id);
+            if (!ds.length) return `<div class="progress-row"><div class="progress-row-head"><strong>${idx + 1}. ${esc(q.body_text)}</strong><span class="badge">Not scheduled</span></div></div>`;
+            return ds.map((d) => {
+              const it = itemByDelivery[d.id];
+              const verdict = it && (it.latest_verdict || {}).verdict;
+              return `<div class="progress-row">
+                <div class="progress-row-head">
+                  <div><strong>${idx + 1}. ${esc(q.body_text)}</strong><p>${esc(deliveryStatus(d))}${d.sent_at ? " · sent " + esc(formatWhen(d.sent_at)) : ""}</p></div>
+                  <div>
+                    <span class="badge">${esc(deliveryStatus(d))}</span>
+                    ${it ? `<button type="button" class="btn" data-review="${esc(it.id)}">${verdict ? esc(verdictLabel(verdict)) : "Review reply"}</button>` : ""}
+                  </div>
+                </div>
+                <details class="delivery"><summary>Delivery details</summary>
+                  <p>Scheduled ${esc(formatWhen(d.scheduled_for))}${d.reminder_sent_at ? " · reminder " + esc(formatWhen(d.reminder_sent_at)) : ""}${d.no_response_at ? " · no response " + esc(formatWhen(d.no_response_at)) : ""}</p>
+                  ${d.fail_detail ? `<p class="toast err">${esc(d.fail_detail)}</p>` : ""}
+                </details>
+              </div>`;
+            }).join("");
+          }).join("") || `<div class="empty">No questions in this campaign.</div>`}
+        </div>
+        <h2>Campaign replies</h2>
+        ${captureItems.length ? captureItems.map((it) => `
+          <div class="card" data-review="${esc(it.id)}">
+            <h3>${esc(displayPersonName(it.respondent_name || it.from_address || "Reply"))}</h3>
+            <p>${esc(formatWhen(it.received_at))} · ${esc(verdictLabel((it.latest_verdict || {}).verdict))}</p>
+            <p>${esc((it.extracted_text || "").slice(0, 160))}</p>
+          </div>
+        `).join("") : `<div class="empty">No replies received yet.</div>`}
       `;
       document.getElementById("backPanel").onclick = (e) => { e.preventDefault(); state.view = "panel"; state.tab = "responses"; render(); };
       document.getElementById("backCampaigns").onclick = (e) => { e.preventDefault(); state.view = "panel"; state.tab = "campaigns"; render(); };
@@ -628,9 +703,24 @@
       const s = document.getElementById("btnStop"); if (s) s.onclick = () => { if (confirm("Stop this campaign? No further questions will be sent.")) act("stop"); };
       const startNow = document.getElementById("btnStartNow");
       if (startNow) startNow.onclick = () => act("start");
+      const advance = document.getElementById("btnAdvance");
+      if (advance) advance.onclick = async () => {
+        try {
+          advance.disabled = true;
+          state.campaign = await api(`/historian-capture/campaigns/${c.id}/advance`, { method: "POST", body: "{}" });
+          renderCampaign();
+          flash("msgAdvance", "Next question sent.");
+        } catch (e) {
+          advance.disabled = false;
+          flash("msgAdvance", e.message || "The next question could not be sent.", true);
+        }
+      };
       const editDraft = document.getElementById("btnEditDraft");
       if (editDraft) editDraft.onclick = () => beginEditDraft(c);
       document.getElementById("btnDelete").onclick = () => confirmDeleteCampaign(c);
+      el.querySelectorAll("[data-review]").forEach((node) => {
+        node.onclick = () => openReview(node.dataset.review);
+      });
       hideFoot();
     }
     async function beginEditDraft(c) {
@@ -707,7 +797,7 @@
             <strong>Subject:</strong> ${esc(it.subject || "—")}<br>
             <strong>Received:</strong> ${esc(formatWhen(it.received_at) || "—")}</p>
             <textarea readonly id="sourceText">${esc(it.extracted_text || "")}</textarea>
-            <p class="hint"><a href="/historian-capture/items/${esc(it.id)}/source" download="historian-capture.eml">Download original email</a></p>
+            <p class="hint"><a href="/historian-capture/items/${esc(it.id)}/source" download="historian-capture.txt">Download original email as text</a></p>
           </div>
           <div class="panel">
             <h4>Your working draft</h4>
