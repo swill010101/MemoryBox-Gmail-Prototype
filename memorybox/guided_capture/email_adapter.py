@@ -218,9 +218,11 @@ class FakeGuidedEmailAdapter:
         if self.fail_next_send:
             self.fail_next_send = False
             return OutboundSendResult(ok=False, fail_detail="synthetic_send_failure")
-        reply_to = build_plus_address(self.user_email, f"{GC_PLUS_PREFIX}{correlation_token}")
-        subject = make_subject("GC", campaign_title or "MemoryBox question", correlation_token)
-        # Override Marvin default token placement — keep [MB-GC-token]
+        reply_to = build_plus_address(
+            self.user_email.split("@", 1)[0],
+            self.user_email.split("@", 1)[1],
+            f"{GC_PLUS_PREFIX}{correlation_token}",
+        )
         subject = f"[MB-GC-{correlation_token}] {campaign_title or 'MemoryBox question'}"
         body = (
             f"Hi {respondent_name},\n\n"
@@ -338,7 +340,11 @@ class MarvinGmailGuidedEmailAdapter:
         correlation_token: str,
         campaign_title: str | None = None,
     ) -> OutboundSendResult:
-        reply_to = build_plus_address(self.user_email, f"{GC_PLUS_PREFIX}{correlation_token}")
+        reply_to = build_plus_address(
+            self.user_email.split("@", 1)[0],
+            self.user_email.split("@", 1)[1],
+            f"{GC_PLUS_PREFIX}{correlation_token}",
+        )
         subject = f"[MB-GC-{correlation_token}] {campaign_title or 'MemoryBox question'}"
         body = (
             f"Hi {respondent_name},\n\n"

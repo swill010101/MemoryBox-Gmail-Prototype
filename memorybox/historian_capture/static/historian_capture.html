@@ -1,0 +1,969 @@
+<!DOCTYPE html>
+<html lang="en" data-mb-surface="historian-capture">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MemoryBox — Historian Capture</title>
+  <link rel="stylesheet" href="/static/explore/explore.css?v=hc-i12-3" />
+  <link rel="stylesheet" href="/static/shell/mb-narrative-field.css?v=i10a2-7" />
+  <style>
+    :root {
+      --ink: #e8edf5; --muted: #9aa3b5; --blue: #3b82f6; --green: #3dcf9a;
+      --orange: #fb923c; --line: rgba(255,255,255,0.12); --card: #1a2230; --page: #0f141c;
+      --display: "Newsreader", Georgia, serif; --ui: "Figtree", "Segoe UI", system-ui, sans-serif;
+    }
+    html[data-mb-surface="historian-capture"] .mb-site-bar,
+    html[data-mb-surface="historian-capture"] .mb-nav-system { display: none !important; }
+    html[data-mb-surface="historian-capture"] body { background: var(--page) !important; color: var(--ink) !important; }
+    html[data-mb-surface="historian-capture"] {
+      --mb-ink: #e8edf5; --mb-muted: #9aa3b5; --mb-card: #1a2230; --mb-page: #0f141c;
+      --mb-line: rgba(255, 255, 255, 0.14);
+    }
+    html[data-mb-surface="historian-capture"] body.mb-shell,
+    html[data-mb-surface="historian-capture"] body {
+      background: #0f141c !important; color: #e8edf5 !important;
+    }
+    html[data-mb-surface="historian-capture"] .mb-explore-brand-name { color: #f3f6fb !important; }
+    html[data-mb-surface="historian-capture"] .mb-explore-tagline { color: #b7c0d0 !important; }
+    html[data-mb-surface="historian-capture"] .mb-explore-nav a { color: #b7c0d0 !important; }
+    html[data-mb-surface="historian-capture"] .mb-explore-nav a.is-active { color: #f3f6fb !important; }
+    html[data-mb-surface="historian-capture"] body.mb-shell .card,
+    html[data-mb-surface="historian-capture"] body.mb-shell .panel,
+    html[data-mb-surface="historian-capture"] body.mb-shell .side,
+    html[data-mb-surface="historian-capture"] .card,
+    html[data-mb-surface="historian-capture"] .panel,
+    html[data-mb-surface="historian-capture"] .side {
+      background: #1a2230 !important;
+      color: #e8edf5 !important;
+      border-color: rgba(255,255,255,0.12) !important;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; font-family: var(--ui); background: #0f141c; color: #e8edf5; }
+    a { color: #93c5fd; text-decoration: none; }
+    button { font: inherit; cursor: pointer; }
+    input, textarea, select {
+      font: inherit; color: var(--ink); background: #141b27; border: 1px solid var(--line);
+      border-radius: 10px; padding: 0.55rem 0.75rem; width: 100%;
+    }
+    textarea { min-height: 8rem; resize: vertical; white-space: pre-wrap; }
+    .wrap { max-width: 1180px; margin: 0 auto; padding: 0 1.25rem 3rem; }
+    h1 { font-family: var(--display); font-size: 2.1rem; margin: 0; color: #e8edf5; }
+    h2 { font-family: var(--display); font-size: 1.35rem; margin: 0 0 0.5rem; color: #e8edf5; }
+    .sub { color: var(--muted); margin: 0.25rem 0 0; max-width: 52rem; }
+    .btn { border-radius: 10px; padding: 0.5rem 0.9rem; border: 1px solid var(--line); background: #141b27; color: var(--ink); }
+    .btn.primary { background: var(--blue); border-color: var(--blue); color: #fff; }
+    .btn.ghost { background: transparent; }
+    .btn.danger { color: #fca5a5; border-color: rgba(252,165,165,0.3); background: transparent; }
+    .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+    .page-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 1rem; margin: 1.4rem 0 1rem; flex-wrap: wrap; }
+    .page-head .actions { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
+    .badge { display: inline-flex; align-items: center; gap: 0.3rem; border: 1px solid var(--line); border-radius: 999px; padding: 0.15rem 0.55rem; font-size: 0.75rem; margin-right: 0.3rem; color: #e8edf5; }
+    .dot { width: 7px; height: 7px; border-radius: 99px; display: inline-block; }
+    .dot.saved { background: var(--green); }
+    .dot.draft { background: var(--orange); }
+    .dot.run { background: var(--blue); }
+    .crumb { color: var(--muted); font-size: 0.85rem; margin: 1rem 0 0.4rem; }
+    .pill { display: inline-block; font-size: 0.72rem; padding: 0.15rem 0.5rem; border-radius: 999px; background: rgba(59,130,246,0.2); color: #93c5fd; margin-right: 0.25rem; }
+    .pill.warn { background: rgba(251,146,60,0.15); color: #fdba74; }
+    .pill.muted { background: rgba(255,255,255,0.06); color: var(--muted); }
+    .tabs button { border: 0; background: #141b27; color: var(--muted); padding: 0.4rem 0.75rem; border-radius: 999px; margin-right: 0.25rem; }
+    .tabs button.on { background: var(--blue); color: #fff; }
+    .card {
+      background: #1a2230 !important; color: #e8edf5 !important;
+      border: 1px solid rgba(255,255,255,0.12) !important;
+      border-radius: 14px; padding: 0.9rem 1rem; margin-bottom: 0.65rem; cursor: pointer;
+    }
+    .card:hover { border-color: rgba(147,197,253,0.35) !important; }
+    .card h3 { font-family: var(--display); font-size: 1.1rem; margin: 0 0 0.35rem; color: #e8edf5 !important; }
+    .card p { color: #9aa3b5 !important; font-size: 0.85rem; margin: 0; }
+    .layout { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+    .panel {
+      background: #1a2230 !important; color: #e8edf5 !important;
+      border: 1px solid rgba(255,255,255,0.12) !important;
+      border-radius: 14px; padding: 0.9rem;
+    }
+    .panel.locked { background: #111827 !important; border-style: dashed; }
+    .panel h4 { margin: 0 0 0.5rem; font-size: 0.78rem; letter-spacing: 0.04em; color: var(--muted); text-transform: uppercase; }
+    .panel textarea { background: #141b27 !important; color: #e8edf5 !important; }
+    .side {
+      background: #1a2230 !important; color: #e8edf5 !important;
+      border: 1px solid rgba(255,255,255,0.12) !important;
+      border-radius: 14px; padding: 0.9rem;
+    }
+    .side h4 { margin: 0 0 0.6rem; font-size: 0.78rem; letter-spacing: 0.04em; color: var(--muted); }
+    .banner { background: rgba(251,146,60,0.12); border: 1px solid rgba(251,146,60,0.35); color: #fdba74; border-radius: 10px; padding: 0.65rem 0.8rem; margin: 0.6rem 0; }
+    .banner.info { background: rgba(59,130,246,0.1); border-color: rgba(59,130,246,0.35); color: #93c5fd; }
+    .banner.ok { background: rgba(61,207,154,0.1); border-color: rgba(61,207,154,0.35); color: #86efac; }
+    .hidden { display: none !important; }
+    .empty { color: var(--muted); text-align: center; padding: 2rem 1rem; }
+    label { display: block; font-size: 0.82rem; margin: 0.55rem 0 0.25rem; color: var(--muted); }
+    .hint { color: var(--muted); font-size: 0.78rem; margin: 0.2rem 0 0.5rem; }
+    .person-list { display: flex; flex-direction: column; gap: 0.35rem; max-height: 16rem; overflow: auto; margin-top: 0.45rem; }
+    .person-row {
+      display: flex; align-items: center; gap: 0.55rem; width: 100%; text-align: left;
+      border: 1px solid var(--line); background: #141b27; color: var(--ink);
+      border-radius: 10px; padding: 0.4rem 0.55rem;
+    }
+    .person-row.on { outline: 2px solid var(--blue); }
+    .person-row .av { width: 40px; height: 40px; border-radius: 99px; object-fit: cover; background: #334155; display: inline-flex; align-items: center; justify-content: center; }
+    .person-dropdown { position: relative; }
+    .person-dropdown-trigger {
+      width: 100%; text-align: left; display: flex; justify-content: space-between; align-items: center;
+      border: 1px solid var(--line); background: #141b27; color: var(--ink); border-radius: 10px;
+      padding: 0.55rem 0.75rem;
+    }
+    .person-dropdown-panel {
+      position: absolute; z-index: 30; left: 0; right: 0; top: calc(100% + 0.25rem);
+      background: #121826; border: 1px solid var(--line); border-radius: 12px;
+      padding: 0.5rem; box-shadow: 0 10px 28px rgba(0,0,0,0.35);
+    }
+    .q-tools { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; margin: 0.35rem 0 0.5rem; }
+    .review-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.8rem; margin: 0.8rem 0 1.2rem; }
+    .metric { background: #141b27; border: 1px solid var(--line); border-radius: 12px; padding: 0.75rem; }
+    .metric strong { display: block; font-family: var(--display); font-size: 1.35rem; color: var(--ink); }
+    .progress-list { display: flex; flex-direction: column; gap: 0.55rem; margin-bottom: 1.2rem; }
+    .progress-row { background: #1a2230; border: 1px solid var(--line); border-radius: 12px; padding: 0.75rem 0.9rem; }
+    .progress-row-head { display: flex; justify-content: space-between; gap: 0.8rem; align-items: flex-start; }
+    .progress-row p { color: var(--muted); margin: 0.25rem 0 0; font-size: 0.85rem; }
+    details.delivery { margin-top: 0.45rem; color: var(--muted); font-size: 0.78rem; }
+    details.delivery summary { cursor: pointer; color: #93c5fd; }
+    @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } }
+    @media (max-width: 700px) { .review-grid { grid-template-columns: 1fr; } }
+    .editor-foot { position: sticky; bottom: 0; display: flex; justify-content: flex-end; gap: 0.6rem; padding: 0.75rem 1.25rem; background: #0c1118; border-top: 1px solid var(--line); }
+    .toast { min-height: 1.2rem; color: var(--muted); font-size: 0.85rem; margin: 0.4rem 0; }
+    .toast.err { color: #fca5a5; }
+    .inline-msg { display: inline-block; margin-left: 0.55rem; color: #86efac; font-size: 0.82rem; }
+    .inline-msg.err { color: #fca5a5; }
+    .modal-back { position: fixed; inset: 0; background: rgba(0,0,0,0.62); display: flex; align-items: center; justify-content: center; z-index: 40; padding: 1.2rem; }
+    .modal { width: min(640px, 100%); max-height: 88vh; overflow: auto; background: #121826; color: #e8edf5; border: 1px solid var(--line); border-radius: 16px; padding: 1.1rem 1.2rem; }
+    .modal h2 { font-family: var(--display); margin: 0 0 0.5rem; }
+    .modal .actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1rem; }
+    .modal textarea { min-height: 5rem; }
+  </style>
+</head>
+<body>
+  <div class="mb-explore" id="mb-hc-chrome">
+    <header class="mb-explore-top">
+      <a class="mb-explore-brand" href="/explore/ui">
+        <div class="mb-explore-mark" aria-hidden="true"></div>
+        <div>
+          <div class="mb-explore-brand-name">MemoryBox</div>
+          <div class="mb-explore-tagline">Life doesn’t live in folders.</div>
+        </div>
+      </a>
+      <nav class="mb-explore-nav" id="mb-explore-nav" aria-label="Family"></nav>
+    </header>
+    <section class="mb-explore-ask-band">
+      <div class="mb-explore-ask-row">
+        <label class="mb-explore-ask-label" for="askQ">What would you like to see?</label>
+        <div class="mb-explore-ask-field">
+          <span class="mb-explore-ask-spark" aria-hidden="true">✦</span>
+          <input id="askQ" type="text" placeholder="Ask about a family story someone shared by email" />
+          <button type="button" class="mb-explore-ask-go" id="askGo">→</button>
+        </div>
+      </div>
+    </section>
+  </div>
+  <div id="view" class="wrap"></div>
+  <div id="modals"></div>
+  <div id="editor-foot" class="editor-foot hidden"></div>
+  <script src="/static/shell/mb-narrative-field.js?v=i10a2-7"></script>
+  <script>
+    const ASSESS = [
+      ["high_confidence", "High confidence"],
+      ["moderate_confidence", "Moderate confidence"],
+      ["low_confidence", "Low confidence"],
+      ["uncertain", "Uncertain"],
+    ];
+    const VERDICT = [
+      ["retained", "Keep in archive"],
+      ["rejected", "Reject as evidence"],
+      ["promotion_authorized", "Ready to add to MemoryBox"],
+    ];
+    const state = {
+      view: "panel",
+      tab: "responses",
+      campaigns: [],
+      items: [],
+      people: [],
+      newCount: 0,
+      mailbox: null,
+      campaign: null,
+      editingCampaignId: null,
+      item: null,
+      draft: { personId: "", email: "", title: "", cadence: "weekly", followUpDays: 7, questions: "" },
+      selectedPerson: null,
+      personQuery: "",
+      personDropdownOpen: false,
+    };
+
+    function esc(s) {
+      return String(s || "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    }
+    function initial(name) {
+      return String(name || "?").trim().charAt(0).toUpperCase() || "?";
+    }
+    function formatWhen(iso) {
+      if (!iso) return "";
+      try {
+        return new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+      } catch (_) {
+        return iso;
+      }
+    }
+    function assessmentLabel(code) {
+      const row = ASSESS.find(([k]) => k === code);
+      return row ? row[1] : "";
+    }
+    function cadenceLabel(cfg) {
+      const c = cfg || {};
+      const p = c.pattern || "weekly";
+      const labels = { daily: "Daily", weekly: "Weekly", monthly: "Monthly" };
+      if (p === "seconds") return "Accelerated";
+      return labels[p] || "Scheduled";
+    }
+    function followUpLabel(seconds) {
+      const s = Number(seconds) || 604800;
+      if (s >= 86400 && s % 86400 === 0) {
+        const d = Math.round(s / 86400);
+        return `${d} day${d === 1 ? "" : "s"}`;
+      }
+      const h = Math.round(s / 3600);
+      return `${h} hour${h === 1 ? "" : "s"}`;
+    }
+    function displayCampaignTitle(title) {
+      const t = String(title || "").trim();
+      if (/^HC Stage[23]\s/i.test(t)) return "Test campaign";
+      return t || "Untitled campaign";
+    }
+    function displayPersonName(name) {
+      const n = String(name || "").trim();
+      return n.replace(/\s*\(Stage\d\)\s*/gi, "").trim() || "Family member";
+    }
+    async function personEmailFromProfile(personId) {
+      try {
+        const d = await api(`/people/${personId}/profile`);
+        const contacts = (d.profile && d.profile.contacts) || [];
+        const row = contacts.find((c) => String(c.contact_kind || "").toLowerCase() === "email" && c.value_text);
+        return row ? String(row.value_text).trim() : "";
+      } catch (_) {
+        return "";
+      }
+    }
+    async function api(path, opts) {
+      const r = await fetch(path, { headers: { "Content-Type": "application/json" }, ...(opts || {}) });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(typeof data.detail === "string" ? data.detail : r.statusText);
+      return data;
+    }
+    const NAV = [
+      { id: "ask", label: "Ask", href: "/explore/ui", ico: "?" },
+      { id: "people", label: "People", href: "/people/ui", ico: "☺" },
+      { id: "stories", label: "Stories", href: "/story/ui", ico: "❧" },
+      { id: "journal", label: "Journal", href: "/journal/ui", ico: "✎" },
+      { id: "artifacts", label: "Artifacts", href: "/artifact/ui", ico: "◇" },
+      { id: "teach", label: "Review & Learn", href: "/review/ui", ico: "✧" },
+    ];
+    function renderNav() {
+      const el = document.getElementById("mb-explore-nav");
+      if (!el) return;
+      el.innerHTML = NAV.map((n) =>
+        `<a class="mb-explore-nav-link${n.id === "teach" ? " is-active" : ""}" href="${n.href}"><span>${n.ico}</span> ${n.label}</a>`
+      ).join("");
+    }
+    function statusLabel(s) {
+      const m = { draft: "Draft", running: "In progress", paused: "Paused", stopped: "Stopped", completed: "Completed" };
+      return m[s] || s || "—";
+    }
+    function verdictLabel(v) {
+      const row = VERDICT.find(([k]) => k === v);
+      return row ? row[1] : (v || "Needs review");
+    }
+    function mailboxBanner() {
+      const m = state.mailbox || {};
+      if (!m.ok) {
+        return `<div class="banner">Email is not connected yet. Historian Capture needs the dedicated capture channel configured on this host.</div>`;
+      }
+      const channel = m.capture_mailbox || "memorybox@marvinbot.net";
+      const transport = m.transport_email || m.user_email || "";
+      if (transport && transport.toLowerCase() !== channel.toLowerCase()) {
+        return `<div class="banner info">Capture channel <strong>${esc(channel)}</strong> · Gmail connected as <strong>${esc(transport)}</strong> (mail for this channel is received in that inbox).</div>`;
+      }
+      return `<div class="banner ok">Capture channel <strong>${esc(channel)}</strong> is connected.</div>`;
+    }
+    async function loadPeople() {
+      if (state.people.length) return state.people;
+      try {
+        const [peopleD, respD] = await Promise.all([
+          api("/library/person-options?limit=300"),
+          api("/historian-capture/respondent-options").catch(() => ({ options: [] })),
+        ]);
+        const emailById = {};
+        (respD.options || []).forEach((o) => {
+          if (o.people_id && o.email) emailById[o.people_id] = o.email;
+        });
+        state.people = (peopleD.people || []).map((p) => ({
+          ...p,
+          email: emailById[p.id] || p.email || "",
+        })).sort((a, b) => String(a.display_name || "").localeCompare(String(b.display_name || ""), undefined, { sensitivity: "base" }));
+      } catch (_) {
+        try { state.people = (await api("/people?limit=300")).people || []; } catch (e) { state.people = []; }
+      }
+      return state.people;
+    }
+    async function refreshMailbox() {
+      state.mailbox = await api("/historian-capture/email-status");
+    }
+    async function refreshCounts() {
+      const d = await api("/historian-capture/new-count");
+      state.newCount = d.count || 0;
+    }
+    async function refreshCampaigns() {
+      const d = await api("/historian-capture/campaigns");
+      state.campaigns = d.campaigns || [];
+    }
+    async function refreshItems() {
+      const d = await api("/historian-capture/items?limit=100");
+      state.items = d.items || [];
+    }
+    async function syncInbox() {
+      try {
+        await api("/historian-capture/poll", { method: "POST", body: "{}" });
+      } catch (_) {
+        /* mailbox unavailable — still show cached data */
+      }
+      await Promise.all([refreshCounts(), refreshCampaigns(), refreshItems()]);
+    }
+    function filteredItems() {
+      if (state.tab === "unmatched") {
+        return state.items.filter((it) => it.match_status === "unmatched" || it.match_status === "ambiguous");
+      }
+      const matched = state.items.filter((it) => it.match_status === "matched");
+      if (state.tab === "retained") {
+        return matched.filter((it) => {
+          const v = (it.latest_verdict || {}).verdict;
+          return v === "retained" || v === "promotion_authorized";
+        });
+      }
+      if (state.tab === "rejected") {
+        return matched.filter((it) => (it.latest_verdict || {}).verdict === "rejected");
+      }
+      return matched.filter((it) => !(it.latest_verdict || {}).verdict);
+    }
+    function personRowsHtml() {
+      const q = state.personQuery.trim().toLowerCase();
+      const rows = state.people.filter((p) => !q || String(p.display_name || "").toLowerCase().includes(q)).slice(0, 40);
+      if (!rows.length) return `<p class="hint">No people match. Add or confirm People first.</p>`;
+      return `<div class="person-list">${rows.map((p) => {
+        const on = state.selectedPerson && state.selectedPerson.id === p.id ? " on" : "";
+        const email = p.email || "";
+        const id = p.id || p.person_id || "";
+        const name = p.display_name || "Person";
+        const src = p.portrait_url || (id ? "/people/" + id + "/portrait" : "");
+        return `<button type="button" class="person-row${on}" data-person="${esc(p.id)}">
+          <img class="av" src="${esc(src)}" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='inline-flex'" />
+          <span class="av" style="display:none">${initial(name)}</span>
+          <span><strong>${esc(name)}</strong><br><span class="hint">${esc(email || "Email loaded after you choose")}</span></span>
+        </button>`;
+      }).join("")}</div>`;
+    }
+    function wirePersonDropdown() {
+      const trigger = document.getElementById("personTrigger");
+      const panel = document.getElementById("personPanel");
+      if (trigger) {
+        trigger.onclick = (e) => {
+          e.stopPropagation();
+          state.personDropdownOpen = !state.personDropdownOpen;
+          panel.classList.toggle("hidden", !state.personDropdownOpen);
+        };
+      }
+      const search = document.getElementById("personSearch");
+      if (search) {
+        search.onclick = (e) => e.stopPropagation();
+        search.oninput = (e) => {
+          state.personQuery = e.target.value;
+          document.getElementById("personPick").innerHTML = personRowsHtml();
+          wirePersonPick();
+        };
+      }
+      wirePersonPick();
+    }
+    function renderPanel() {
+      const el = document.getElementById("view");
+      const items = filteredItems();
+      const emptyCopy = {
+        responses: "Nothing waiting for review.",
+        retained: "No responses kept in the archive yet.",
+        rejected: "No rejected responses.",
+        unmatched: "No unmatched mail right now.",
+        campaigns: "",
+      };
+      el.innerHTML = `
+        <p class="crumb"><a href="/review/ui">Review &amp; Learn</a> › Historian Capture</p>
+        <div class="page-head">
+          <div>
+            <h1>Historian Capture</h1>
+            <p class="sub">Invite family to answer questions by email. Each reply is preserved, reviewed, and can become a Story or Artifact.</p>
+          </div>
+          <div>
+            <button type="button" class="btn primary" id="btnNewCampaign">New campaign</button>
+          </div>
+        </div>
+        ${mailboxBanner()}
+        <div class="tabs" style="margin:0.8rem 0 1rem">
+          <button type="button" class="${state.tab === "responses" ? "on" : ""}" data-tab="responses">Needs review${state.newCount ? ` (${state.newCount})` : ""}</button>
+          <button type="button" class="${state.tab === "retained" ? "on" : ""}" data-tab="retained">Kept</button>
+          <button type="button" class="${state.tab === "rejected" ? "on" : ""}" data-tab="rejected">Rejected</button>
+          <button type="button" class="${state.tab === "campaigns" ? "on" : ""}" data-tab="campaigns">Campaigns</button>
+          <button type="button" class="${state.tab === "unmatched" ? "on" : ""}" data-tab="unmatched">Needs attention</button>
+        </div>
+        <div id="panelBody"></div>
+      `;
+      const body = document.getElementById("panelBody");
+      if (state.tab === "campaigns") {
+        if (!state.campaigns.length) {
+          body.innerHTML = `<div class="empty">No campaigns yet. Start one to send thoughtful questions, one at a time.</div>`;
+        } else {
+          body.innerHTML = state.campaigns.map((c) => `
+            <div class="card" data-campaign="${c.id}">
+              <h3>${esc(displayCampaignTitle(c.title))}</h3>
+              <p>
+                <span class="badge"><span class="dot ${c.status === "draft" ? "draft" : (c.status === "running" ? "run" : "saved")}"></span>${esc(statusLabel(c.status))}</span>
+                ${c.new_capture_count ? `<span class="pill warn">${c.new_capture_count} new</span>` : ""}
+              </p>
+            </div>
+          `).join("");
+        }
+        body.querySelectorAll("[data-campaign]").forEach((n) => n.onclick = () => openCampaign(n.dataset.campaign));
+      } else {
+        const list = items;
+        if (!list.length) {
+          body.innerHTML = `<div class="empty">${emptyCopy[state.tab] || "Nothing here yet."}</div>`;
+        } else {
+          body.innerHTML = list.map((it) => {
+            const v = (it.latest_verdict || {}).verdict;
+            const a = (it.latest_assessment || {}).assessment_code;
+            const title = displayPersonName(it.respondent_name || it.from_address || "Family reply");
+            const excerpt = (it.extracted_text || "").slice(0, 140);
+            const when = formatWhen(it.received_at);
+            return `<div class="card" data-item="${it.id}">
+              <h3>${esc(title)}</h3>
+              <p>
+                ${when ? `<span class="pill muted">${esc(when)}</span>` : ""}
+                <span class="pill">${esc(verdictLabel(v))}</span>
+                ${a ? `<span class="pill muted">${esc(assessmentLabel(a))}</span>` : ""}
+              </p>
+              <p>${esc(excerpt)}</p>
+            </div>`;
+          }).join("");
+        }
+        body.querySelectorAll("[data-item]").forEach((n) => n.onclick = () => openReview(n.dataset.item));
+      }
+      document.getElementById("btnNewCampaign").onclick = () => {
+        state.editingCampaignId = null;
+        state.selectedPerson = null;
+        state.draft = { personId: "", email: "", title: "", cadence: "weekly", followUpDays: 7, questions: "" };
+        state.view = "new";
+        render();
+      };
+      el.querySelectorAll("[data-tab]").forEach((b) => b.onclick = () => {
+        state.tab = b.dataset.tab;
+        if (state.tab === "unmatched") location.hash = "unmatched";
+        else if (location.hash) history.replaceState(null, "", location.pathname);
+        renderPanel();
+      });
+    }
+    async function renderNewCampaign() {
+      await loadPeople();
+      const el = document.getElementById("view");
+      const personLabel = state.selectedPerson
+        ? esc(state.selectedPerson.display_name || "Person")
+        : "Choose a person…";
+      el.innerHTML = `
+        <p class="crumb"><a href="#" id="backPanel">Historian Capture</a> › New campaign</p>
+        <div class="page-head"><div><h1>New campaign</h1><p class="sub">Choose who you are inviting, how often questions go out, and what you would like to ask.</p></div></div>
+        <div class="side">
+          <label>Who is this for?</label>
+          <div class="person-dropdown" id="personDropdown">
+            <button type="button" class="person-dropdown-trigger" id="personTrigger">
+              <span id="personTriggerLabel">${personLabel}</span><span aria-hidden="true">▾</span>
+            </button>
+            <div class="person-dropdown-panel${state.personDropdownOpen ? "" : " hidden"}" id="personPanel">
+              <input id="personSearch" placeholder="Search People" value="${esc(state.personQuery)}" />
+              <div id="personPick">${personRowsHtml()}</div>
+            </div>
+          </div>
+          <label>Email for this person</label>
+          <input id="cEmail" name="hc-respondent-email" autocomplete="off" data-1p-ignore="true" data-lpignore="true" value="${esc(state.draft.email)}" placeholder="person@example.com" />
+          <p class="hint">We fill this from the Person profile when an email is on file. You can confirm or override.</p>
+          <label>Campaign title</label>
+          <input id="cTitle" name="hc-campaign-title" type="text" autocomplete="off" data-1p-ignore="true" data-lpignore="true" value="${esc(state.draft.title)}" placeholder="Summer memories" />
+          <div class="layout" style="margin-top:0.6rem">
+            <div>
+              <label>How often should the next question go out?</label>
+              <select id="cCadence">
+                <option value="daily" ${state.draft.cadence === "daily" ? "selected" : ""}>Daily</option>
+                <option value="weekly" ${state.draft.cadence === "weekly" ? "selected" : ""}>Weekly</option>
+                <option value="monthly" ${state.draft.cadence === "monthly" ? "selected" : ""}>Monthly</option>
+              </select>
+            </div>
+            <div>
+              <label>Follow-up before reminder (days)</label>
+              <input id="cFollowUpDays" type="number" min="1" value="${state.draft.followUpDays}" />
+              <p class="hint">Default 7 days — one reminder, then no response before moving on.</p>
+            </div>
+          </div>
+          <label>Questions</label>
+          <div class="q-tools">
+            <button type="button" class="btn" id="btnStarter">Add starter questions</button>
+          </div>
+          <p class="hint">One question per line — press <strong>Enter</strong> to start a new question. Soft word-wrap does not create a new question.</p>
+          <textarea id="cQuestions" placeholder="What is your earliest memory?&#10;Who influenced you most growing up?">${esc(state.draft.questions)}</textarea>
+          <p class="toast" id="toast"></p>
+        </div>
+      `;
+      document.getElementById("backPanel").onclick = (e) => { e.preventDefault(); state.view = "panel"; state.personDropdownOpen = false; render(); };
+      wirePersonDropdown();
+      document.getElementById("btnStarter").onclick = async () => {
+        const d = await api("/historian-capture/starter-questions");
+        const ta = document.getElementById("cQuestions");
+        const add = (d.questions || []).join("\n");
+        ta.value = ta.value.trim() ? `${ta.value.trim()}\n${add}` : add;
+      };
+      document.getElementById("editor-foot").classList.remove("hidden");
+      document.getElementById("editor-foot").innerHTML = `
+        <button type="button" class="btn ghost" id="btnCancel">Cancel</button>
+        <button type="button" class="btn" id="btnSaveDraft">${state.editingCampaignId ? "Save changes" : "Save draft"}</button>
+        <button type="button" class="btn primary" id="btnStart">Start campaign</button>
+      `;
+      document.getElementById("btnCancel").onclick = () => { state.view = "panel"; hideFoot(); render(); };
+      document.getElementById("btnSaveDraft").onclick = () => saveCampaign(false);
+      document.getElementById("btnStart").onclick = () => saveCampaign(true);
+    }
+    function wirePersonPick() {
+      document.querySelectorAll("[data-person]").forEach((btn) => {
+        btn.onclick = async () => {
+          const p = state.people.find((x) => x.id === btn.dataset.person);
+          state.selectedPerson = p || null;
+          state.personDropdownOpen = false;
+          const email = p ? (p.email || await personEmailFromProfile(p.id)) : "";
+          state.draft.email = email;
+          if (p) p.email = email;
+          const emailEl = document.getElementById("cEmail");
+          if (emailEl) emailEl.value = email || "";
+          const label = document.getElementById("personTriggerLabel");
+          if (label) label.textContent = p ? (p.display_name || "Person") : "Choose a person…";
+          const panel = document.getElementById("personPanel");
+          if (panel) panel.classList.add("hidden");
+          document.getElementById("personPick").innerHTML = personRowsHtml();
+          wirePersonPick();
+          if (p && !email) toast("No email on this Person profile — add one on People or enter it here.", true);
+        };
+      });
+    }
+    async function saveCampaign(start) {
+      if (!state.selectedPerson) { toast("Choose a Person first.", true); return; }
+      const questions = document.getElementById("cQuestions").value.split(/\n+/).map((s) => s.trim()).filter(Boolean);
+      if (!questions.length) { toast("Add at least one question.", true); return; }
+      const email = document.getElementById("cEmail").value.trim();
+      if (!email) { toast("Confirm an email address for this person.", true); return; }
+      const days = Number(document.getElementById("cFollowUpDays").value) || 7;
+      const payload = {
+        title: document.getElementById("cTitle").value,
+        people_id: state.selectedPerson.id,
+        email,
+        display_name: state.selectedPerson.display_name,
+        cadence_pattern: document.getElementById("cCadence").value,
+        follow_up_interval_seconds: Math.max(86400, Math.round(days * 86400)),
+        questions,
+      };
+      const camp = state.editingCampaignId
+        ? await api(`/historian-capture/campaigns/${state.editingCampaignId}`, { method: "PUT", body: JSON.stringify(payload) })
+        : await api("/historian-capture/campaigns", { method: "POST", body: JSON.stringify(payload) });
+      if (start) await api(`/historian-capture/campaigns/${camp.id}/start`, { method: "POST", body: "{}" });
+      state.editingCampaignId = null;
+      state.view = "panel";
+      state.tab = "campaigns";
+      hideFoot();
+      await refreshCampaigns();
+      render();
+      toast(start ? "Campaign started." : "Draft saved.");
+    }
+    async function openCampaign(id) {
+      await syncInbox();
+      state.campaign = await api(`/historian-capture/campaigns/${id}`);
+      state.view = "campaign";
+      render();
+    }
+    function renderCampaign() {
+      const c = state.campaign;
+      const el = document.getElementById("view");
+      const cadence = cadenceLabel(c.cadence_config_json);
+      const followLabel = followUpLabel(c.follow_up_interval_seconds);
+      const deliveries = c.deliveries || [];
+      const captureItems = c.capture_items || [];
+      const itemByDelivery = {};
+      captureItems.forEach((it) => { if (it.delivery_id) itemByDelivery[it.delivery_id] = it; });
+      const waiting = deliveries.some((d) => ["sent", "waiting", "reminder_sent"].includes(d.status));
+      const pending = deliveries.some((d) => d.status === "pending");
+      const canAdvance = c.status === "running" && pending && !waiting;
+      const reviewed = captureItems.filter((it) => (it.latest_verdict || {}).verdict).length;
+      const retained = captureItems.filter((it) => {
+        const v = (it.latest_verdict || {}).verdict;
+        return v === "retained" || v === "promotion_authorized";
+      }).length;
+      const rejected = captureItems.filter((it) => (it.latest_verdict || {}).verdict === "rejected").length;
+      const deliveryStatus = (d) => {
+        const labels = {
+          pending: "Scheduled", sent: "Sent", waiting: "Waiting for reply",
+          reminder_sent: "Reminder sent", answered: "Answered",
+          no_response: "No response", exhausted: "No response",
+          failed: "Send failed", cancelled: "Cancelled",
+        };
+        return labels[d.status] || d.status;
+      };
+      const respondents = (c.respondents || []).map((r) => `
+        <div class="card" style="cursor:default">
+          <h3>${esc(displayPersonName(r.display_name_snapshot))}</h3>
+          <p><span class="pill">${esc(r.status === "opted_out" ? "Opted out" : (r.status || "Invited"))}</span> ${esc(r.contact_route_value || "")}</p>
+          ${r.status === "opted_out" ? `<div class="banner">This person opted out — no further questions will be sent.</div>` : ""}
+        </div>
+      `).join("");
+      let banner = "";
+      if (c.status === "paused") banner = `<div class="banner info">Outbound questions are paused. Replies already received can still be reviewed.</div>`;
+      if (c.status === "stopped") banner = `<div class="banner">This campaign has been stopped. No further questions will be sent.</div>`;
+      if (c.status === "completed") banner = `<div class="banner info">All questions have been sent. Review replies as they arrive.</div>`;
+      el.innerHTML = `
+        <p class="crumb"><a href="#" id="backPanel">Historian Capture</a> › Campaigns › ${esc(displayCampaignTitle(c.title))}</p>
+        <div class="page-head">
+          <div>
+            <button type="button" class="btn ghost" id="backCampaigns">← Campaigns</button>
+            <h1 style="margin-top:0.6rem">${esc(displayCampaignTitle(c.title))}</h1>
+            <p class="sub">
+              <span class="badge"><span class="dot ${c.status === "draft" ? "draft" : (c.status === "running" ? "run" : "saved")}"></span>${esc(statusLabel(c.status))}</span>
+              <span class="badge">${esc(cadence)} questions</span>
+              <span class="badge">Follow-up after ${esc(followLabel)}</span>
+            </p>
+          </div>
+          <div class="actions">
+            ${c.status === "draft" ? `<button class="btn primary" id="btnStartNow">Start campaign</button>` : ""}
+            ${c.status === "draft" ? `<button class="btn" id="btnEditDraft">Edit draft</button>` : ""}
+            ${c.status === "running" ? `<button class="btn" id="btnPause">Pause</button>` : ""}
+            ${c.status === "running" ? `<button class="btn primary" id="btnAdvance" ${canAdvance ? "" : "disabled"}>Send next question now</button>` : ""}
+            ${c.status === "paused" ? `<button class="btn" id="btnResume">Resume</button>` : ""}
+            ${c.status === "running" || c.status === "paused" ? `<button class="btn ghost" id="btnStop">Stop campaign</button>` : ""}
+            <button class="btn danger" id="btnDelete">Delete campaign</button>
+          </div>
+        </div>
+        ${banner}
+        ${c.status === "running" ? `<p class="hint">${!pending ? "There is no next question waiting to send." : (waiting ? "The next question cannot be sent while MemoryBox is waiting for the current reply." : "The next question is waiting for its scheduled date. You can send it now.")} <span class="inline-msg" id="msgAdvance"></span></p>` : ""}
+        <div class="review-grid">
+          <div class="metric"><strong>${captureItems.length}</strong><span class="hint">Replies received</span></div>
+          <div class="metric"><strong>${reviewed}</strong><span class="hint">Reviewed (${retained} kept · ${rejected} rejected)</span></div>
+          <div class="metric"><strong>${deliveries.filter((d) => d.sent_at).length}/${(c.questions || []).length}</strong><span class="hint">Questions sent</span></div>
+        </div>
+        <h2>Campaign settings</h2>
+        <div class="side" style="margin-bottom:1.2rem">
+          <p><span class="badge">${esc(cadence)} question cadence</span><span class="badge">${esc(followLabel)} before reminder</span><span class="badge">${c.send_thank_you_ack ? "Thank-you enabled" : "Thank-you disabled"}</span><span class="badge">${esc(c.timezone_name || "UTC")}</span></p>
+        </div>
+        <h2 style="margin-top:1rem">People in this campaign</h2>
+        ${respondents || `<div class="empty">No respondents yet.</div>`}
+        <h2 style="margin-top:1.2rem">Questions and progress</h2>
+        <div class="progress-list">
+          ${(c.questions || []).map((q, idx) => {
+            const ds = deliveries.filter((d) => d.question_id === q.id);
+            if (!ds.length) return `<div class="progress-row"><div class="progress-row-head"><strong>${idx + 1}. ${esc(q.body_text)}</strong><span class="badge">Not scheduled</span></div></div>`;
+            return ds.map((d) => {
+              const it = itemByDelivery[d.id];
+              const verdict = it && (it.latest_verdict || {}).verdict;
+              return `<div class="progress-row">
+                <div class="progress-row-head">
+                  <div><strong>${idx + 1}. ${esc(q.body_text)}</strong><p>${esc(deliveryStatus(d))}${d.sent_at ? " · sent " + esc(formatWhen(d.sent_at)) : ""}</p></div>
+                  <div>
+                    <span class="badge">${esc(deliveryStatus(d))}</span>
+                    ${it ? `<button type="button" class="btn" data-review="${esc(it.id)}">${verdict ? esc(verdictLabel(verdict)) : "Review reply"}</button>` : ""}
+                  </div>
+                </div>
+                <details class="delivery"><summary>Delivery details</summary>
+                  <p>Scheduled ${esc(formatWhen(d.scheduled_for))}${d.reminder_sent_at ? " · reminder " + esc(formatWhen(d.reminder_sent_at)) : ""}${d.no_response_at ? " · no response " + esc(formatWhen(d.no_response_at)) : ""}</p>
+                  ${d.fail_detail ? `<p class="toast err">${esc(d.fail_detail)}</p>` : ""}
+                </details>
+              </div>`;
+            }).join("");
+          }).join("") || `<div class="empty">No questions in this campaign.</div>`}
+        </div>
+        <h2>Campaign replies</h2>
+        ${captureItems.length ? captureItems.map((it) => `
+          <div class="card" data-review="${esc(it.id)}">
+            <h3>${esc(displayPersonName(it.respondent_name || it.from_address || "Reply"))}</h3>
+            <p>${esc(formatWhen(it.received_at))} · ${esc(verdictLabel((it.latest_verdict || {}).verdict))}</p>
+            <p>${esc((it.extracted_text || "").slice(0, 160))}</p>
+          </div>
+        `).join("") : `<div class="empty">No replies received yet.</div>`}
+      `;
+      document.getElementById("backPanel").onclick = (e) => { e.preventDefault(); state.view = "panel"; state.tab = "responses"; render(); };
+      document.getElementById("backCampaigns").onclick = (e) => { e.preventDefault(); state.view = "panel"; state.tab = "campaigns"; render(); };
+      const act = async (name) => {
+        await api(`/historian-capture/campaigns/${c.id}/${name}`, { method: "POST", body: "{}" });
+        await openCampaign(c.id);
+      };
+      const p = document.getElementById("btnPause"); if (p) p.onclick = () => act("pause");
+      const r = document.getElementById("btnResume"); if (r) r.onclick = () => act("resume");
+      const s = document.getElementById("btnStop"); if (s) s.onclick = () => { if (confirm("Stop this campaign? No further questions will be sent.")) act("stop"); };
+      const startNow = document.getElementById("btnStartNow");
+      if (startNow) startNow.onclick = () => act("start");
+      const advance = document.getElementById("btnAdvance");
+      if (advance) advance.onclick = async () => {
+        try {
+          advance.disabled = true;
+          state.campaign = await api(`/historian-capture/campaigns/${c.id}/advance`, { method: "POST", body: "{}" });
+          renderCampaign();
+          flash("msgAdvance", "Next question sent.");
+        } catch (e) {
+          advance.disabled = false;
+          flash("msgAdvance", e.message || "The next question could not be sent.", true);
+        }
+      };
+      const editDraft = document.getElementById("btnEditDraft");
+      if (editDraft) editDraft.onclick = () => beginEditDraft(c);
+      document.getElementById("btnDelete").onclick = () => confirmDeleteCampaign(c);
+      el.querySelectorAll("[data-review]").forEach((node) => {
+        node.onclick = () => openReview(node.dataset.review);
+      });
+      hideFoot();
+    }
+    async function beginEditDraft(c) {
+      await loadPeople();
+      const resp = (c.respondents || [])[0];
+      state.editingCampaignId = c.id;
+      state.draft.title = c.title || "";
+      state.draft.cadence = (c.cadence_config_json || {}).pattern || "weekly";
+      if (state.draft.cadence === "seconds") state.draft.cadence = "weekly";
+      state.draft.followUpDays = Math.max(1, Math.round((c.follow_up_interval_seconds || 604800) / 86400));
+      state.draft.questions = (c.questions || []).map((q) => q.body_text).filter(Boolean).join("\n");
+      state.draft.email = (resp && resp.contact_route_value) || "";
+      state.selectedPerson = resp
+        ? (state.people.find((p) => p.id === resp.people_id) || { id: resp.people_id, display_name: resp.display_name_snapshot, email: resp.contact_route_value })
+        : null;
+      state.view = "new";
+      render();
+    }
+    function confirmDeleteCampaign(c) {
+      document.getElementById("modals").innerHTML = `<div class="modal-back"><div class="modal">
+        <h2>Delete this campaign?</h2>
+        <p class="hint">${esc(displayCampaignTitle(c.title))} will leave Historian Capture. Replies already received stay in the archive.</p>
+        <div class="actions">
+          <button class="btn" id="d-no">Keep</button>
+          <button class="btn danger" id="d-yes">Delete campaign</button>
+        </div>
+      </div></div>`;
+      document.getElementById("d-no").onclick = () => { document.getElementById("modals").innerHTML = ""; };
+      document.getElementById("d-yes").onclick = async () => {
+        await api(`/historian-capture/campaigns/${c.id}`, { method: "DELETE" });
+        document.getElementById("modals").innerHTML = "";
+        state.view = "panel";
+        state.tab = "campaigns";
+        await refreshCampaigns();
+        render();
+      };
+    }
+    async function openReview(id) {
+      state.item = await api(`/historian-capture/items/${id}`);
+      state.view = "review";
+      render();
+    }
+    function renderReview() {
+      const it = state.item;
+      const draft = it.current_draft || {};
+      const assess = (it.latest_assessment || {}).assessment_code || "";
+      const verdict = (it.latest_verdict || {}).verdict || "";
+      const optOut = it.respondent_status === "opted_out";
+      const unmatched = it.match_status === "unmatched" || it.match_status === "ambiguous";
+      const el = document.getElementById("view");
+      el.innerHTML = `
+        <p class="crumb">
+          <a href="#" id="backPanel">Historian Capture</a> /
+          ${it.campaign_id ? `<a href="#" id="backCampaign">${esc(displayCampaignTitle(it.campaign_title))}</a> / ` : ""}
+          Review
+        </p>
+        <div class="page-head">
+          <div>
+            <h1>${esc(displayPersonName(it.respondent_name || it.from_address || "Family reply"))}</h1>
+            <p class="sub">${it.question_body ? esc(it.question_body.slice(0, 120)) : ""}</p>
+          </div>
+          <div class="actions">
+            <button type="button" class="btn" id="btnDash">Historian Capture</button>
+            ${it.campaign_id ? `<button type="button" class="btn" id="btnCamp">Campaign</button>` : ""}
+          </div>
+        </div>
+        ${optOut ? `<div class="banner">This person opted out of further questions.</div>` : ""}
+        ${unmatched ? `<div class="banner">This message could not be matched to a campaign automatically. Review the source and decide what to keep.</div>` : ""}
+        <div class="layout">
+          <div class="panel locked">
+            <h4>As received</h4>
+            <p class="hint">Original words from the email — preserved and not editable.</p>
+            <p class="hint"><strong>From:</strong> ${esc(it.from_address || "—")}<br>
+            <strong>Subject:</strong> ${esc(it.subject || "—")}<br>
+            <strong>Received:</strong> ${esc(formatWhen(it.received_at) || "—")}</p>
+            <textarea readonly id="sourceText">${esc(it.extracted_text || "")}</textarea>
+            <p class="hint"><a href="/historian-capture/items/${esc(it.id)}/source" download="historian-capture.txt">Download original email as text</a></p>
+          </div>
+          <div class="panel">
+            <h4>Your working draft</h4>
+            <p class="hint">Clean up wording for MemoryBox without changing the preserved source.</p>
+            <textarea id="draftBody">${esc(draft.body_text || it.extracted_text || "")}</textarea>
+            <label>Private notes (only you see these)</label>
+            <textarea id="draftNotes" style="min-height:4rem">${esc(draft.notes_private || "")}</textarea>
+            <button type="button" class="btn" id="btnDraft" style="margin-top:0.5rem">Save working draft</button>
+            <span class="inline-msg" id="msgDraft"></span>
+          </div>
+        </div>
+        <div class="layout" style="margin-top:1rem">
+          <div class="side">
+            <h4>Owner confidence</h4>
+            <label>How much do you trust this as family evidence?</label>
+            <select id="assessSel">${ASSESS.map(([v,l]) => `<option value="${v}" ${assess===v?"selected":""}>${l}</option>`).join("")}</select>
+            <p class="hint">Only you see this. It is separate from what you decide to keep or share.</p>
+            <button type="button" class="btn" id="btnAssess">Save owner confidence</button>
+            <span class="inline-msg" id="msgAssess"></span>
+          </div>
+          <div class="side">
+            <h4>Decision</h4>
+            <label>What should MemoryBox do with this?</label>
+            <select id="verdictSel">${VERDICT.map(([v,l]) => `<option value="${v}" ${verdict===v?"selected":""}>${l}</option>`).join("")}</select>
+            <p class="hint">Rejecting means Ask will not treat this as affirmative evidence.</p>
+            <button type="button" class="btn" id="btnVerdict">Save decision</button>
+            <span class="inline-msg" id="msgVerdict"></span>
+          </div>
+        </div>
+        <div class="side" style="margin-top:1rem" id="promoBlock">
+          <h4>After you authorize promotion</h4>
+          <p class="hint">Open the familiar Story or Artifact editor to finish and connect this reply to the rest of your archive.</p>
+          <button type="button" class="btn primary" id="btnStory" ${verdict !== "promotion_authorized" ? "disabled" : ""}>Create Story</button>
+          <button type="button" class="btn" id="btnArtifact" ${verdict !== "promotion_authorized" ? "disabled" : ""}>Create Artifact</button>
+          <button type="button" class="btn ghost" id="btnThankYou" ${verdict && !optOut ? "" : "disabled"}>Send thank-you</button>
+          <span class="inline-msg" id="msgThankYou"></span>
+        </div>
+        <p class="toast" id="toast"></p>
+      `;
+      const goDash = async (tab) => {
+        state.view = "panel";
+        state.tab = tab;
+        await Promise.all([refreshItems(), refreshCounts(), refreshCampaigns()]);
+        render();
+      };
+      document.getElementById("backPanel").onclick = (e) => { e.preventDefault(); goDash(unmatched ? "unmatched" : "responses"); };
+      document.getElementById("btnDash").onclick = () => goDash("responses");
+      const backCamp = document.getElementById("backCampaign");
+      if (backCamp && it.campaign_id) backCamp.onclick = async (e) => { e.preventDefault(); await openCampaign(it.campaign_id); };
+      const btnCamp = document.getElementById("btnCamp");
+      if (btnCamp && it.campaign_id) btnCamp.onclick = () => openCampaign(it.campaign_id);
+      document.getElementById("btnDraft").onclick = async () => {
+        await api(`/historian-capture/items/${it.id}/draft`, {
+          method: "POST",
+          body: JSON.stringify({
+            body_text: document.getElementById("draftBody").value,
+            notes_private: document.getElementById("draftNotes").value,
+          }),
+        });
+        flash("msgDraft", "Working draft saved.");
+      };
+      document.getElementById("btnAssess").onclick = async () => {
+        await api(`/historian-capture/items/${it.id}/assessment`, { method: "POST", body: JSON.stringify({ assessment_code: document.getElementById("assessSel").value }) });
+        flash("msgAssess", "Owner confidence saved.");
+      };
+      document.getElementById("btnVerdict").onclick = async () => {
+        const v = document.getElementById("verdictSel").value;
+        await api(`/historian-capture/items/${it.id}/verdict`, { method: "POST", body: JSON.stringify({ verdict: v }) });
+        const idx = state.items.findIndex((x) => x.id === it.id);
+        if (idx >= 0) state.items[idx].latest_verdict = { verdict: v };
+        flash("msgVerdict", "Decision saved.");
+        await openReview(it.id);
+        flash("msgVerdict", "Decision saved.");
+      };
+      document.getElementById("btnStory").onclick = async () => {
+        const p = await api(`/historian-capture/items/${it.id}/promote-story`, { method: "POST", body: JSON.stringify({ title: (it.respondent_name || "Family") + " — historian reply" }) });
+        location.href = `/story/ui?id=${encodeURIComponent(p.promoted_id)}&edit=1`;
+      };
+      document.getElementById("btnArtifact").onclick = async () => {
+        const p = await api(`/historian-capture/items/${it.id}/promote-artifact`, { method: "POST", body: JSON.stringify({ label: "Historian capture" }) });
+        location.href = `/artifact/ui?id=${encodeURIComponent(p.promoted_id)}`;
+      };
+      document.getElementById("btnThankYou").onclick = () => openThankYouModal(it);
+      hideFoot();
+    }
+    function openThankYouModal(it) {
+      api("/historian-capture/thank-you/preview").then((d) => {
+        const canned = d.body || "Thank you — we received and preserved your reply.";
+        document.getElementById("modals").innerHTML = `<div class="modal-back"><div class="modal">
+          <h2>Send thank-you</h2>
+          <p class="hint">This is the message that will be sent. You may add a short personal note.</p>
+          <label>Thank-you message</label>
+          <textarea readonly id="tyCanned">${esc(canned)}</textarea>
+          <label>Add a personal note (optional)</label>
+          <textarea id="tyExtra" placeholder="A sentence of your own, if you want."></textarea>
+          <div class="actions">
+            <button type="button" class="btn" id="tyCancel">Cancel</button>
+            <button type="button" class="btn primary" id="tySend">Send thank-you</button>
+            <span class="inline-msg" id="msgTyModal"></span>
+          </div>
+        </div></div>`;
+        document.getElementById("tyCancel").onclick = () => { document.getElementById("modals").innerHTML = ""; };
+        document.getElementById("tySend").onclick = async () => {
+          const extra = document.getElementById("tyExtra").value.trim();
+          const ty = await api(`/historian-capture/items/${it.id}/thank-you`, {
+            method: "POST",
+            body: JSON.stringify({ extra_text: extra }),
+          });
+          const msg = ty.skipped_reason ? `Thank-you not sent (${ty.skipped_reason}).` : "Thank-you sent.";
+          flash("msgTyModal", msg, !!ty.skipped_reason);
+          flash("msgThankYou", msg, !!ty.skipped_reason);
+          if (!ty.skipped_reason) document.getElementById("modals").innerHTML = "";
+        };
+      }).catch((e) => flash("msgThankYou", e.message || "Could not load thank-you preview.", true));
+    }
+    function hideFoot() {
+      document.getElementById("editor-foot").classList.add("hidden");
+      document.getElementById("editor-foot").innerHTML = "";
+    }
+    function flash(id, msg, err) {
+      const el = document.getElementById(id);
+      if (el) {
+        el.textContent = msg || "";
+        el.className = "inline-msg" + (err ? " err" : "");
+      }
+      toast(msg, err);
+    }
+    function toast(msg, err) {
+      const el = document.getElementById("toast") || document.querySelector(".toast");
+      if (!el) return;
+      el.textContent = msg || "";
+      el.className = "toast" + (err ? " err" : "");
+    }
+    async function render() {
+      if (state.view === "panel") renderPanel();
+      else if (state.view === "new") renderNewCampaign();
+      else if (state.view === "campaign") renderCampaign();
+      else if (state.view === "review") renderReview();
+    }
+    document.getElementById("askGo").onclick = () => {
+      const q = document.getElementById("askQ").value.trim();
+      if (q) location.href = "/explore/ui?q=" + encodeURIComponent(q);
+    };
+    (async function boot() {
+      renderNav();
+      document.addEventListener("click", () => {
+        if (state.personDropdownOpen) {
+          state.personDropdownOpen = false;
+          const panel = document.getElementById("personPanel");
+          if (panel) panel.classList.add("hidden");
+        }
+      });
+      if (location.hash === "#unmatched") state.tab = "unmatched";
+      await refreshMailbox();
+      await syncInbox();
+      render();
+    })();
+  </script>
+</body>
+</html>

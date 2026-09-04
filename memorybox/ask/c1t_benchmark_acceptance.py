@@ -287,6 +287,7 @@ def run_prove_c1t_benchmark() -> dict[str, Any]:
             parameters=RunParameters(
                 num_ctx=100,
                 num_predict=50,
+                think=False,
                 safety_margin_tokens=50,
                 hard_timeout_seconds=1,
                 heartbeat_seconds=1,
@@ -303,6 +304,7 @@ def run_prove_c1t_benchmark() -> dict[str, Any]:
         valid_preflight_params = RunParameters(
             num_ctx=2048,
             num_predict=128,
+            think=False,
             safety_margin_tokens=64,
             hard_timeout_seconds=1,
             heartbeat_seconds=1,
@@ -363,6 +365,7 @@ def run_prove_c1t_benchmark() -> dict[str, Any]:
             model="synthetic:no-model",
             num_ctx=2048,
             num_predict=128,
+            think=False,
             safety_margin_tokens=64,
             hard_timeout_seconds=1,
             stall_warning_seconds=1,
@@ -376,7 +379,7 @@ def run_prove_c1t_benchmark() -> dict[str, Any]:
             repetition=1,
             parameters=timeout_params,
             confirm_model_run=True,
-            worker_command_factory=lambda _request, _raw, _partial: [
+            worker_command_factory=lambda _request, _raw, _partial, _thinking: [
                 sys.executable,
                 "-c",
                 "import time; time.sleep(30)",
@@ -384,7 +387,7 @@ def run_prove_c1t_benchmark() -> dict[str, Any]:
         )
         _check(
             "supervisor_hard_timeout_terminates_worker",
-            timed["record"]["status"] == "TIMED_OUT"
+            timed["record"]["execution_status"] == "TIMEOUT"
             and timed["record"]["recovery"]["cleanup"].get("worker_terminated") is True,
             checks,
             problems,
@@ -405,13 +408,14 @@ def run_prove_c1t_benchmark() -> dict[str, Any]:
             repetition=1,
             parameters=timeout_params,
             confirm_model_run=True,
-            worker_command_factory=lambda _request, raw, partial: [
+            worker_command_factory=lambda _request, raw, partial, thinking: [
                 sys.executable,
                 "-c",
                 (
                     "from pathlib import Path; import json; "
                     f"Path({str(partial)!r}).write_text("
-                    "'{\"claims\": []}', encoding='utf-8'); "
+                    "'{\"claims\":[{\"text\":\"synthetic [email_3]\"}]}', encoding='utf-8'); "
+                    f"Path({str(thinking)!r}).write_text('', encoding='utf-8'); "
                     f"Path({str(raw)!r}).write_text(json.dumps({{"
                     "'done': True, 'prompt_eval_count': 10, "
                     "'prompt_eval_duration': 1000000000, 'eval_count': 4, "
@@ -423,7 +427,8 @@ def run_prove_c1t_benchmark() -> dict[str, Any]:
         _check(
             "successful_run_can_follow_synthetic_timeout",
             successful.get("ok") is True
-            and successful["record"]["status"] == "COMPLETE"
+            and successful["record"]["execution_status"] == "COMPLETE"
+            and successful["record"]["benchmark_outcome"] == "PASS"
             and successful["record"]["quality"]["schema_pass"] is True
             and Path(successful["run_dir"]) != Path(timed["run_dir"]),
             checks,
@@ -441,7 +446,7 @@ def run_prove_c1t_benchmark() -> dict[str, Any]:
         ]
         _check(
             "workbook_uses_relative_hyperlinks",
-            len(formulas) == 10
+            len(formulas) == 12
             and any("synthetic-timeout-" in formula for formula in formulas)
             and any("synthetic-next-run-" in formula for formula in formulas),
             checks,
@@ -474,6 +479,13 @@ def run_prove_c1t_benchmark() -> dict[str, Any]:
             problems,
             matrix_refused,
         )
+
+    from memorybox.ask.c1t_gate_acceptance import run_prove_c1t_gate
+
+    gate_payload = run_prove_c1t_gate()
+    checks.extend(gate_payload["checks"])
+    if gate_payload.get("problems"):
+        problems.extend(gate_payload["problems"])
 
     return {
         "ok": not problems,
