@@ -1,0 +1,38 @@
+{
+  "proposal_id": "p2-i13-bounded-corpus-v0-review",
+  "status": "proposal_not_runnable",
+  "approved": false,
+  "processing_authorized": false,
+  "expected_source_count": 22,
+  "sources": [],
+  "membership_status": "No versioned manifest located in accepted baseline; local 19-video directory is not a substitute",
+  "required_source_fields": [
+    "provider_key",
+    "stable_video_id",
+    "immutable_source_fingerprint",
+    "duration_sec",
+    "owner_truth_reference",
+    "expected_identity_and_approximate_intervals",
+    "coverage_tags"
+  ],
+  "coverage_required": [
+    "face_only",
+    "off_camera_voice",
+    "simultaneous_modalities",
+    "multiple_people",
+    "poor_audio",
+    "occlusion",
+    "short_appearance",
+    "sustained_appearance",
+    "no_match"
+  ],
+  "validation_before_use": [
+    "exactly 22 explicitly approved unique provider/source entries",
+    "valid source fingerprints and intervals",
+    "owner-confirmed identities/truth sufficient to score each modality",
+    "manifest version and digest persisted on every job",
+    "API and worker enforce membership; no wildcard or reachable-file fallback"
+  ],
+  "archive_unlock": false,
+  "archive_processing_start": false
+}

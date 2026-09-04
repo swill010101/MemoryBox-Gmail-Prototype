@@ -1,0 +1,48 @@
+{
+  "baseline": "12fe18305f81350f28f8bcc0851c8a1091103f91",
+  "kind": "assessment checks, not product acceptance",
+  "checks": [
+    {
+      "name": "same-person grouping",
+      "passed": true,
+      "detail": "Four assigned observations group into two ranges at the baseline eight-second gap."
+    },
+    {
+      "name": "I13 playback violation reproduced",
+      "passed": true,
+      "detail": {
+        "start": 12,
+        "atEnd": 14,
+        "pauses": 1
+      }
+    },
+    {
+      "name": "provider deletion omission confirmed",
+      "passed": true,
+      "detail": "Cleanup accepts a provider key but neither DELETE predicates on it; static evidence only."
+    },
+    {
+      "name": "voice hook limited to fake provider",
+      "passed": true,
+      "detail": [
+        "fake.py"
+      ]
+    },
+    {
+      "name": "legacy moment insert lacks conflict handling",
+      "passed": true,
+      "detail": "Not a live duplicate-count reproduction."
+    },
+    {
+      "name": "full reconciliation Cartesian work expansion",
+      "passed": true,
+      "detail": "Actual baseline planner with 3 synthetic People and 4 already-queued videos requests all 12 pairs under full=True. No database, queue, worker or model invoked. Historical 155K operands remain unknown."
+    }
+  ],
+  "all_passed": true,
+  "limits": [
+    "No runtime writes or recognition/transcription execution",
+    "Media double is not rendered browser workflow proof",
+    "Defect reproduction passing means baseline violation confirmed"
+  ]
+}
