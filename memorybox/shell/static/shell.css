@@ -337,9 +337,9 @@ body.mb-shell main > h1:first-child {
 
 body.mb-shell .sub { color: var(--mb-mist) !important; }
 
-body.mb-shell section:not([class*="mb-explore"]):not([class*="mb-person"]):not(.ask-section),
-body.mb-shell .card,
-body.mb-shell .panel {
+html:not([data-mb-surface="explore"]):not([data-mb-surface="people"]):not([data-mb-surface="story"]):not([data-mb-surface="artifact"]):not([data-mb-surface="journal"]):not([data-mb-surface="historian-capture"]) body.mb-shell section:not([class*="mb-explore"]):not([class*="mb-person"]):not(.ask-section),
+html:not([data-mb-surface="explore"]):not([data-mb-surface="people"]):not([data-mb-surface="story"]):not([data-mb-surface="artifact"]):not([data-mb-surface="journal"]):not([data-mb-surface="historian-capture"]) body.mb-shell .card,
+html:not([data-mb-surface="explore"]):not([data-mb-surface="people"]):not([data-mb-surface="story"]):not([data-mb-surface="artifact"]):not([data-mb-surface="journal"]):not([data-mb-surface="historian-capture"]) body.mb-shell .panel {
   background: var(--mb-paper) !important;
   border-color: rgba(20, 24, 22, 0.1) !important;
 }

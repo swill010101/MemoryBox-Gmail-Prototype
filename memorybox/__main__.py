@@ -819,6 +819,21 @@ def main(argv: list[str] | None = None) -> int:
             "(MEMORYBOX_P1_RUNTIME_HOST=1; real Gmail via MEMORYBOX_GC_EMAIL_PROVIDER=marvin)"
         ),
     )
+    p_prove_hc = sub.add_parser(
+        "prove-historian-capture",
+        help="P2-I12 Historian Collection & Campaigns acceptance prove",
+    )
+    p_prove_hc.add_argument(
+        "--slice",
+        choices=["s1", "s2", "s3", "s4", "s5"],
+        default=None,
+        help="Run slice gate only (default: s4 full S1–S4 harness)",
+    )
+    p_prove_hc.add_argument(
+        "--flightsim",
+        action="store_true",
+        help="S5 live mailbox prove (staged: connection → round-trip → campaign)",
+    )
     p_prove12 = sub.add_parser(
         "prove-export",
         help="Increment 12 Minimum Viable Export (EF-16) acceptance prove",
@@ -1666,6 +1681,16 @@ def main(argv: list[str] | None = None) -> int:
         from memorybox.guided_capture.acceptance import prove_guided_capture
 
         payload = prove_guided_capture(flightsim=bool(args.flightsim))
+        print(json.dumps(payload, indent=2, default=str))
+        return 0 if payload.get("ok") else 1
+
+    if args.cmd == "prove-historian-capture":
+        from memorybox.historian_capture.acceptance import prove_historian_capture
+
+        payload = prove_historian_capture(
+            slice=getattr(args, "slice", None),
+            flightsim=bool(args.flightsim),
+        )
         print(json.dumps(payload, indent=2, default=str))
         return 0 if payload.get("ok") else 1
 
