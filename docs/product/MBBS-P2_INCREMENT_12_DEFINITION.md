@@ -1,6 +1,6 @@
 # P2-I12 — Historian Collection & Campaigns V1
 
-**Status:** Definition **LOCKED FOR PLANNING** 2026-09-03 · **BUILD NOT AUTHORIZED**  
+**Status:** **ACCEPTED** 2026-09-04 (Tom: “i12 is accepted”) · Definition **LOCKED** 2026-09-03 · **BUILD AUTHORIZED S1–S5** 2026-09-03  
 **Increment ID:** **P2-I12 Historian Collection & Campaigns** (replacement increment — not P1 Increment 12 Export; not former P2-I12 Dynamic Views)  
 **Roadmap:** [MBRM-001B](MBRM-001B_P2_HISTORIAN_COLLECTION_AND_CAMPAIGNS.md)  
 **PRD:** [MBPRD-P2-I12_HISTORIAN_COLLECTION_CAMPAIGNS.md](MBPRD-P2-I12_HISTORIAN_COLLECTION_CAMPAIGNS.md)  
@@ -205,4 +205,4 @@ See [MBRM-001B §8](MBRM-001B_P2_HISTORIAN_COLLECTION_AND_CAMPAIGNS.md).
 
 ---
 
-**PLANNING LOCKED 2026-09-03. Await explicit BUILD AUTHORIZATION.**
+**ACCEPTED** 2026-09-04 (Tom: “i12 is accepted”). Do not reopen.
