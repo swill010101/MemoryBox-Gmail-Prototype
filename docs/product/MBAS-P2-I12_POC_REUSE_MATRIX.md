@@ -1,6 +1,6 @@
 # MBAS-P2-I12 — PoC Retain / Adapt / Replace Matrix
 
-**Status:** Planning **LOCKED** 2026-09-03 · **BUILD NOT AUTHORIZED**  
+**Status:** **ACCEPTED** 2026-09-04 (Tom: “i12 is accepted”) · Definition **LOCKED** 2026-09-03 · **BUILD AUTHORIZED S1–S5** 2026-09-03  
 **PoC branch (read-only):** `origin/cursor/marvin-capture-v01-3344`  
 **Current repo partial integration:** `memorybox/guided_capture/` + `007_guided_capture_i11.sql`  
 **PRD:** [MBPRD-P2-I12_HISTORIAN_COLLECTION_CAMPAIGNS.md](MBPRD-P2-I12_HISTORIAN_COLLECTION_CAMPAIGNS.md)

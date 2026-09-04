@@ -1,6 +1,6 @@
 # MBMP-P2-I12 — Migration and Replay Proposal
 
-**Status:** Planning **LOCKED** 2026-09-03 · **BUILD NOT AUTHORIZED**  
+**Status:** **ACCEPTED** 2026-09-04 (Tom: “i12 is accepted”) · Definition **LOCKED** 2026-09-03 · **BUILD AUTHORIZED S1–S5** 2026-09-03  
 **Domain:** [MBDC-P2-I12_DOMAIN_MODEL.md](MBDC-P2-I12_DOMAIN_MODEL.md)  
 **PoC matrix:** [MBAS-P2-I12_POC_REUSE_MATRIX.md](MBAS-P2-I12_POC_REUSE_MATRIX.md)
 

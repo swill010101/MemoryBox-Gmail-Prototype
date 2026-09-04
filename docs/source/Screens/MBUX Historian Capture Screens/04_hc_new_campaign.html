@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en" data-mb-surface="historian-capture">
+<head>
+  <meta charset="utf-8" />
+  <title>HC Screen Ref — New Campaign (sanitized)</title>
+  <style>
+    :root { --ink:#e8edf5; --muted:#9aa3b5; --blue:#3b82f6; --line:rgba(255,255,255,.12); --card:#1a2230; --page:#0f141c; }
+    body { margin:0; font-family:Segoe UI,system-ui,sans-serif; background:var(--page); color:var(--ink); }
+    .wrap { max-width:720px; margin:0 auto; padding:1.5rem 1.25rem 3rem; }
+    h1 { font-family:Georgia,serif; font-size:2rem; margin:0; }
+    .sub { color:var(--muted); }
+    label { display:block; margin:1rem 0 .35rem; font-size:.9rem; }
+    input, textarea, select { width:100%; background:#141b27; border:1px solid var(--line); border-radius:10px; color:var(--ink); padding:.55rem .75rem; }
+    textarea { min-height:6rem; }
+    .btn { border-radius:10px; padding:.5rem .9rem; border:1px solid var(--line); background:#141b27; color:var(--ink); margin-right:.4rem; margin-top:1rem; }
+    .btn.primary { background:var(--blue); border-color:var(--blue); color:#fff; }
+    .note { color:#93c5fd; font-size:.8rem; margin-top:1.5rem; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>New campaign</h1>
+    <p class="sub">Choose a person, confirm their email, and write the questions you want to ask.</p>
+    <label>Who is this for?</label>
+    <select><option>Alex Example ▾</option></select>
+    <label>Email for this campaign</label>
+    <input value="alex.example@example.test" />
+    <label>Campaign title</label>
+    <input value="Summer memories" />
+    <label>Question cadence</label>
+    <select><option>Daily</option></select>
+    <label>Follow-up after (days)</label>
+    <input value="7" type="number" />
+    <label>Questions (one per line)</label>
+    <textarea>What is your earliest childhood memory?
+Who influenced you most growing up?
+What family tradition means the most to you?</textarea>
+    <button class="btn">Add starter questions</button>
+    <div>
+      <button class="btn">Save as draft</button>
+      <button class="btn primary">Start campaign</button>
+    </div>
+    <p class="note">Sanitized static reference · Accepted I12 implementation · Fake data only</p>
+  </div>
+</body>
+</html>

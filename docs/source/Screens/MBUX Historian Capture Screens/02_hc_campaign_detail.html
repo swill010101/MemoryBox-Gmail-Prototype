@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en" data-mb-surface="historian-capture">
+<head>
+  <meta charset="utf-8" />
+  <title>HC Screen Ref — Campaign Detail (sanitized)</title>
+  <style>
+    :root { --ink:#e8edf5; --muted:#9aa3b5; --blue:#3b82f6; --line:rgba(255,255,255,.12); --card:#1a2230; --page:#0f141c; }
+    body { margin:0; font-family:Segoe UI,system-ui,sans-serif; background:var(--page); color:var(--ink); }
+    .wrap { max-width:1180px; margin:0 auto; padding:1.5rem 1.25rem 3rem; }
+    h1 { font-family:Georgia,serif; font-size:2rem; margin:.5rem 0 0; }
+    .crumb { color:var(--muted); font-size:.85rem; }
+    .badge { display:inline-block; border:1px solid var(--line); border-radius:999px; padding:.15rem .55rem; font-size:.75rem; margin-right:.3rem; }
+    .btn { border-radius:10px; padding:.5rem .9rem; border:1px solid var(--line); background:#141b27; color:var(--ink); margin-left:.4rem; }
+    .btn.primary { background:var(--blue); border-color:var(--blue); color:#fff; }
+    .metrics { display:grid; grid-template-columns:repeat(3,1fr); gap:1rem; margin:1.2rem 0; }
+    .metric { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:1rem; }
+    .metric strong { font-size:1.8rem; display:block; }
+    .metric span { color:var(--muted); font-size:.85rem; }
+    .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:.9rem 1rem; margin:.65rem 0; }
+    h2 { font-family:Georgia,serif; font-size:1.35rem; margin:1.2rem 0 .5rem; }
+    .note { color:#93c5fd; font-size:.8rem; margin-top:1.5rem; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <p class="crumb">Historian Capture › Campaigns › Summer memories</p>
+    <div style="display:flex;justify-content:space-between;align-items:flex-end">
+      <div>
+        <button class="btn">← Campaigns</button>
+        <h1>Summer memories</h1>
+        <p><span class="badge">In progress</span><span class="badge">Daily questions</span><span class="badge">Follow-up after 7 days</span></p>
+      </div>
+      <div>
+        <button class="btn">Pause</button>
+        <button class="btn primary">Send next question now</button>
+        <button class="btn">Stop campaign</button>
+      </div>
+    </div>
+    <div class="metrics">
+      <div class="metric"><strong>1</strong><span>Replies received</span></div>
+      <div class="metric"><strong>0</strong><span>Reviewed (0 kept · 0 rejected)</span></div>
+      <div class="metric"><strong>1/3</strong><span>Questions sent</span></div>
+    </div>
+    <h2>Questions and progress</h2>
+    <div class="card">
+      <strong>1. What is your earliest childhood memory?</strong>
+      <p style="color:var(--muted);font-size:.85rem">Answered · sent Sep 4, 2026</p>
+    </div>
+    <div class="card" style="opacity:.7">
+      <strong>2. Who influenced you most growing up?</strong>
+      <p style="color:var(--muted);font-size:.85rem">Not scheduled</p>
+    </div>
+    <h2>Campaign replies</h2>
+    <div class="card">
+      <strong>Alex Example</strong>
+      <p style="color:var(--muted);font-size:.85rem">Sep 4, 2026 · Needs review</p>
+    </div>
+    <p class="note">Sanitized static reference · Accepted I12 implementation · Fake data only</p>
+  </div>
+</body>
+</html>

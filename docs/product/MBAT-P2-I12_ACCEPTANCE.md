@@ -143,4 +143,4 @@ Record run id under `docs/test-output/historian-capture/` (implementation phase)
 
 ---
 
-**PLANNING LOCKED 2026-09-03. Await BUILD AUTHORIZATION.**
+**ACCEPTED 2026-09-04 (Tom: “i12 is accepted”). Do not reopen without explicit founder direction.**

@@ -1,6 +1,6 @@
 # MBBS — P2 backlog planning sequence
 
-**Status:** Living parking note · **Updated:** 2026-08-24 (I10C **ACCEPTED**; I11 definition LOCKED — prep/LLM waits)  
+**Status:** Living parking note · **Updated:** 2026-09-04 (P2-I12 Historian Collection **ACCEPTED**; I11A FlightSim not ACCEPTED; I11B planning only)  
 **Authority:** [MBRM-001A](MBRM-001A_P2_IMPLEMENTATION_PLAN_PROPOSAL.md) (approved planning direction) · I1 definition: [MBBS-P2_INCREMENT_1_DEFINITION.md](MBBS-P2_INCREMENT_1_DEFINITION.md)  
 **Owner:** Tom
 
@@ -109,3 +109,7 @@ I8B stores appearance `start_sec` / `end_sec` and posters at start. Explore seek
 ## Next increment
 
 **Next:** I11 **BUILD AUTHORIZED** 2026-08-24. Dual travel units and generic age-band resolver are locked. [prep](MBAS-P2-I11_NARRATIVE_EVIDENCE_PREPARATION.md). Do not reopen Journal. Do not add Save View UI.
+
+**P2-I12 Historian Collection & Campaigns V1** — [definition](MBBS-P2_INCREMENT_12_DEFINITION.md) · [PRD](MBPRD-P2-I12_HISTORIAN_COLLECTION_CAMPAIGNS.md) · [acceptance](MBAT-P2-I12_ACCEPTANCE.md) · [UX sign-off](I12_UX_SIGNOFF_20260904.md). **ACCEPTED** 2026-09-04 (Tom: “i12 is accepted”). Integration commit `9f0d7dc` · tag `increment-12-accepted`. Codex handoff: [docs/codex-handoff/00-START-HERE.md](../codex-handoff/00-START-HERE.md). Post-I12 roadmap: [MBRM-001C](MBRM-001C_P2_POST_I12_ROADMAP.md). Do not reopen.
+
+**Next after I12:** See [MBRM-001C_P2_POST_I12_ROADMAP.md](MBRM-001C_P2_POST_I12_ROADMAP.md). I11B remains planning only · **BUILD NOT AUTHORIZED**.

@@ -1,0 +1,39 @@
+{
+  "ok": true,
+  "overall_ok": true,
+  "slice": "s2",
+  "criteria": {
+    "C-01": true,
+    "C-02": true,
+    "C-17": true,
+    "C-03": true,
+    "C-04": true,
+    "C-12": true,
+    "C-12b": true,
+    "C-18": true,
+    "C-19": true,
+    "C-19b": true,
+    "C-05": true,
+    "C-06": true,
+    "C-13": true,
+    "C-14": true,
+    "C-20": true
+  },
+  "problems": [],
+  "meta": {
+    "increment": "P2-I12",
+    "slice": "s2",
+    "campaign_id": "7643be45-4b83-4174-b8be-5e503ad44da8"
+  },
+  "flightsim": false,
+  "email_provider": {
+    "provider_key": null,
+    "ok": false,
+    "detail": "cleared",
+    "capture_mailbox": "memorybox@marvinbot.net",
+    "configured_email": "memorybox@marvinbot.net",
+    "transport_email": null,
+    "user_email": "memorybox@marvinbot.net",
+    "live": false
+  }
+}

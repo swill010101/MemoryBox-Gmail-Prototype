@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en" data-mb-surface="historian-capture">
+<head>
+  <meta charset="utf-8" />
+  <title>HC Screen Ref — Review (sanitized)</title>
+  <style>
+    :root { --ink:#e8edf5; --muted:#9aa3b5; --blue:#3b82f6; --line:rgba(255,255,255,.12); --card:#1a2230; --page:#0f141c; }
+    body { margin:0; font-family:Segoe UI,system-ui,sans-serif; background:var(--page); color:var(--ink); }
+    .wrap { max-width:1180px; margin:0 auto; padding:1.5rem 1.25rem 3rem; }
+    .crumb { color:var(--muted); font-size:.85rem; }
+    h1 { font-family:Georgia,serif; font-size:1.8rem; margin:.5rem 0; }
+    .layout { display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-top:1rem; }
+    .panel { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:1rem; }
+    h2 { font-family:Georgia,serif; font-size:1.2rem; margin:0 0 .75rem; }
+    textarea { width:100%; min-height:8rem; background:#141b27; border:1px solid var(--line); border-radius:10px; color:var(--ink); padding:.75rem; }
+    .btn { border-radius:10px; padding:.5rem .9rem; border:1px solid var(--line); background:#141b27; color:var(--ink); margin:.25rem .25rem 0 0; }
+    .btn.primary { background:var(--blue); border-color:var(--blue); color:#fff; }
+    .source { color:#93c5fd; font-size:.85rem; }
+    .note { color:#93c5fd; font-size:.8rem; margin-top:1.5rem; grid-column:1/-1; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <p class="crumb">Historian Capture › Needs review › Alex Example</p>
+    <button class="btn">← Historian Capture</button>
+    <button class="btn">Campaign</button>
+    <h1>Alex Example — Summer memories</h1>
+    <p style="color:var(--muted)">What is your earliest childhood memory?</p>
+    <div class="layout">
+      <div class="panel">
+        <h2>Original reply</h2>
+        <p>I remember playing in the backyard with my sister on a sunny afternoon. We had a small plastic pool and laughed until dinner time.</p>
+        <p class="source"><a href="#">Download original email as text</a></p>
+      </div>
+      <div class="panel">
+        <h2>Review draft</h2>
+        <textarea>I remember playing in the backyard with my sister on a sunny afternoon. We had a small plastic pool and laughed until dinner time.</textarea>
+        <div style="margin-top:.75rem">
+          <button class="btn primary">Save draft</button>
+        </div>
+        <h2 style="margin-top:1.2rem">Owner confidence</h2>
+        <button class="btn">Sounds right</button>
+        <button class="btn">Uncertain</button>
+        <button class="btn">Needs context</button>
+        <button class="btn">Probably wrong</button>
+        <h2 style="margin-top:1.2rem">Decision</h2>
+        <button class="btn primary">Keep in archive</button>
+        <button class="btn">Reject</button>
+        <button class="btn">Promote to Story</button>
+      </div>
+    </div>
+    <p class="note">Sanitized static reference · Accepted I12 implementation · Fake data only</p>
+  </div>
+</body>
+</html>

@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en" data-mb-surface="historian-capture">
+<head>
+  <meta charset="utf-8" />
+  <title>HC Screen Ref — Dashboard (sanitized)</title>
+  <style>
+    :root { --ink:#e8edf5; --muted:#9aa3b5; --blue:#3b82f6; --line:rgba(255,255,255,.12); --card:#1a2230; --page:#0f141c; }
+    body { margin:0; font-family:Segoe UI,system-ui,sans-serif; background:var(--page); color:var(--ink); }
+    .chrome { display:flex; justify-content:space-between; align-items:center; padding:1rem 1.25rem; border-bottom:1px solid var(--line); }
+    .brand { font-family:Georgia,serif; font-size:1.4rem; }
+    .nav a { color:#b7c0d0; margin-left:1rem; text-decoration:none; font-size:.9rem; }
+    .nav a.on { color:#f3f6fb; }
+    .wrap { max-width:1180px; margin:0 auto; padding:1.5rem 1.25rem 3rem; }
+    h1 { font-family:Georgia,serif; font-size:2rem; margin:0; }
+    .sub { color:var(--muted); margin-top:.35rem; }
+    .banner { background:#141b27; border:1px solid var(--line); border-radius:10px; padding:.75rem 1rem; margin:1rem 0; font-size:.9rem; }
+    .tabs button { border:0; background:#141b27; color:var(--muted); padding:.4rem .75rem; border-radius:999px; margin-right:.25rem; }
+    .tabs button.on { background:var(--blue); color:#fff; }
+    .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:.9rem 1rem; margin:.65rem 0; }
+    .card h3 { font-family:Georgia,serif; margin:0 0 .35rem; }
+    .card p { color:var(--muted); font-size:.85rem; margin:0; }
+    .badge { display:inline-block; border:1px solid var(--line); border-radius:999px; padding:.15rem .55rem; font-size:.75rem; margin-right:.3rem; }
+    .note { color:#93c5fd; font-size:.8rem; margin-top:1.5rem; }
+  </style>
+</head>
+<body>
+  <div class="chrome">
+    <div class="brand">MemoryBox</div>
+    <div class="nav">
+      <a href="#">Ask</a><a href="#">People</a><a href="#">Stories</a>
+      <a href="#">Journal</a><a href="#">Artifacts</a><a href="#" class="on">Review &amp; Learn</a>
+    </div>
+  </div>
+  <div class="wrap">
+    <h1>Historian Capture</h1>
+    <p class="sub">Ask family members questions by email. Review their replies before anything enters MemoryBox.</p>
+    <div class="banner">Capture channel <strong>memorybox@marvinbot.net</strong> · Gmail connected as <strong>transport@example.test</strong> (mail for this channel is received in that inbox).</div>
+    <div class="tabs" style="margin:1rem 0">
+      <button class="on">Needs review</button>
+      <button>Kept</button><button>Rejected</button><button>Campaigns</button><button>Needs attention</button>
+    </div>
+    <div class="card">
+      <h3>Summer memories — Alex Example</h3>
+      <p><span class="badge">Needs review</span> Sep 4, 2026 · What is your earliest childhood memory?</p>
+      <p style="margin-top:.5rem">I remember playing in the backyard with my sister on a sunny afternoon…</p>
+    </div>
+    <p class="note">Sanitized static reference · Accepted I12 implementation · Fake data only</p>
+  </div>
+</body>
+</html>

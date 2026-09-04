@@ -77,6 +77,16 @@ $env:MEMORYBOX_P1_RUNTIME_HOST = "1"
 python -m memorybox prove-p2-i2 --flightsim
 ```
 
+## P2-I12 Historian Collection (ACCEPTED 2026-09-04)
+
+- **Definition:** [docs/product/MBBS-P2_INCREMENT_12_DEFINITION.md](docs/product/MBBS-P2_INCREMENT_12_DEFINITION.md)
+- **Acceptance:** [docs/product/MBAT-P2-I12_ACCEPTANCE.md](docs/product/MBAT-P2-I12_ACCEPTANCE.md)
+- **UX sign-off:** [docs/product/I12_UX_SIGNOFF_20260904.md](docs/product/I12_UX_SIGNOFF_20260904.md)
+- **Codex handoff (start here):** [docs/codex-handoff/00-START-HERE.md](docs/codex-handoff/00-START-HERE.md)
+- **Integration commit:** `9f0d7dc` · tag `increment-12-accepted`
+- **Prove (fake adapter):** `MEMORYBOX_HC_EMAIL_PROVIDER=fake python -m memorybox prove-historian-capture --slice s5`
+- **UI:** `/historian-capture/ui` · screen refs: [docs/source/Screens/MBUX Historian Capture Screens/](docs/source/Screens/MBUX%20Historian%20Capture%20Screens/)
+
 ## UI mockups
 
 Experience / walkthrough / prototype screens from earlier agent work live in [`mockups/`](mockups/README.md) (start at [`mockups/index.html`](mockups/index.html)).

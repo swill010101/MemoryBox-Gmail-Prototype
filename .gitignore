@@ -28,6 +28,16 @@ archive/**
 config/immich.env
 config/secrets.json
 config/local.json
+config/historian_capture_gmail_credentials.json
+config/historian_capture_gmail_token.json
+config/marvin_capture.json
+
+# Historian Capture / Guided Capture local runtime (never commit)
+.memorybox_hc_fake_mail/
+.memorybox_gc_fake_mail/
+.memorybox_hc_mail/
+.memorybox_capture_fake/
+memorybox_artifact_media/
 # Python
 .venv/
 __pycache__/
