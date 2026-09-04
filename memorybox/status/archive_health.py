@@ -94,6 +94,8 @@ def _db_counts() -> dict[str, int]:
         "journals_undated": 0,
         "artifacts_without_story": 0,
         "gc_new": 0,
+        "hc_new": 0,
+        "hc_unmatched": 0,
     }
     try:
         with connection() as conn:
@@ -152,6 +154,13 @@ def _db_counts() -> dict[str, int]:
                 from memorybox.guided_capture import new_response_count
 
                 out["gc_new"] = int(new_response_count())
+            except Exception:  # noqa: BLE001
+                pass
+            try:
+                from memorybox.historian_capture import new_capture_count, unmatched_count
+
+                out["hc_new"] = int(new_capture_count())
+                out["hc_unmatched"] = int(unmatched_count())
             except Exception:  # noqa: BLE001
                 pass
     except Exception:  # noqa: BLE001
@@ -368,6 +377,45 @@ def build_work_on_these_now(
                     "text": f"Review {n} new Guided Capture response{'s' if n != 1 else ''}.",
                     "action_label": "Work on this now",
                     "href": _with_return("/guided-capture/ui"),
+                    "return_href": "/status/ui",
+                },
+            )
+        )
+
+    if counts["hc_new"] > 0:
+        n = min(5, counts["hc_new"])
+        candidates.append(
+            (
+                48,
+                {
+                    "id": "hc_new",
+                    "priority": 48,
+                    "kind": "attention",
+                    "concept": "knowledge_gap",
+                    "text": f"Review {n} new Historian Capture item{'s' if n != 1 else ''}.",
+                    "action_label": "Work on this now",
+                    "href": _with_return("/historian-capture/ui"),
+                    "return_href": "/status/ui",
+                },
+            )
+        )
+
+    if counts["hc_unmatched"] > 0:
+        n = min(5, counts["hc_unmatched"])
+        candidates.append(
+            (
+                47,
+                {
+                    "id": "hc_unmatched",
+                    "priority": 47,
+                    "kind": "attention",
+                    "concept": "knowledge_gap",
+                    "text": (
+                        f"Historian Capture: {n} unmatched or ambiguous inbound message"
+                        f"{'s' if n != 1 else ''} need attention."
+                    ),
+                    "action_label": "Work on this now",
+                    "href": _with_return("/historian-capture/ui#unmatched"),
                     "return_href": "/status/ui",
                 },
             )

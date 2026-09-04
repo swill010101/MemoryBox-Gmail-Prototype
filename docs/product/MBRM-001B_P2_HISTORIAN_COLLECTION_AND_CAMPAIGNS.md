@@ -1,6 +1,6 @@
 # MBRM-001B — MemoryBox Roadmap: Historian Collection & Campaigns
 
-**Status:** Planning **RECOVERED** 2026-09-03 · **BUILD NOT AUTHORIZED**  
+**Status:** **ACCEPTED** 2026-09-04 (Tom: “i12 is accepted”) · Planning **RECOVERED** 2026-09-03 · **BUILD AUTHORIZED S1–S5** 2026-09-03  
 **ID:** MBRM-001B  
 **Owner:** Tom  
 **Recovered from:** Founder-approved planning decisions (August 29, 2026 packet). The branch `codex/historian-capture-reference-screens-20260829` remote HEAD (`fe913a4`, August 22) does **not** contain this packet; this document is the authoritative Markdown equivalent recreated in Git.  
@@ -23,7 +23,7 @@ It authorizes **planning only**. Implementation requires explicit build authoriz
 | Label | Meaning | Status |
 |-------|---------|--------|
 | **P1 Increment 12 — Minimum Viable Export** | P1 export/import-back slice | **Completed and accepted** — historical record in `MBBS-001_INCREMENT_12_*` on PoC branch only; **do not rename or reopen** |
-| **Replacement P2-I12 — Historian Collection & Campaigns V1** | MemoryBox-native external recollection solicitation, intake, review, adjudication | **Current planning target** (this packet) |
+| **Replacement P2-I12 — Historian Collection & Campaigns V1** | MemoryBox-native external recollection solicitation, intake, review, adjudication | **ACCEPTED** 2026-09-04 (Tom: “i12 is accepted”) — `prove-historian-capture` · branch `cursor/p2-i12-s5-live-prove-7f27` |
 | **Former P2-I12 — Dynamic Views** | Saved views, collections, persistence | Renumbered **P2-I13** |
 | **Former P2-I13 — Settings & Processing Controls** | Settings maturation | Renumbered **P2-I14** |
 | **P2-I15 — Trust Consistency & Private Owner Trust** | Formal trust/correction consistency | **Retained** (was I16 in MBRM-001A) |
@@ -44,7 +44,7 @@ P2-I11A acceptance → P2-I11B acceptance → then P2-I12 Historian Collection
 
 ```text
 P2-I11A — on strategic hold (C1T gate / direct-narrative path may reopen later)
-  → P2-I12 — Historian Collection & Campaigns V1  ← NOW (planning → review → build when authorized)
+  → P2-I12 — Historian Collection & Campaigns V1  ← **ACCEPTED** 2026-09-04
   → P2-I11B — Curator responses / historian learning — DEFERRED until after I12
   → P2-I13 — Dynamic Views
   → P2-I14 — Settings & Processing Controls
@@ -151,13 +151,11 @@ See [MBPRD-P2-I12 §12](MBPRD-P2-I12_HISTORIAN_COLLECTION_CAMPAIGNS.md) and [MBA
 
 ## 10. Gate
 
-| Action | Authorized by this document |
-|--------|----------------------------|
-| Planning package in Git | **Yes** |
-| Production implementation | **No** |
-| Database migrations on FlightSim | **No** |
-| Live email send/poll | **No** |
-| Credential changes | **No** |
-| PoC data destruction | **No** |
+| Action | Status |
+|--------|--------|
+| Planning package in Git | **Done** |
+| Production implementation | **Done** (S1–S5) |
+| FlightSim owner acceptance | **ACCEPTED** 2026-09-04 |
+| Live email send/poll | **Shipped** (FlightSim) |
 
-**Next step:** Tom reviews planning package → explicit **BUILD AUTHORIZED** for P2-I12 (whole or per slice).
+**Closed:** Tom accepted P2-I12 on FlightSim 2026-09-04. Do not reopen without explicit founder direction.

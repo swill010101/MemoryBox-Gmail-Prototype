@@ -1,0 +1,11 @@
+{
+  "gmail": {
+    "user_email": "memorybox@marvinbot.net",
+    "credentials_file": "config/historian_capture_gmail_credentials.json",
+    "token_file": "config/historian_capture_gmail_token.json",
+    "scopes": [
+      "https://www.googleapis.com/auth/gmail.modify",
+      "https://www.googleapis.com/auth/gmail.send"
+    ]
+  }
+}

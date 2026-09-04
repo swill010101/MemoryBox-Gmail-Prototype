@@ -706,6 +706,14 @@ def build_status_summary() -> dict[str, Any]:
         journals_undated = journals - journals_dated
         gc_responses = _count(conn, "SELECT COUNT(*) AS c FROM guided_capture_responses")
         gc_new = new_response_count()
+        try:
+            from memorybox.historian_capture import new_capture_count, unmatched_count
+
+            hc_new = new_capture_count()
+            hc_unmatched = unmatched_count()
+        except Exception:  # noqa: BLE001
+            hc_new = 0
+            hc_unmatched = 0
         gc_reviewed = _count(
             conn,
             "SELECT COUNT(*) AS c FROM guided_capture_responses WHERE review_status = 'reviewed'",
@@ -1395,6 +1403,27 @@ def build_status_summary() -> dict[str, Any]:
             {
                 "text": f"Review {n} new Guided Capture response{'s' if n != 1 else ''}.",
                 "href": "/guided-capture/ui",
+                "kind": "attention",
+            }
+        )
+    if hc_new > 0:
+        n = min(5, hc_new)
+        leverage_tasks.append(
+            {
+                "text": f"Review {n} new Historian Capture item{'s' if n != 1 else ''}.",
+                "href": "/historian-capture/ui",
+                "kind": "attention",
+            }
+        )
+    if hc_unmatched > 0:
+        n = min(5, hc_unmatched)
+        leverage_tasks.append(
+            {
+                "text": (
+                    f"Historian Capture: {n} unmatched inbound message"
+                    f"{'s' if n != 1 else ''} need attention."
+                ),
+                "href": "/historian-capture/ui#unmatched",
                 "kind": "attention",
             }
         )

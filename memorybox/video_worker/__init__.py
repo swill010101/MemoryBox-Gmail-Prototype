@@ -21,6 +21,25 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
+# Browser/player cancel (seek, tab close, new range) — not a worker fault.
+_CLIENT_DISCONNECT = (
+    ConnectionResetError,
+    ConnectionAbortedError,
+    BrokenPipeError,
+    TimeoutError,
+)
+
+
+def _is_client_disconnect(exc: BaseException) -> bool:
+    if isinstance(exc, _CLIENT_DISCONNECT):
+        return True
+    if isinstance(exc, OSError):
+        # WinError 10054/10053, POSIX EPIPE/ECONNRESET
+        return getattr(exc, "winerror", None) in (10054, 10053) or getattr(
+            exc, "errno", None
+        ) in (32, 104, 54)
+    return False
+
 from memorybox.providers.video.merge import (
     DEFAULT_PRESENCE_GAP_SEC,
     RawDetection,
@@ -293,6 +312,41 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt: str, *args: Any) -> None:  # quieter default
         pass
 
+    def log_error(self, fmt: str, *args: Any) -> None:
+        # Suppress traceback spam when the player closes the socket mid-stream.
+        if args and _is_client_disconnect(args[0] if isinstance(args[0], BaseException) else Exception()):
+            return
+        msg = fmt % args if args else fmt
+        if "10054" in msg or "10053" in msg or "forcibly closed" in msg.lower():
+            return
+        super().log_error(fmt, *args)
+
+    def handle(self) -> None:
+        try:
+            super().handle()
+        except Exception as exc:  # noqa: BLE001
+            if _is_client_disconnect(exc):
+                return
+            raise
+
+    def finish(self) -> None:
+        try:
+            super().finish()
+        except Exception as exc:  # noqa: BLE001
+            if _is_client_disconnect(exc):
+                return
+            raise
+
+    def _write_chunk(self, chunk: bytes) -> bool:
+        """Write one chunk. False if the client already hung up."""
+        try:
+            self.wfile.write(chunk)
+            return True
+        except Exception as exc:  # noqa: BLE001
+            if _is_client_disconnect(exc):
+                return False
+            raise
+
     def _json(self, code: int, payload: dict[str, Any]) -> None:
         raw = json.dumps(payload).encode("utf-8")
         self.send_response(code)
@@ -300,7 +354,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(raw)))
         self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
-        self.wfile.write(raw)
+        self._write_chunk(raw)
 
     def _read_json(self) -> dict[str, Any]:
         length = int(self.headers.get("Content-Length") or 0)
@@ -514,7 +568,8 @@ class Handler(BaseHTTPRequestHandler):
                     chunk = f.read(1024 * 1024)
                     if not chunk:
                         break
-                    self.wfile.write(chunk)
+                    if not self._write_chunk(chunk):
+                        return
             return
 
         units, _, rng = range_header.partition("=")
@@ -550,7 +605,8 @@ class Handler(BaseHTTPRequestHandler):
                 if not chunk:
                     break
                 remaining -= len(chunk)
-                self.wfile.write(chunk)
+                if not self._write_chunk(chunk):
+                    return
 
     def do_PATCH(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
