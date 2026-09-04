@@ -5592,11 +5592,8 @@
           } else if (qst === "completed") {
             empty = "Last pass stored no speech. Use Learn → Transcribe this video to retry.";
           }
-          paintTranscriptEmpty(box, item, empty, { busy: busy || !state.modal.speechAutoStarted });
-          if (!state.modal.speechAutoStarted && qst !== "running") {
-            state.modal.speechAutoStarted = true;
-            queueThisTape(item);
-          }
+          // I13: viewing is read-only; only persisted queued/running work is busy.
+          paintTranscriptEmpty(box, item, empty, { busy });
           return;
         }
         const tokens = words.length
@@ -5706,37 +5703,16 @@
   }
 
   function bindAppearanceView(el, item) {
-    /* ACR-P2-001: view into the original [start, stop], then end. No continue-on-tape. */
-    const bounds = appearanceViewBounds(item);
-    const start = bounds.start;
-    const stop = bounds.stop;
-    const EPS = 0.08;
+    // I13 supersedes ACR-P2-001: relevance end is metadata, never a playback stop.
+    const start = appearanceViewBounds(item).start;
     const seekToStart = () => {
-      try {
-        if (Number.isFinite(start)) el.currentTime = start;
-      } catch (e) {}
-    };
-    const clampVisit = () => {
-      if (stop == null) return;
-      try {
-        if (el.currentTime < start - EPS) el.currentTime = start;
-        if (el.currentTime >= stop - EPS) {
-          el.pause();
-          el.currentTime = stop;
-        }
-      } catch (e) {}
+      try { el.currentTime = start; } catch (e) {}
     };
     const onMeta = () => {
       seekToStart();
       el.removeEventListener("loadedmetadata", onMeta);
     };
     el.addEventListener("loadedmetadata", onMeta);
-    el.addEventListener("timeupdate", clampVisit);
-    el.addEventListener("seeking", clampVisit);
-    el.addEventListener("seeked", clampVisit);
-    el.addEventListener("play", () => {
-      if (stop != null && el.currentTime >= stop - EPS) seekToStart();
-    });
     seekToStart();
   }
 

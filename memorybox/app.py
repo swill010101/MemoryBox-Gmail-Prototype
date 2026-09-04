@@ -172,6 +172,26 @@ app = FastAPI(
 )
 
 
+from memorybox.processing.http import enforce_scope
+app.middleware("http")(enforce_scope)
+
+from memorybox.processing.scope import ScopeDenied
+
+@app.exception_handler(ScopeDenied)
+async def processing_scope_denied(request: Request, exc: ScopeDenied):
+    from fastapi.responses import JSONResponse
+    return JSONResponse(status_code=403, content={"ok": False, "error": str(exc)})
+
+
+@app.post("/processing/scope/preview")
+def processing_scope_preview(plan: dict[str, Any]) -> dict[str, Any]:
+    from memorybox.processing.scope import preview, ScopeDenied
+    try:
+        return {"ok": True, **preview(plan), "processing_started": False}
+    except ScopeDenied as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+
 @app.on_event("startup")
 def _ai_trace_schema_on_startup() -> None:
     try:
@@ -3727,6 +3747,8 @@ def people_rename(person_id: str, body: RenameRequest) -> dict[str, Any]:
 @app.post("/people/{person_id}/map")
 def people_map(person_id: str, body: TeachRequest) -> dict[str, Any]:
     """Attach a provider identity onto an explicit MB Person (cross-provider teach)."""
+    if body.video_external_id or body.crop_jpeg_base64:
+        raise ScopeDenied("use_admitted_native_learn_with_explicit_source")
     try:
         view = map_provider_identity(
             person_id=person_id,

@@ -37,6 +37,12 @@ def owner_learn_voice(
     embedding: list[float] | None = None,
     other_videos: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
+    from memorybox.processing.scope import require_source, require_admission
+    admission = require_admission("voice")
+    require_source("voice", video_provider_key or getattr(video_provider,"provider_key",None) or "hvrt", video_external_id, person_id)
+    others = list(other_videos) if other_videos is not None else admission.videos
+    from memorybox.processing.scope import admit
+    admit("voice", others, [person_id])
     vpk = video_provider_key or getattr(video_provider, "provider_key", None) or "hvrt"
     path = resolve_speech_media_path(video_provider, video_external_id) or None
     injected = embedding
@@ -88,11 +94,6 @@ def owner_learn_voice(
         video_external_id=video_external_id,
         video_provider=video_provider,
     )
-    others = list(other_videos or [])
-    if not others:
-        rows_fn = getattr(video_provider, "eligible_video_rows", None)
-        if callable(rows_fn):
-            others = [r for r in (rows_fn() or []) if r.get("eligible") is not False]
     rest = [
         r
         for r in others

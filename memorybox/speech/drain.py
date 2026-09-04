@@ -18,6 +18,12 @@ def speech_drain_enabled() -> bool:
 
 
 def start_speech_drain() -> None:
+    from memorybox.processing.scope import require_admission, load_admission, ScopeDenied
+    try:
+        admission = load_admission()
+        require_admission("transcribe" if "transcribe" in admission.plan["lanes"] else "voice")
+    except ScopeDenied:
+        return
     global _started
     if _started or not speech_drain_enabled():
         return

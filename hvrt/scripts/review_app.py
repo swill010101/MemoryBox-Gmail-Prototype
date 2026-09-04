@@ -79,6 +79,19 @@ async def _lifespan(app: FastAPI):
 
 app = FastAPI(title="HVRT Review R2", version="0.2.0", lifespan=_lifespan)
 
+@app.middleware("http")
+async def block_unmapped_legacy_work(request: Request, call_next):
+    # Legacy SQLite integer IDs have no approved I13 source mapping.
+    path = request.url.path
+    if request.method not in {"GET", "HEAD", "OPTIONS"} and (
+        path.startswith(("/api/learn/", "/api/process/", "/api/annotations/"))
+        or "/exemplars" in path
+    ):
+        from fastapi.responses import JSONResponse
+        return JSONResponse(status_code=403, content={"ok": False, "error": "legacy_processing_has_no_reviewed_source_mapping"})
+    return await call_next(request)
+
+
 
 class MarkPlaceIn(BaseModel):
     video_id: int

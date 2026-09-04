@@ -1,0 +1,21 @@
+{
+  "accepted_base": "bc2b967274d51ffce356a12895df2cd8f77d73b0",
+  "branch": "codex/p2-i13-stage-a",
+  "tests_run": 22,
+  "failures": 0,
+  "errors": 0,
+  "elapsed_seconds": 1.579,
+  "python_files_parsed": 32,
+  "javascript_syntax": "passed",
+  "git_diff_check": "passed",
+  "historian_capture_files_changed": false,
+  "proposal_sources": 22,
+  "unapproved_manifest_rejected": true,
+  "runtime_migrations_applied": false,
+  "runtime_processing_executed": false,
+  "limitations": [
+    "Database doubles do not prove PostgreSQL DDL or concurrent row locking.",
+    "Synthetic Chromium playback does not prove full live Gallery/provider behavior.",
+    "Manifest membership and owner truth await founder review."
+  ]
+}

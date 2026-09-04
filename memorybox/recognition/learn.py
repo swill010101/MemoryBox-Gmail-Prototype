@@ -24,6 +24,8 @@ def save_pending_review_crop(
     bbox: dict[str, Any] | None,
     crop_jpeg_base64: str | None,
 ) -> None:
+    from memorybox.processing.scope import deny_legacy
+    deny_legacy()
     from memorybox.db import connection
     import json
 
@@ -85,6 +87,9 @@ def owner_learn_from_review(
     embedding: list[float] | None = None,
     provider_key: str | None = None,
 ) -> dict[str, Any]:
+    from memorybox.processing.scope import require_source, require_admission
+    admission = require_admission("face")
+    require_source("face", provider_key or getattr(video_provider,"provider_key",None) or "hvrt", video_external_id or "", person_id)
     pending = take_pending_review_crop(face_external_id) or {}
     video_external_id = video_external_id or pending.get("video_external_id")
     t_sec = t_sec if t_sec is not None else pending.get("t_sec")
@@ -162,11 +167,9 @@ def owner_learn_from_review(
         )
 
     enqueue = None
-    from memorybox.recognition.inventory import inventory_video_rows
-
     if video_external_id:
         others = []
-        for v in inventory_video_rows(video_provider):
+        for v in admission.videos:
             veid = str(v.get("video_external_id") or "")
             if not veid or veid == video_external_id:
                 continue

@@ -609,52 +609,14 @@ class Handler(BaseHTTPRequestHandler):
                     return
 
     def do_PATCH(self) -> None:  # noqa: N802
-        parsed = urlparse(self.path)
-        path = parsed.path
-        body = self._read_json()
-        if path.startswith("/faces/"):
-            face_id = path[len("/faces/") :]
-            data = _load_derived()
-            faces = data.setdefault("faces", {})
-            if face_id not in faces:
-                self._json(404, {"ok": False, "detail": "face not found"})
-                return
-            bbox = body.get("bbox")
-            if bbox is not None:
-                faces[face_id]["bbox"] = bbox
-            if body.get("label") is not None:
-                faces[face_id]["label"] = body.get("label")
-            if body.get("crop_jpeg_base64"):
-                # Optional derived crop preview — not original video mutation
-                crop_dir = _derived_dir() / "crops"
-                crop_dir.mkdir(parents=True, exist_ok=True)
-                import base64
-
-                raw = str(body["crop_jpeg_base64"]).split(",", 1)[-1]
-                crop_path = crop_dir / f"{face_id}.jpg"
-                crop_path.write_bytes(base64.b64decode(raw))
-                faces[face_id]["crop_path"] = str(crop_path.name)
-            _save_derived(data)
-            meta = faces[face_id]
-            self._json(
-                200,
-                {
-                    "ok": True,
-                    "face": {
-                        "external_id": face_id,
-                        "label": meta.get("label"),
-                        "video_external_id": meta.get("video_external_id"),
-                        "bbox": meta.get("bbox"),
-                        "boxed": bool(meta.get("bbox")),
-                    },
-                },
-            )
-            return
-        self._json(404, {"ok": False, "detail": "not found"})
+        self._json(403, {"ok": False, "detail": "legacy_processing_has_no_reviewed_source_mapping"})
 
     def do_POST(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
         path = parsed.path
+        if path in {"/faces", "/detections/seed", "/derived/reset"}:
+            self._json(403, {"ok": False, "detail": "legacy_processing_has_no_reviewed_source_mapping"})
+            return
         body = self._read_json()
 
         if path.startswith("/videos/") and path.endswith("/browser-proxy"):

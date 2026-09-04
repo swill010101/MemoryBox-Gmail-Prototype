@@ -1,0 +1,12 @@
+{
+  "kind": "rendered_chromium_synthetic_source",
+  "initial_seek": 0.5,
+  "relevance_end": 1,
+  "observed_time": 2.505945,
+  "paused": false,
+  "passed": true,
+  "limits": [
+    "Synthetic source only",
+    "Full Gallery/provider workflow not exercised"
+  ]
+}

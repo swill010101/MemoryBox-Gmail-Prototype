@@ -49,6 +49,8 @@ def persist_transcript(
     video_provider: Any | None = None,
     trigger: str = "transcribe",
 ) -> dict[str, Any]:
+    from memorybox.processing.scope import begin_work
+    begin_work("transcribe", video_provider_key, video_external_id)
     raw = transcribe_video_id(video_external_id, video_provider=video_provider)
     if not raw.get("ok"):
         return {"ok": False, **raw}
@@ -124,6 +126,8 @@ def recognize_person_on_video(
     video_provider: Any | None = None,
 ) -> dict[str, Any]:
     """Score anonymous turns against that Person's voice exemplars. Face ranges are not proof."""
+    from memorybox.processing.scope import begin_work
+    begin_work("voice", video_provider_key, video_external_id, person_id)
     exemplars = list_voice_exemplars(person_id)
     if not exemplars:
         return {"ok": False, "reason": "no_voice_exemplars"}

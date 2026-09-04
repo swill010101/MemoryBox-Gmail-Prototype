@@ -364,6 +364,8 @@ def rescan_faces(
     progress: Callable[[float, str], None] | None = None,
 ) -> str:
     """Embed gallery exemplars and scan all videos for matching faces."""
+    from memorybox.processing.scope import deny_legacy
+    deny_legacy()
     ensure_face_tables(conn)
 
     def prog(pct: float, msg: str) -> None:

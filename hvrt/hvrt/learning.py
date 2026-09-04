@@ -57,6 +57,8 @@ class LearningManager:
         return self._run_dict(conn, row)
 
     def start(self) -> dict[str, Any]:
+        from memorybox.processing.scope import deny_legacy
+        deny_legacy()
         with self._lock:
             cur = self.active_run()
             if cur and cur["status"] in ("queued", "running"):
@@ -150,6 +152,8 @@ class LearningManager:
         conn.commit()
 
     def _run(self, run_id: int) -> None:
+        from memorybox.processing.scope import deny_legacy
+        deny_legacy()
         conn = self.connect()
         try:
             handlers: dict[str, Callable[[sqlite3.Connection, int], str]] = {

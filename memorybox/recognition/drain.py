@@ -18,6 +18,11 @@ def recognition_drain_enabled() -> bool:
 
 
 def start_recognition_drain() -> None:
+    from memorybox.processing.scope import require_admission, ScopeDenied
+    try:
+        require_admission("face")
+    except ScopeDenied:
+        return
     global _started
     if _started or not recognition_drain_enabled():
         return

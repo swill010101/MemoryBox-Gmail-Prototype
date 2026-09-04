@@ -1,0 +1,445 @@
+{
+  "root": "\\\\flightsim\\photos\\Home Videos",
+  "observed_from": "2026-09-04T22:07:42.483304+00:00",
+  "observed_to": "2026-09-04T22:07:45.043477+00:00",
+  "metadata_stable_during_observation": true,
+  "cross_store_atomic_snapshot": false,
+  "video_count": 48,
+  "other_video_root": "\\\\flightsim\\photos\\Videos",
+  "other_video_root_count": 0,
+  "status": "candidate_inventory_not_corpus_approval",
+  "sources": [
+    {
+      "provider_key": "hvrt",
+      "video_external_id": "vid-e7db0504fc11fe19",
+      "relative_path": "1992/Home Movies 1992 - 1996 part (Encoded).mp4",
+      "bytes": 792160686,
+      "mtime_ns": 1573692168000000000,
+      "duration_sec": 3364.459,
+      "seen_in_runtime_queue": true
+    },
+    {
+      "provider_key": "hvrt",
+      "video_external_id": "vid-81d1f6cc6d7c83eb",
+      "relative_path": "1992/Home Movies 1992 - 1996 part 1.mp4",
+      "bytes": 1279928784,
+      "mtime_ns": 1573688042000000000,
+      "duration_sec": 3400.982,
+      "seen_in_runtime_queue": true
+    },
+    {
+      "provider_key": "hvrt",
+      "video_external_id": "vid-60932125e223899b",
+      "relative_path": "1992/Home Movies 1992 - 1996 part 3 (Encoded).mp4",
+      "bytes": 142153053,
+      "mtime_ns": 1573690998000000000,
+      "duration_sec": 704.832,
+      "seen_in_runtime_queue": true
+    },
+    {
+      "provider_key": "hvrt",
+      "video_external_id": "vid-d969ac2c15c7ca8c",
+      "relative_path": "1992/Home Movies 1992 - 1996 part 3-1.mp4",
+      "bytes": 173677682,
+      "mtime_ns": 1573690788000000000,
+      "duration_sec": 704.768,
+      "seen_in_runtime_queue": true
+    },
+    {
+      "provider_key": "hvrt",
+      "video_external_id": "vid-d26a629f1806e808",
+      "relative_path": "1992/Home Movies 1992 - 1996 part 3.mp4",
+      "bytes": 196787037,
+      "mtime_ns": 1425761256000000000,
+      "duration_sec": 704.8106555555555,
+      "seen_in_runtime_queue": true
+    },
+    {
+      "provider_key": "hvrt",
+      "video_external_id": "vid-2edd347fe094f51c",
+      "relative_path": "1992/Home Movies 1992 - 2006 part 1.mp4",
+      "bytes": 1105881932,
+      "mtime_ns": 1573693442000000000,
+      "duration_sec": 3388.95,
+      "seen_in_runtime_queue": true
+    },
+    {
+      "provider_key": "hvrt",
+      "video_external_id": "vid-76f80b40f83a494e",
+      "relative_path": "1992/Home Movies 1992 Part 1 (Encoded).mp4",
+      "bytes": 861746911,
+      "mtime_ns": 1744235276000000000,
+      "duration_sec": 3389.547,
+      "seen_in_runtime_queue": true
+    },
+    {
+      "provider_key": "hvrt",
+      "video_external_id": "vid-9f22fa8612d2af0f",
+      "relative_path": "1992/Home Movies 1992 part 2-1.mp4",
+      "bytes": 1009299932,
+      "mtime_ns": 1573698324000000000,
+      "duration_sec": 3377.451,
+      "seen_in_runtime_queue": true
+    },
+    {
+      "provider_key": "hvrt",
+      "video_external_id": "vid-356981aae76ed1d1",
+      "relative_path": "1992/Home Movies 1992 part 3 (Encoded).mp4",
+      "bytes": 159008981,
+      "mtime_ns": 1573699816000000000,
+      "duration_sec": 514.624,
+      "seen_in_runtime_queue": true
+    },
+    {
+      "provider_key": "hvrt",
+      "video_external_id": "vid-9b0f0bc45e939583",
+      "relative_path": "1992/Home Movies 1992 part 3.mp4",
+      "bytes": 143719763,
+      "mtime_ns": 1425761110000000000,
+      "duration_sec": 514.6026555555555,
+      "seen_in_runtime_queue": true
+    },
+    {
+      "provider_key": "hvrt",
+      "video_external_id": "vid-f48a5ca718758465",
+      "relative_path": "2011-03-13 Grandpa sessions/Grandpa sessions 002.MP4",
+      "bytes": 2028522617,
+      "mtime_ns": 1300750952491000000,
+      "duration_sec": 1790.789,
+      "seen_in_runtime_queue": true
+    },
+    {
+      "provider_key": "hvrt",
+      "video_external_id": "vid-8163a680131fd30a",
+      "relative_path": "2011-03-13 Grandpa sessions/Grandpa sessions 003.MP4",
+      "bytes": 1055204616,
+      "mtime_ns": 1300750912394000000,
+      "duration_sec": 931.931,
+      "seen_in_runtime_queue": true
+    },
+    {
+      "provider_key": "hvrt",
+      "video_external_id": "vid-2af9f6fa3920b7fd",
+      "relative_path": "2011-03-21 grandpa sessions 2/grandpa sessions 2 001.MP4",
+      "bytes": 1357835255,
+      "mtime_ns": 1300751129329000000,
+      "duration_sec": 1198.6975,
+      "seen_in_runtime_queue": true
+    },
+    {
+      "provider_key": "hvrt",
+      "video_external_id": "vid-34df63e61b949890",
+      "relative_path": "2011-03-21 grandpa sessions 2/grandpa sessions 2 002.MP4",
+      "bytes": 361851720,
+      "mtime_ns": 1300751099053000000,
+      "duration_sec": 319.8195,
+      "seen_in_runtime_queue": true
+    },
+    {
+      "provider_key": "hvrt",
+      "video_external_id": "vid-da41273dbd9ac4bb",
+      "relative_path": "20111105_1530.MP4",
+      "bytes": 2028580459,
+      "mtime_ns": 1320511310000000000,
+      "duration_sec": 1790.789,
+      "seen_in_runtime_queue": true
+    },
+    {
+      "provider_key": "hvrt",
+      "video_external_id": "vid-c57dbd21f993f6d1",
+      "relative_path": "20111105_1532.MP4",
+      "bytes": 1251525801,
+      "mtime_ns": 1320512422000000000,
+      "duration_sec": 1105.104,
+      "seen_in_runtime_queue": true
+    },
+    {
+      "provider_key": "hvrt",
+      "video_external_id": "vid-0b80d471010314d0",
+      "relative_path": "252eq9.mp4",
+      "bytes": 31088252,
+      "mtime_ns": 1324478859649000000,
+      "duration_sec": 1364.735,
+      "seen_in_runtime_queue": true
+    },
+    {
+      "provider_key": "hvrt",
+      "video_external_id": "vid-755e11e5a1ebcf4a",
+      "relative_path": "45aeejptfv98.mp4",
+      "bytes": 5463781,
+      "mtime_ns": 1330999327873200000,
+      "duration_sec": 306.30333333333334,
+      "seen_in_runtime_queue": true
+    },
+    {
+      "provider_key": "hvrt",
+      "video_external_id": "vid-65a960554926d31a",
+      "relative_path": "bagk75.mp4",
+      "bytes": 20729140,
+      "mtime_ns": 1324477541466000000,
+      "duration_sec": 912.1266666666667,
+      "seen_in_runtime_queue": true
+    },
+    {
+      "provider_key": "hvrt",
+      "video_external_id": "vid-6012f448ae718ed3",
+      "relative_path": "Dad and Pate.mp4",
+      "bytes": 2272551,
+      "mtime_ns": 1387225598355234200,
+      "duration_sec": 114.43166666666667,
+      "seen_in_runtime_queue": true
+    },
+    {
+      "provider_key": "hvrt",
+      "video_external_id": "vid-3d937103f5de9a63",
+      "relative_path": "Dad falls the second time at home 4-21-12.mp4",
+      "bytes": 57783470,
+      "mtime_ns": 1335083213289000000,
+      "duration_sec": 2707.84,
+      "seen_in_runtime_queue": true
+    },
+    {
+      "provider_key": "hvrt",
+      "video_external_id": "vid-455cc539d0c187b7",
+      "relative_path": "Dropcam Clip (August 10 2012 at 931 AM).mp4",
+      "bytes": 12260802,
+      "mtime_ns": 1387225616323379800,
+      "duration_sec": 606.8466666666667,
+      "seen_in_runtime_queue": true
+    },
+    {
+      "provider_key": "hvrt",
+      "video_external_id": "vid-4d181dde676700dc",
+      "relative_path": "Dropcam Clip (August 13 2012 at 1024 AM).mp4",
+      "bytes": 4943009,
+      "mtime_ns": 1387225629896001900,
+      "duration_sec": 306.0466666666667,
+      "seen_in_runtime_queue": true
+    },
+    {
+      "provider_key": "hvrt",
+      "video_external_id": "vid-31bb401716c40311",
+      "relative_path": "Dropcam Clip (August 29 2012 at 1020 PM).mp4",
+      "bytes": 6412168,
+      "mtime_ns": 1387225646948035600,
+      "duration_sec": 393.98333333333335,
+      "seen_in_runtime_queue": true
+    },
+    {
+      "provider_key": "hvrt",
+      "video_external_id": "vid-491f3029865c7d05",
+      "relative_path": "Dropcam Clip (September 6 2012 at 940 AM).mp4",
+      "bytes": 3691284,
+      "mtime_ns": 1387225660966711400,
+      "duration_sec": 186.62333333333333,
+      "seen_in_runtime_queue": true
+    },
+    {
+      "provider_key": "hvrt",
+      "video_external_id": "vid-16344f1e1dd06d5b",
+      "relative_path": "e4m5zv.mp4",
+      "bytes": 40254855,
+      "mtime_ns": 1324477619480000000,
+      "duration_sec": 1808.1266666666668,
+      "seen_in_runtime_queue": true
+    },
+    {
+      "provider_key": "hvrt",
+      "video_external_id": "vid-f0793215662a4891",
+      "relative_path": "Getting dad to bed when hes very very tired.mp4",
+      "bytes": 13515921,
+      "mtime_ns": 1387225583719486500,
+      "duration_sec": 606.5916666666667,
+      "seen_in_runtime_queue": true
+    },
+    {
+      "provider_key": "hvrt",
+      "video_external_id": "vid-4241b6c13cf19d38",
+      "relative_path": "Goodnight pops 4-20-12.mp4",
+      "bytes": 7801922,
+      "mtime_ns": 1335009756276200000,
+      "duration_sec": 311.5516666666667,
+      "seen_in_runtime_queue": true
+    },
+    {
+      "provider_key": "hvrt",
+      "video_external_id": "vid-e79429fe6cb88332",
+      "relative_path": "h9f4c9.mp4",
+      "bytes": 15020290,
+      "mtime_ns": 1324477579434000000,
+      "duration_sec": 613.12,
+      "seen_in_runtime_queue": true
+    },
+    {
+      "provider_key": "hvrt",
+      "video_external_id": "vid-fa51b9deecd78b80",
+      "relative_path": "jp2qgg.mp4",
+      "bytes": 39868532,
+      "mtime_ns": 1324477663041000000,
+      "duration_sec": 1806.08,
+      "seen_in_runtime_queue": true
+    },
+    {
+      "provider_key": "hvrt",
+      "video_external_id": "vid-83e4e9700e9d053c",
+      "relative_path": "Kitchen dad ems 4-17-12.mp4",
+      "bytes": 807301,
+      "mtime_ns": 1335083256560000000,
+      "duration_sec": 34.303333333333335,
+      "seen_in_runtime_queue": true
+    },
+    {
+      "provider_key": "hvrt",
+      "video_external_id": "vid-588c91022a04878c",
+      "relative_path": "Leah.mp4",
+      "bytes": 18276629,
+      "mtime_ns": 1321108331703000000,
+      "duration_sec": 905.0866666666667,
+      "seen_in_runtime_queue": true
+    },
+    {
+      "provider_key": "hvrt",
+      "video_external_id": "vid-bf81ad5656600369",
+      "relative_path": "Living Room dad ems 4-17-12.mp4",
+      "bytes": 36888947,
+      "mtime_ns": 1335009834997200000,
+      "duration_sec": 1806.08,
+      "seen_in_runtime_queue": true
+    },
+    {
+      "provider_key": "hvrt",
+      "video_external_id": "vid-afb365a580d6d206",
+      "relative_path": "M4H01517.MP4",
+      "bytes": 1821461805,
+      "mtime_ns": 1425756035699520500,
+      "duration_sec": 1608.1065,
+      "seen_in_runtime_queue": true
+    },
+    {
+      "provider_key": "hvrt",
+      "video_external_id": "vid-f4f39495c306e539",
+      "relative_path": "meu6zq.mp4",
+      "bytes": 13231434,
+      "mtime_ns": 1324476800596000000,
+      "duration_sec": 534.1716666666666,
+      "seen_in_runtime_queue": true
+    },
+    {
+      "provider_key": "hvrt",
+      "video_external_id": "vid-2aad931629d1b2a9",
+      "relative_path": "My New Clip (1).mp4",
+      "bytes": 13673084,
+      "mtime_ns": 1387225692963531900,
+      "duration_sec": 604.9266666666666,
+      "seen_in_runtime_queue": true
+    },
+    {
+      "provider_key": "hvrt",
+      "video_external_id": "vid-d0fb953c9ac887e6",
+      "relative_path": "My New Clip (4).mp4",
+      "bytes": 21879193,
+      "mtime_ns": 1387225769127631700,
+      "duration_sec": 888.32,
+      "seen_in_runtime_queue": true
+    },
+    {
+      "provider_key": "hvrt",
+      "video_external_id": "vid-f453a4969bb1eb7f",
+      "relative_path": "My New Clip (5).mp4",
+      "bytes": 7083731,
+      "mtime_ns": 1387225783012285700,
+      "duration_sec": 299.80333333333334,
+      "seen_in_runtime_queue": true
+    },
+    {
+      "provider_key": "hvrt",
+      "video_external_id": "vid-d5ac471bbd0bc5f3",
+      "relative_path": "My New Clip (6).mp4",
+      "bytes": 12072905,
+      "mtime_ns": 1387225804901903000,
+      "duration_sec": 601.8283333333334,
+      "seen_in_runtime_queue": true
+    },
+    {
+      "provider_key": "hvrt",
+      "video_external_id": "vid-83b21c69e3cf82a6",
+      "relative_path": "My New Clip (7).mp4",
+      "bytes": 100636402,
+      "mtime_ns": 1387225853844746600,
+      "duration_sec": 2148.6066666666666,
+      "seen_in_runtime_queue": true
+    },
+    {
+      "provider_key": "hvrt",
+      "video_external_id": "vid-0d5d23a770a4d8f0",
+      "relative_path": "My New Clip (8).mp4",
+      "bytes": 3573277,
+      "mtime_ns": 1387225881815086000,
+      "duration_sec": 139.72333333333333,
+      "seen_in_runtime_queue": true
+    },
+    {
+      "provider_key": "hvrt",
+      "video_external_id": "vid-e493c08301c4e29b",
+      "relative_path": "My New Clip (9).mp4",
+      "bytes": 51698523,
+      "mtime_ns": 1387225912727778900,
+      "duration_sec": 3551.4866666666667,
+      "seen_in_runtime_queue": true
+    },
+    {
+      "provider_key": "hvrt",
+      "video_external_id": "vid-0496d30f119d025d",
+      "relative_path": "My New Clip.mp4",
+      "bytes": 4366373,
+      "mtime_ns": 1387225674078277000,
+      "duration_sec": 98.815,
+      "seen_in_runtime_queue": true
+    },
+    {
+      "provider_key": "hvrt",
+      "video_external_id": "vid-9e6d95e0e4922883",
+      "relative_path": "Patti's home 5-4-12.mp4",
+      "bytes": 13140748,
+      "mtime_ns": 1336306212640000000,
+      "duration_sec": 605.1833333333333,
+      "seen_in_runtime_queue": true
+    },
+    {
+      "provider_key": "hvrt",
+      "video_external_id": "vid-c015e0fe07414fcc",
+      "relative_path": "second meals on wheels.mp4",
+      "bytes": 6249411,
+      "mtime_ns": 1328890158142550000,
+      "duration_sec": 305.4066666666667,
+      "seen_in_runtime_queue": true
+    },
+    {
+      "provider_key": "hvrt",
+      "video_external_id": "vid-0bec3d6d15aa76ab",
+      "relative_path": "sleeping 4-23-12.mp4",
+      "bytes": 3205701,
+      "mtime_ns": 1335269762335000000,
+      "duration_sec": 156.28666666666666,
+      "seen_in_runtime_queue": true
+    },
+    {
+      "provider_key": "hvrt",
+      "video_external_id": "vid-4d61c602098d07b7",
+      "relative_path": "Video.MOV",
+      "bytes": 2678276,
+      "mtime_ns": 1454252884000000000,
+      "duration_sec": 27.315,
+      "seen_in_runtime_queue": true
+    },
+    {
+      "provider_key": "hvrt",
+      "video_external_id": "vid-d844e53924571a06",
+      "relative_path": "w8vby4.mp4",
+      "bytes": 14003288,
+      "mtime_ns": 1324477560244000000,
+      "duration_sec": 565.6316666666667,
+      "seen_in_runtime_queue": true
+    }
+  ]
+}

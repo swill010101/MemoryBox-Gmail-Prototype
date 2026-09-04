@@ -29,6 +29,8 @@ def start_transcribe_now(
     video_provider: Any,
     video_provider_key: str | None = None,
 ) -> dict[str, Any]:
+    from memorybox.processing.scope import require_source
+    require_source("transcribe", video_provider_key or _provider_key(video_external_id,video_provider), video_external_id)
     veid = (video_external_id or "").strip()
     if not veid:
         return {"ok": False, "error": "missing_video_id"}

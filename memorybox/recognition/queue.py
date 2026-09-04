@@ -36,6 +36,8 @@ def enqueue_full_eligible_archive(
     completed/failed items. Excluded (e.g. bad codec) stays excluded.
     I1 newly_known_person still does not silently re-run completed work.
     """
+    from memorybox.processing.scope import admit
+    admission = admit("face", videos, [str(person_id)] if person_id else [])
     pid = str(person_id)
     created = 0
     excluded = 0
@@ -56,6 +58,8 @@ def enqueue_full_eligible_archive(
         }
     with connection() as conn:
         for v in videos:
+            from memorybox.processing.scope import reserve_queue_item
+            reserve_queue_item(conn, admission, "face", v, str(person_id) if person_id else None, enqueue_reason)
             vpk = str(v.get("video_provider_key") or "").strip()
             veid = str(v.get("video_external_id") or "").strip()
             if not vpk or not veid:
@@ -70,10 +74,11 @@ def enqueue_full_eligible_archive(
                 """
                 INSERT INTO recognition_queue_items (
                     person_id, video_provider_key, video_external_id,
-                    status, reason, priority, enqueue_reason, run_kind
-                ) VALUES (%s::uuid, %s, %s, %s, %s, %s, %s, %s)
+                    status, reason, priority, enqueue_reason, run_kind, i13_admission_id
+                ) VALUES (%s::uuid, %s, %s, %s, %s, %s, %s, %s, %s::uuid)
                 ON CONFLICT (person_id, video_provider_key, video_external_id, enqueue_reason)
                 DO UPDATE SET
+                    i13_admission_id = EXCLUDED.i13_admission_id,
                     updated_at = now(),
                     priority = LEAST(recognition_queue_items.priority, EXCLUDED.priority),
                     run_kind = EXCLUDED.run_kind,
@@ -110,6 +115,7 @@ def enqueue_full_eligible_archive(
                     item_priority,
                     enqueue_reason,
                     run_kind,
+                    admission.id,
                 ),
             ).fetchone()
             if row and row["status"] == STATUS_EXCLUDED:
@@ -132,25 +138,15 @@ def enqueue_full_eligible_archive(
 
 
 def retry_failed_items(*, person_id: str | UUID | None = None) -> int:
+    from memorybox.processing.scope import require_admission, admit
+    admission = require_admission("face")
     with connection() as conn:
-        if person_id:
-            row = conn.execute(
-                """
-                UPDATE recognition_queue_items
-                SET status = 'queued', updated_at = now(), finished_at = NULL
-                WHERE status = 'failed' AND person_id = %s::uuid
-                """,
-                (str(person_id),),
-            )
-        else:
-            row = conn.execute(
-                """
-                UPDATE recognition_queue_items
-                SET status = 'queued', updated_at = now(), finished_at = NULL
-                WHERE status = 'failed'
-                """
-            )
-    return int(getattr(row, "rowcount", 0) or 0)
+        rows = conn.execute("SELECT id::text, person_id::text,video_provider_key,video_external_id FROM recognition_queue_items WHERE status='failed' AND i13_admission_id=%s::uuid AND (%s::uuid IS NULL OR person_id=%s::uuid) FOR UPDATE",(admission.id,str(person_id) if person_id else None,str(person_id) if person_id else None)).fetchall()
+        for row in rows:
+            admit("face",[row],[row["person_id"]])
+        for row in rows:
+            conn.execute("UPDATE recognition_queue_items SET status='queued',updated_at=now(),finished_at=NULL WHERE id=%s::uuid",(row["id"],))
+    return len(rows)
 
 
 def queue_summary(person_id: str | UUID | None = None) -> dict[str, Any]:
@@ -224,43 +220,28 @@ def list_queue_items(
 
 
 def claim_next_item(*, person_id: str | UUID | None = None) -> dict[str, Any] | None:
+    from memorybox.processing.scope import load_admission, require_source
+    admission = load_admission()
+    # Validate state before even selecting/locking a queue row.
+    from memorybox.processing.scope import require_admission
+    require_admission("face")
     with connection() as conn:
-        if person_id:
-            row = conn.execute(
-                """
-                UPDATE recognition_queue_items q
-                SET status = 'running', started_at = now(),
-                    attempt_count = attempt_count + 1, updated_at = now()
-                WHERE q.id = (
-                    SELECT id FROM recognition_queue_items
-                    WHERE status = 'queued' AND person_id = %s::uuid
-                    ORDER BY priority ASC, created_at ASC
-                    FOR UPDATE SKIP LOCKED
-                    LIMIT 1
-                )
-                RETURNING id::text, person_id::text, video_provider_key, video_external_id,
-                          enqueue_reason, attempt_count
-                """,
-                (str(person_id),),
-            ).fetchone()
-        else:
-            row = conn.execute(
-                """
-                UPDATE recognition_queue_items q
-                SET status = 'running', started_at = now(),
-                    attempt_count = attempt_count + 1, updated_at = now()
-                WHERE q.id = (
-                    SELECT id FROM recognition_queue_items
-                    WHERE status = 'queued'
-                    ORDER BY priority ASC, created_at ASC
-                    FOR UPDATE SKIP LOCKED
-                    LIMIT 1
-                )
-                RETURNING id::text, person_id::text, video_provider_key, video_external_id,
-                          enqueue_reason, attempt_count
-                """
-            ).fetchone()
-    return dict(row) if row else None
+        current = conn.execute("SELECT state,plan_sha256 FROM i13_processing_admissions WHERE id=%s::uuid FOR SHARE",(admission.id,)).fetchone()
+        if not current or current["state"] != "started" or current["plan_sha256"] != admission.plan_sha256:
+            from memorybox.processing.scope import ScopeDenied
+            raise ScopeDenied("admission_changed")
+        row = conn.execute(
+            "SELECT id::text,person_id::text,video_provider_key,video_external_id,enqueue_reason,attempt_count FROM recognition_queue_items "
+            "WHERE status='queued' AND i13_admission_id=%s::uuid "
+            "AND (%s::uuid IS NULL OR person_id=%s::uuid) "
+            "ORDER BY priority,created_at FOR UPDATE SKIP LOCKED LIMIT 1",
+            (admission.id, str(person_id) if person_id else None, str(person_id) if person_id else None),
+        ).fetchone()
+        if not row:
+            return None
+        require_source("face", row["video_provider_key"], row["video_external_id"], row.get("person_id"))
+        conn.execute("UPDATE recognition_queue_items SET status='running',started_at=now(),attempt_count=attempt_count+1,updated_at=now() WHERE id=%s::uuid",(row["id"],))
+    return dict(row)
 
 
 def complete_item(

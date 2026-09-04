@@ -75,6 +75,8 @@ def sync_immich_people(
     list_face_assets: Callable[[PhotoPersonRef], list[dict[str, Any]]] | None = None,
 ) -> dict[str, Any]:
     """Sync named Immich/photo people → canonical MB Persons; enqueue recognition."""
+    from memorybox.processing.scope import deny_legacy
+    deny_legacy()  # Provider-wide seed/sync has no reviewed source-exemplar scope.
     provider_key = getattr(photo_provider, "provider_key", "immich")
     run_id = _start_sync_run(provider_key=provider_key, trigger=trigger)
     created = mapped = skipped = conflicts = 0

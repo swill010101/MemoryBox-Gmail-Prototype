@@ -15,64 +15,21 @@ def _provider_key_for_video_id(video_external_id: str) -> str:
 
 
 def enqueue_new_videos_for_transcribe(
-    *,
-    video_provider: Any,
-    photo_provider: Any | None = None,
-    limit: int = 5000,
-    video_ids: list[str] | None = None,
+    *, video_provider: Any, photo_provider: Any | None = None,
+    limit: int = 5000, video_ids: list[str] | None = None,
 ) -> dict[str, Any]:
-    rows = combined_eligible_videos(video_provider=video_provider, photo_provider=photo_provider)
-    want = [str(v).strip() for v in (video_ids or []) if str(v).strip()]
-    done = already_done_video_ids(enqueue_reason="transcribe")
-    new_rows = []
-    if want:
-        by_id = {str(r.get("video_external_id") or ""): r for r in rows}
-        for veid in want:
-            r = by_id.get(veid) or {}
-            if r.get("eligible") is False:
-                continue
-            new_rows.append(
-                {
-                    "video_provider_key": str(
-                        r.get("video_provider_key") or _provider_key_for_video_id(veid)
-                    ),
-                    "video_external_id": veid,
-                    "priority": 50,
-                    "force_requeue": True,
-                }
-            )
-            if len(new_rows) >= int(limit):
-                break
-    else:
-        for r in rows:
-            veid = str(r.get("video_external_id") or "")
-            if not veid or veid in done:
-                continue
-            if r.get("eligible") is False:
-                continue
-            new_rows.append(
-                {
-                    "video_provider_key": str(r.get("video_provider_key") or "hvrt"),
-                    "video_external_id": veid,
-                    "priority": 100,
-                }
-            )
-            if len(new_rows) >= int(limit):
-                break
-    queued = enqueue_videos(
-        videos=new_rows,
-        enqueue_reason="transcribe",
-        person_id=None,
-        priority=100,
-        force_requeue=bool(want),
-    )
-    return {
-        "ok": True,
-        "inventory": len(rows),
-        "already_done": len(done),
-        "new_videos": len(new_rows),
-        "enqueue": queued,
-        "queue": queue_summary(),
-        "cartesian": False,
-        "note": "per-video transcribe only; Learn for a Person is a separate owner_learn queue",
-    }
+    from memorybox.processing.scope import require_admission, ScopeDenied, admit
+    admission = require_admission("transcribe")
+    rows = admission.videos
+    if video_ids:
+        if len(set(video_ids)) != len(video_ids): raise ScopeDenied("duplicate_source")
+        selected=[]
+        for vid in video_ids:
+            matches=[v for v in rows if v["video_external_id"]==vid]
+            if len(matches)!=1: raise ScopeDenied("off_manifest_or_ambiguous_source")
+            selected.extend(matches)
+        rows=selected
+    if len(rows)>limit: raise ScopeDenied("limit_would_truncate_approved_workload")
+    admit("transcribe",rows)
+    queued=enqueue_videos(videos=rows,enqueue_reason="transcribe",force_requeue=bool(video_ids))
+    return {"ok":True,"admission_id":admission.id,"source_count":len(rows),"enqueue":queued,"cartesian":False}

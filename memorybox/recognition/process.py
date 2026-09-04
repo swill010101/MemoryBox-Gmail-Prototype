@@ -332,6 +332,8 @@ def process_one(
                 "video_external_id": veid,
             }
 
+        from memorybox.processing.scope import begin_work
+        begin_work("face", item["video_provider_key"], veid, pid)
         face_ids: list[str] = []
         for pk in {vpk, "fake_video", "hvrt", "immich", "fake_photo"}:
             try:
@@ -424,6 +426,8 @@ def owner_correct_appearance(
     face_external_id: str | None = None,
 ) -> dict[str, Any]:
     """Owner correction creates higher-authority appearance + face evidence."""
+    from memorybox.processing.scope import require_source
+    require_source("face", video_provider_key, video_external_id, person_id)
     from memorybox.person.face_evidence import owner_confirm_or_correct
 
     fe = owner_confirm_or_correct(
@@ -464,6 +468,8 @@ def owner_withdraw_appearance(
     reason: str = "owner_withdraw",
 ) -> dict[str, Any]:
     """Correction safety: withdrawn identity is not restored on rescan."""
+    from memorybox.processing.scope import require_source
+    require_source("face", video_provider_key, video_external_id, person_id)
     from memorybox.recognition.observations import record_withdrawal
     from memorybox.recognition.queue import enqueue_full_eligible_archive
 

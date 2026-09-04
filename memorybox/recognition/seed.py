@@ -193,6 +193,8 @@ def seed_exemplars_from_candidates(
     provider_key: str = "immich",
 ) -> dict[str, Any]:
     """Persist a capped diverse set. Candidates must already carry embeddings."""
+    from memorybox.processing.scope import deny_legacy
+    deny_legacy()
     selected = select_exemplars(candidates)
     saved = []
     for c in selected:
@@ -238,6 +240,8 @@ def seed_exemplars_from_immich(
     max_assets: int = 80,
     candidates: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
+    from memorybox.processing.scope import deny_legacy
+    deny_legacy()
     raw = candidates if candidates is not None else collect_immich_face_candidates(
         person_id=person_id,
         photo_provider=photo_provider,

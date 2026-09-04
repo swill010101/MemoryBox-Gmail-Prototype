@@ -1,0 +1,8 @@
+{
+  "snapshot_time": "2026-09-04 22:17:06.993151+00:00",
+  "read_only": "on",
+  "rows": 117780,
+  "people": 60,
+  "sources": 1963,
+  "complete_cartesian_cardinality": true
+}

@@ -328,6 +328,8 @@ def record_withdrawal(
     t_end: float | None = None,
     reason: str = "owner_withdraw",
 ) -> str:
+    from memorybox.processing.scope import require_source
+    require_source("voice", video_provider_key, video_external_id, person_id)
     with connection() as conn:
         row = conn.execute(
             """

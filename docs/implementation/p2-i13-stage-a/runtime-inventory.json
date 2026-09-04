@@ -1,0 +1,346 @@
+{
+  "endpoint": "flightsim:5432/memorybox",
+  "kind": "consistent_read_only_native_inventory",
+  "snapshot_time": "2026-09-04 21:46:06.295272+00:00",
+  "isolation": "repeatable read",
+  "read_only": "on",
+  "table_counts": {
+    "face_appearance_moments": 3599,
+    "face_evidence": 1035,
+    "pending_review_face_crops": 0,
+    "recognition_person_watermark": 0,
+    "recognition_processing_runs": 123873,
+    "recognition_queue_items": 155854,
+    "speech_identity_withdrawals": 0,
+    "speech_processing_runs": 1927,
+    "speech_queue_items": 2011,
+    "speech_speaker_turns": 9307,
+    "speech_spoken_moments": 9307,
+    "speech_transcript_words": 140441,
+    "speech_voice_exemplars": 0,
+    "video_face_observations": 8894
+  },
+  "queue_groups": [
+    {
+      "provider": "fake_video",
+      "reason": "newly_known_person",
+      "status": "completed",
+      "rows": 6,
+      "people": 1,
+      "sources": 6
+    },
+    {
+      "provider": "fake_video",
+      "reason": "newly_known_person",
+      "status": "excluded",
+      "rows": 8,
+      "people": 2,
+      "sources": 7
+    },
+    {
+      "provider": "hvrt",
+      "reason": "exemplar_change",
+      "status": "completed",
+      "rows": 2892,
+      "people": 61,
+      "sources": 48
+    },
+    {
+      "provider": "hvrt",
+      "reason": "exemplar_change",
+      "status": "running",
+      "rows": 4,
+      "people": 4,
+      "sources": 4
+    },
+    {
+      "provider": "hvrt",
+      "reason": "newly_known_person",
+      "status": "completed",
+      "rows": 3720,
+      "people": 68,
+      "sources": 515
+    },
+    {
+      "provider": "hvrt",
+      "reason": "newly_known_person",
+      "status": "excluded",
+      "rows": 31289,
+      "people": 67,
+      "sources": 467
+    },
+    {
+      "provider": "hvrt",
+      "reason": "newly_known_person",
+      "status": "running",
+      "rows": 11,
+      "people": 9,
+      "sources": 10
+    },
+    {
+      "provider": "hvrt",
+      "reason": "owner_learn",
+      "status": "completed",
+      "rows": 144,
+      "people": 3,
+      "sources": 48
+    },
+    {
+      "provider": "immich",
+      "reason": "exemplar_change",
+      "status": "completed",
+      "rows": 117723,
+      "people": 60,
+      "sources": 1963
+    },
+    {
+      "provider": "immich",
+      "reason": "exemplar_change",
+      "status": "running",
+      "rows": 57,
+      "people": 21,
+      "sources": 53
+    }
+  ],
+  "appearance_groups": [
+    {
+      "provider": "fake_video",
+      "method": "auto_associate",
+      "status": "accepted",
+      "rows": 3,
+      "sources": 3,
+      "short_ranges": 2
+    },
+    {
+      "provider": "fake_video",
+      "method": "owner_correct",
+      "status": "accepted",
+      "rows": 1,
+      "sources": 1,
+      "short_ranges": 0
+    },
+    {
+      "provider": "hvrt",
+      "method": "auto_associate",
+      "status": "accepted",
+      "rows": 1,
+      "sources": 1,
+      "short_ranges": 1
+    },
+    {
+      "provider": "hvrt",
+      "method": "mb_native_i8b",
+      "status": "accepted",
+      "rows": 868,
+      "sources": 37,
+      "short_ranges": 863
+    },
+    {
+      "provider": "hvrt",
+      "method": "owner_correct",
+      "status": "accepted",
+      "rows": 10,
+      "sources": 1,
+      "short_ranges": 10
+    },
+    {
+      "provider": "immich",
+      "method": "mb_native_i8b",
+      "status": "accepted",
+      "rows": 2713,
+      "sources": 753,
+      "short_ranges": 1888
+    },
+    {
+      "provider": "immich",
+      "method": "owner_correct",
+      "status": "accepted",
+      "rows": 3,
+      "sources": 2,
+      "short_ranges": 3
+    }
+  ],
+  "indexes": [
+    {
+      "table": "face_appearance_moments",
+      "name": "face_appearance_moments_pkey",
+      "definition": "CREATE UNIQUE INDEX face_appearance_moments_pkey ON public.face_appearance_moments USING btree (id)"
+    },
+    {
+      "table": "face_appearance_moments",
+      "name": "idx_face_appearance_person",
+      "definition": "CREATE INDEX idx_face_appearance_person ON public.face_appearance_moments USING btree (person_id)"
+    },
+    {
+      "table": "face_appearance_moments",
+      "name": "idx_face_appearance_video",
+      "definition": "CREATE INDEX idx_face_appearance_video ON public.face_appearance_moments USING btree (video_provider_key, video_external_id)"
+    },
+    {
+      "table": "face_evidence",
+      "name": "face_evidence_pkey",
+      "definition": "CREATE UNIQUE INDEX face_evidence_pkey ON public.face_evidence USING btree (id)"
+    },
+    {
+      "table": "face_evidence",
+      "name": "idx_face_evidence_authority",
+      "definition": "CREATE INDEX idx_face_evidence_authority ON public.face_evidence USING btree (authority)"
+    },
+    {
+      "table": "face_evidence",
+      "name": "idx_face_evidence_person",
+      "definition": "CREATE INDEX idx_face_evidence_person ON public.face_evidence USING btree (person_id)"
+    },
+    {
+      "table": "face_evidence",
+      "name": "idx_face_evidence_provider",
+      "definition": "CREATE INDEX idx_face_evidence_provider ON public.face_evidence USING btree (provider_key, external_face_id)"
+    },
+    {
+      "table": "pending_review_face_crops",
+      "name": "pending_review_face_crops_pkey",
+      "definition": "CREATE UNIQUE INDEX pending_review_face_crops_pkey ON public.pending_review_face_crops USING btree (face_external_id)"
+    },
+    {
+      "table": "recognition_person_watermark",
+      "name": "recognition_person_watermark_pkey",
+      "definition": "CREATE UNIQUE INDEX recognition_person_watermark_pkey ON public.recognition_person_watermark USING btree (person_id)"
+    },
+    {
+      "table": "recognition_processing_runs",
+      "name": "idx_recognition_runs_person",
+      "definition": "CREATE INDEX idx_recognition_runs_person ON public.recognition_processing_runs USING btree (person_id, started_at DESC)"
+    },
+    {
+      "table": "recognition_processing_runs",
+      "name": "recognition_processing_runs_pkey",
+      "definition": "CREATE UNIQUE INDEX recognition_processing_runs_pkey ON public.recognition_processing_runs USING btree (id)"
+    },
+    {
+      "table": "recognition_queue_items",
+      "name": "idx_recognition_queue_person_status",
+      "definition": "CREATE INDEX idx_recognition_queue_person_status ON public.recognition_queue_items USING btree (person_id, status)"
+    },
+    {
+      "table": "recognition_queue_items",
+      "name": "idx_recognition_queue_status",
+      "definition": "CREATE INDEX idx_recognition_queue_status ON public.recognition_queue_items USING btree (status, priority, created_at)"
+    },
+    {
+      "table": "recognition_queue_items",
+      "name": "recognition_queue_items_person_id_video_provider_key_video__key",
+      "definition": "CREATE UNIQUE INDEX recognition_queue_items_person_id_video_provider_key_video__key ON public.recognition_queue_items USING btree (person_id, video_provider_key, video_external_id, enqueue_reason)"
+    },
+    {
+      "table": "recognition_queue_items",
+      "name": "recognition_queue_items_pkey",
+      "definition": "CREATE UNIQUE INDEX recognition_queue_items_pkey ON public.recognition_queue_items USING btree (id)"
+    },
+    {
+      "table": "speech_identity_withdrawals",
+      "name": "speech_identity_withdrawals_pkey",
+      "definition": "CREATE UNIQUE INDEX speech_identity_withdrawals_pkey ON public.speech_identity_withdrawals USING btree (id)"
+    },
+    {
+      "table": "speech_processing_runs",
+      "name": "speech_processing_runs_pkey",
+      "definition": "CREATE UNIQUE INDEX speech_processing_runs_pkey ON public.speech_processing_runs USING btree (id)"
+    },
+    {
+      "table": "speech_queue_items",
+      "name": "idx_speech_queue_learn",
+      "definition": "CREATE UNIQUE INDEX idx_speech_queue_learn ON public.speech_queue_items USING btree (video_provider_key, video_external_id, enqueue_reason, person_id) WHERE (person_id IS NOT NULL)"
+    },
+    {
+      "table": "speech_queue_items",
+      "name": "idx_speech_queue_status",
+      "definition": "CREATE INDEX idx_speech_queue_status ON public.speech_queue_items USING btree (status, priority, created_at)"
+    },
+    {
+      "table": "speech_queue_items",
+      "name": "idx_speech_queue_transcribe",
+      "definition": "CREATE UNIQUE INDEX idx_speech_queue_transcribe ON public.speech_queue_items USING btree (video_provider_key, video_external_id, enqueue_reason) WHERE (person_id IS NULL)"
+    },
+    {
+      "table": "speech_queue_items",
+      "name": "speech_queue_items_pkey",
+      "definition": "CREATE UNIQUE INDEX speech_queue_items_pkey ON public.speech_queue_items USING btree (id)"
+    },
+    {
+      "table": "speech_speaker_turns",
+      "name": "idx_speech_turns_video",
+      "definition": "CREATE INDEX idx_speech_turns_video ON public.speech_speaker_turns USING btree (video_provider_key, video_external_id, t_start)"
+    },
+    {
+      "table": "speech_speaker_turns",
+      "name": "speech_speaker_turns_pkey",
+      "definition": "CREATE UNIQUE INDEX speech_speaker_turns_pkey ON public.speech_speaker_turns USING btree (id)"
+    },
+    {
+      "table": "speech_spoken_moments",
+      "name": "idx_speech_moments_person",
+      "definition": "CREATE INDEX idx_speech_moments_person ON public.speech_spoken_moments USING btree (person_id) WHERE (person_id IS NOT NULL)"
+    },
+    {
+      "table": "speech_spoken_moments",
+      "name": "idx_speech_moments_text",
+      "definition": "CREATE INDEX idx_speech_moments_text ON public.speech_spoken_moments USING gin (to_tsvector('simple'::regconfig, text))"
+    },
+    {
+      "table": "speech_spoken_moments",
+      "name": "idx_speech_moments_video",
+      "definition": "CREATE INDEX idx_speech_moments_video ON public.speech_spoken_moments USING btree (video_provider_key, video_external_id, t_start)"
+    },
+    {
+      "table": "speech_spoken_moments",
+      "name": "speech_spoken_moments_pkey",
+      "definition": "CREATE UNIQUE INDEX speech_spoken_moments_pkey ON public.speech_spoken_moments USING btree (id)"
+    },
+    {
+      "table": "speech_transcript_words",
+      "name": "idx_speech_words_video",
+      "definition": "CREATE INDEX idx_speech_words_video ON public.speech_transcript_words USING btree (video_provider_key, video_external_id, t_start)"
+    },
+    {
+      "table": "speech_transcript_words",
+      "name": "speech_transcript_words_pkey",
+      "definition": "CREATE UNIQUE INDEX speech_transcript_words_pkey ON public.speech_transcript_words USING btree (id)"
+    },
+    {
+      "table": "speech_voice_exemplars",
+      "name": "speech_voice_exemplars_pkey",
+      "definition": "CREATE UNIQUE INDEX speech_voice_exemplars_pkey ON public.speech_voice_exemplars USING btree (id)"
+    },
+    {
+      "table": "video_face_observations",
+      "name": "idx_video_face_obs_person",
+      "definition": "CREATE INDEX idx_video_face_obs_person ON public.video_face_observations USING btree (person_id)"
+    },
+    {
+      "table": "video_face_observations",
+      "name": "idx_video_face_obs_video",
+      "definition": "CREATE INDEX idx_video_face_obs_video ON public.video_face_observations USING btree (video_provider_key, video_external_id, t_sec)"
+    },
+    {
+      "table": "video_face_observations",
+      "name": "video_face_observations_pkey",
+      "definition": "CREATE UNIQUE INDEX video_face_observations_pkey ON public.video_face_observations USING btree (id)"
+    }
+  ],
+  "source_counts": [
+    {
+      "provider": "fake_video",
+      "sources": 7
+    },
+    {
+      "provider": "hvrt",
+      "sources": 515
+    },
+    {
+      "provider": "immich",
+      "sources": 1963
+    }
+  ],
+  "invalid_ranges": 0,
+  "coarse_duplicate_excess": "10"
+}

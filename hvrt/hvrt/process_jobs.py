@@ -86,6 +86,8 @@ class ProcessJobManager:
         return self.status()["status"] in ("queued", "running")
 
     def start(self, saved_files: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+        from memorybox.processing.scope import deny_legacy
+        deny_legacy()
         with self._lock:
             if self._state["status"] in ("queued", "running"):
                 return self.status()
@@ -138,6 +140,8 @@ class ProcessJobManager:
         return out
 
     def _run(self) -> None:
+        from memorybox.processing.scope import deny_legacy
+        deny_legacy()
         self._set(status="running", message="Starting")
         try:
             saved = self.status().get("saved") or []

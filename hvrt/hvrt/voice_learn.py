@@ -161,6 +161,8 @@ def recognize_voices(
     working_dir: Path,
     progress: Callable[[float, str], None] | None = None,
 ) -> str:
+    from memorybox.processing.scope import deny_legacy
+    deny_legacy()
     def prog(pct: float, msg: str) -> None:
         if progress:
             progress(pct, msg)

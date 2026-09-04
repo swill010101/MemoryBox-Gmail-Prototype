@@ -22,9 +22,13 @@ def enqueue_videos(
     priority: int = 100,
     force_requeue: bool = False,
 ) -> dict[str, Any]:
+    from memorybox.processing.scope import admit
+    admission = admit("voice" if person_id else "transcribe", videos, [str(person_id)] if person_id else [])
     created = 0
     with connection() as conn:
         for v in videos:
+            from memorybox.processing.scope import reserve_queue_item
+            reserve_queue_item(conn, admission, "voice" if person_id else "transcribe", v, str(person_id) if person_id else None, enqueue_reason)
             vpk = str(v.get("video_provider_key") or "").strip()
             veid = str(v.get("video_external_id") or "").strip()
             if not vpk or not veid:
@@ -36,11 +40,12 @@ def enqueue_videos(
                     """
                     INSERT INTO speech_queue_items (
                         video_provider_key, video_external_id, person_id,
-                        status, priority, enqueue_reason
-                    ) VALUES (%s, %s, %s::uuid, 'queued', %s, %s)
+                        status, priority, enqueue_reason, i13_admission_id
+                    ) VALUES (%s, %s, %s::uuid, 'queued', %s, %s, %s::uuid)
                     ON CONFLICT (video_provider_key, video_external_id, enqueue_reason, person_id)
                     WHERE person_id IS NOT NULL
                     DO UPDATE SET
+                        i13_admission_id = EXCLUDED.i13_admission_id,
                         status = CASE
                             WHEN speech_queue_items.status = 'running'
                             THEN speech_queue_items.status
@@ -52,18 +57,19 @@ def enqueue_videos(
                         updated_at = now(),
                         finished_at = NULL
                     """,
-                    (vpk, veid, str(person_id), pri, enqueue_reason),
+                    (vpk, veid, str(person_id), pri, enqueue_reason, admission.id),
                 )
             else:
                 conn.execute(
                     """
                     INSERT INTO speech_queue_items (
                         video_provider_key, video_external_id, person_id,
-                        status, priority, enqueue_reason
-                    ) VALUES (%s, %s, NULL, 'queued', %s, %s)
+                        status, priority, enqueue_reason, i13_admission_id
+                    ) VALUES (%s, %s, NULL, 'queued', %s, %s, %s::uuid)
                     ON CONFLICT (video_provider_key, video_external_id, enqueue_reason)
                     WHERE person_id IS NULL
                     DO UPDATE SET
+                        i13_admission_id = EXCLUDED.i13_admission_id,
                         status = CASE
                             WHEN speech_queue_items.status = 'running'
                             THEN speech_queue_items.status
@@ -77,31 +83,34 @@ def enqueue_videos(
                         priority = LEAST(speech_queue_items.priority, EXCLUDED.priority),
                         updated_at = now()
                     """,
-                    (vpk, veid, pri, enqueue_reason, force, force, force),
+                    (vpk, veid, pri, enqueue_reason, admission.id, force, force, force),
                 )
             created += 1
     return {"ok": True, "enqueued_or_updated": created, "enqueue_reason": enqueue_reason}
 
 
 def claim_next_item() -> dict[str, Any] | None:
+    from memorybox.processing.scope import load_admission, require_source
+    admission = load_admission()
+    # Validate state before even selecting/locking a queue row.
+    from memorybox.processing.scope import require_admission
+    require_admission("transcribe" if "transcribe" in admission.plan["lanes"] else "voice")
     with connection() as conn:
+        current = conn.execute("SELECT state,plan_sha256 FROM i13_processing_admissions WHERE id=%s::uuid FOR SHARE",(admission.id,)).fetchone()
+        if not current or current["state"] != "started" or current["plan_sha256"] != admission.plan_sha256:
+            from memorybox.processing.scope import ScopeDenied
+            raise ScopeDenied("admission_changed")
         row = conn.execute(
-            """
-            UPDATE speech_queue_items q
-            SET status = 'running', started_at = now(),
-                attempt_count = attempt_count + 1, updated_at = now()
-            WHERE q.id = (
-                SELECT id FROM speech_queue_items
-                WHERE status = 'queued'
-                ORDER BY priority ASC, created_at ASC
-                FOR UPDATE SKIP LOCKED
-                LIMIT 1
-            )
-            RETURNING id::text, video_provider_key, video_external_id,
-                      person_id::text, enqueue_reason, attempt_count
-            """
+            "SELECT id::text,person_id::text,video_provider_key,video_external_id,enqueue_reason,attempt_count FROM speech_queue_items "
+            "WHERE status='queued' AND i13_admission_id=%s::uuid "
+            "ORDER BY priority,created_at FOR UPDATE SKIP LOCKED LIMIT 1",
+            (admission.id,),
         ).fetchone()
-    return dict(row) if row else None
+        if not row:
+            return None
+        require_source("voice" if row.get("person_id") else "transcribe", row["video_provider_key"], row["video_external_id"], row.get("person_id"))
+        conn.execute("UPDATE speech_queue_items SET status='running',started_at=now(),attempt_count=attempt_count+1,updated_at=now() WHERE id=%s::uuid",(row["id"],))
+    return dict(row)
 
 
 def complete_item(

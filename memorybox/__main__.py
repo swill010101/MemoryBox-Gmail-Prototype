@@ -977,6 +977,19 @@ def main(argv: list[str] | None = None) -> int:
     p_serve.add_argument("--port", type=int, default=None)
 
     args = parser.parse_args(argv)
+    if args.cmd in {"prove-p2-i1", "prove-p2-i8b", "prove-p2-i9"} or (args.cmd == "recognition-people-apply" and not args.dry_run):
+        print(json.dumps({"ok": False, "error": "legacy_unscoped_mutation_disabled_use_i13_offline_tests"}))
+        return 2
+    # Fail before importing providers, starting drains or reaching legacy migration helpers.
+    if args.cmd in {"recognition-archive-pass", "speech-archive-pass"}:
+        from memorybox.processing.scope import require_admission, ScopeDenied
+        try:
+            require_admission("face" if args.cmd == "recognition-archive-pass" else "transcribe",
+                              archive=bool(getattr(args, "full", False)))
+        except ScopeDenied as exc:
+            print(json.dumps({"ok": False, "error": str(exc)}))
+            return 2
+
 
     if args.cmd == "migrate":
         from memorybox.migrate import migrate
