@@ -1323,9 +1323,10 @@ def _process_respondent_opt_out(
 def tick_scheduler(
     *, now: datetime | None = None, adapter: Any | None = None
 ) -> dict[str, Any]:
-    """Send pending deliveries; process follow-up deadlines; schedule next questions."""
+    """Poll inbound mail, send pending deliveries, process follow-up deadlines."""
     now = now or _now()
     adapter = adapter or get_email_adapter()
+    ingest = poll_and_ingest(adapter=adapter)
     sent_ids: list[str] = []
     failed_ids: list[str] = []
     reminders: list[str] = []
@@ -1487,6 +1488,13 @@ def tick_scheduler(
         "failed": failed_ids,
         "reminders": reminders,
         "no_responses": no_responses,
+        "ingest": {
+            "created": len(ingest.get("created") or []),
+            "quarantined": len(ingest.get("quarantined") or []),
+            "duplicates": len(ingest.get("duplicates") or []),
+            "skipped": len(ingest.get("skipped") or []),
+            "examined": ingest.get("examined"),
+        },
         "at": _iso(now),
         "email_provider": email_adapter_status(),
     }
@@ -1920,6 +1928,7 @@ def poll_and_ingest(*, adapter: Any | None = None) -> dict[str, Any]:
         created.append(cap["id"])
         adapter.mark_processed(mid)
 
+    debug = getattr(adapter, "last_poll_debug", None) or {}
     return {
         "ok": True,
         "created": created,
@@ -1928,6 +1937,11 @@ def poll_and_ingest(*, adapter: Any | None = None) -> dict[str, Any]:
         "skipped": skipped,
         "opt_outs": opt_outs,
         "examined": len(items),
+        "debug": {
+            "error": debug.get("error"),
+            "merged": debug.get("merged"),
+            "query_hits": debug.get("query_hits"),
+        },
     }
 
 

@@ -326,6 +326,14 @@
       const d = await api("/historian-capture/items?limit=100");
       state.items = d.items || [];
     }
+    async function syncInbox() {
+      try {
+        await api("/historian-capture/poll", { method: "POST", body: "{}" });
+      } catch (_) {
+        /* mailbox unavailable — still show cached data */
+      }
+      await Promise.all([refreshCounts(), refreshCampaigns(), refreshItems()]);
+    }
     function filteredItems() {
       if (state.tab === "unmatched") {
         return state.items.filter((it) => it.match_status === "unmatched" || it.match_status === "ambiguous");
@@ -582,6 +590,7 @@
       toast(start ? "Campaign started." : "Draft saved.");
     }
     async function openCampaign(id) {
+      await syncInbox();
       state.campaign = await api(`/historian-capture/campaigns/${id}`);
       state.view = "campaign";
       render();
@@ -951,7 +960,8 @@
         }
       });
       if (location.hash === "#unmatched") state.tab = "unmatched";
-      await Promise.all([refreshMailbox(), refreshCounts(), refreshCampaigns(), refreshItems()]);
+      await refreshMailbox();
+      await syncInbox();
       render();
     })();
   </script>
