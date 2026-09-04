@@ -1,7 +1,7 @@
 # I13 definition artifact contract
 
 - Reference: `docs/product/MBPRD-P2-I13_Video_Face_Speech_Voice_Learning_v0.2.docx`
-- SHA-256: `DC73CEC3B445B881DEA79522D37185A387E14F7AC1C6F8F987CE9C595E4EDB71`
+- SHA-256: `72413EAC39018653CA0D979B9EE82CF92AD4846508FD9B82813F17305D6F238F`
 - Reference structure: US Letter portrait, one section, 100 body paragraphs, 13 tables, five embedded screen images.
 - Typography/components: source Title, Subtitle, Heading 1/2, Normal, List Bullet, Caption, blue-accent tables, simple header/footer.
 - Builder: `working/i13-prd-review/build_definition.py`, run from any location; it resolves the repository root from its own path.
