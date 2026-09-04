@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -46,7 +47,7 @@ ASSESSMENT_CODES = frozenset(
         "uncertain",
     }
 )
-DEFAULT_FOLLOW_UP_SECONDS = 259200  # 72h
+DEFAULT_FOLLOW_UP_SECONDS = 604800  # 7 days
 
 _ACTIVE_DELIVERY_STATUSES = frozenset(
     {"pending", "sent", "waiting", "reminder_sent"}
@@ -547,7 +548,7 @@ def get_campaign(campaign_id: str) -> dict[str, Any]:
             """,
             (cid,),
         ).fetchone()["n"]
-    return {
+    campaign = {
         "id": str(row["id"]),
         "owner_person_id": str(row["owner_person_id"])
         if row["owner_person_id"]
@@ -565,6 +566,8 @@ def get_campaign(campaign_id: str) -> dict[str, Any]:
         "created_at": _iso(row["created_at"]),
         "updated_at": _iso(row["updated_at"]),
     }
+    campaign["capture_items"] = list_capture_items(campaign_id=str(cid), limit=250)
+    return campaign
 
 
 def list_campaigns(*, limit: int = 50) -> list[dict[str, Any]]:
@@ -933,6 +936,165 @@ def resume_campaign(
     return start_campaign(campaign_id, now=now, auto_tick=auto_tick)
 
 
+def advance_campaign(
+    campaign_id: str, *, now: datetime | None = None, adapter: Any | None = None
+) -> dict[str, Any]:
+    """Send the next scheduled question now, but never skip an outstanding reply."""
+    cid = _parse_uuid(campaign_id, field="campaign_id")
+    now = now or _now()
+    with connection() as conn:
+        camp = conn.execute(
+            "SELECT status FROM historian_capture_campaigns WHERE id = %s", (cid,)
+        ).fetchone()
+        if not camp:
+            raise HistorianCaptureError("campaign not found")
+        if camp["status"] != "running":
+            raise HistorianCaptureError("only an in-progress campaign can advance")
+        waiting = conn.execute(
+            """
+            SELECT 1 FROM historian_capture_deliveries
+            WHERE campaign_id = %s
+              AND status IN ('sent', 'waiting', 'reminder_sent')
+            LIMIT 1
+            """,
+            (cid,),
+        ).fetchone()
+        if waiting:
+            raise HistorianCaptureError(
+                "cannot advance while waiting for a response to the current question"
+            )
+        pending = conn.execute(
+            """
+            SELECT id FROM historian_capture_deliveries
+            WHERE campaign_id = %s AND status = 'pending'
+            ORDER BY scheduled_for ASC
+            LIMIT 1
+            """,
+            (cid,),
+        ).fetchone()
+        if not pending:
+            raise HistorianCaptureError("there is no next question waiting to send")
+        conn.execute(
+            """
+            UPDATE historian_capture_deliveries
+            SET scheduled_for = %s, updated_at = now()
+            WHERE id = %s
+            """,
+            (now, pending["id"]),
+        )
+    result = tick_scheduler(now=now, adapter=adapter)
+    if str(pending["id"]) not in (result.get("sent") or []):
+        refreshed = get_campaign(str(cid))
+        delivery = next(
+            (d for d in refreshed["deliveries"] if d["id"] == str(pending["id"])),
+            None,
+        )
+        detail = (delivery or {}).get("fail_detail")
+        raise HistorianCaptureError(detail or "next question could not be sent")
+    return get_campaign(str(cid))
+
+
+def delete_campaign(campaign_id: str) -> dict[str, Any]:
+    """Remove a campaign. Capture items stay in the archive, unlinked."""
+    cid = _parse_uuid(campaign_id, field="campaign_id")
+    with connection() as conn:
+        camp = conn.execute(
+            "SELECT id, title FROM historian_capture_campaigns WHERE id = %s",
+            (cid,),
+        ).fetchone()
+        if not camp:
+            raise HistorianCaptureError("campaign not found")
+        conn.execute(
+            "DELETE FROM historian_capture_campaigns WHERE id = %s", (cid,)
+        )
+    return {"ok": True, "deleted_id": str(cid), "title": camp.get("title")}
+
+
+def update_draft_campaign(
+    campaign_id: str,
+    *,
+    title: str | None = None,
+    cadence_config_json: dict[str, Any] | None = None,
+    follow_up_interval_seconds: int | None = None,
+    people_id: str | None = None,
+    email: str | None = None,
+    display_name: str | None = None,
+    questions: list[str] | None = None,
+) -> dict[str, Any]:
+    """Edit a draft campaign before Start. Started campaigns stay read-only here."""
+    cid = _parse_uuid(campaign_id, field="campaign_id")
+    if follow_up_interval_seconds is not None and follow_up_interval_seconds < 1:
+        raise HistorianCaptureError("follow_up_interval_seconds must be >= 1")
+    with connection() as conn:
+        camp = conn.execute(
+            "SELECT * FROM historian_capture_campaigns WHERE id = %s", (cid,)
+        ).fetchone()
+        if not camp:
+            raise HistorianCaptureError("campaign not found")
+        if camp["status"] != "draft":
+            raise HistorianCaptureError("only draft campaigns can be edited")
+        sets: list[str] = ["updated_at = now()"]
+        params: list[Any] = []
+        if title is not None:
+            sets.append("title = %s")
+            params.append((title or "").strip() or None)
+        if cadence_config_json is not None:
+            sets.append("cadence_config_json = %s::jsonb")
+            params.append(json.dumps(cadence_config_json))
+        if follow_up_interval_seconds is not None:
+            sets.append("follow_up_interval_seconds = %s")
+            params.append(int(follow_up_interval_seconds))
+        params.append(cid)
+        conn.execute(
+            f"UPDATE historian_capture_campaigns SET {', '.join(sets)} WHERE id = %s",
+            params,
+        )
+        if email or people_id or display_name:
+            row = conn.execute(
+                """
+                SELECT id FROM historian_capture_campaign_respondents
+                WHERE campaign_id = %s ORDER BY created_at ASC LIMIT 1
+                """,
+                (cid,),
+            ).fetchone()
+            if row:
+                rsets = ["updated_at = now()"]
+                rparams: list[Any] = []
+                if email:
+                    rsets.append("contact_route_value = %s")
+                    rparams.append(email.strip())
+                if display_name:
+                    rsets.append("display_name_snapshot = %s")
+                    rparams.append(display_name.strip())
+                if people_id:
+                    rsets.append("people_id = %s")
+                    rparams.append(_parse_uuid(people_id, field="people_id"))
+                rparams.append(row["id"])
+                conn.execute(
+                    f"UPDATE historian_capture_campaign_respondents SET {', '.join(rsets)} WHERE id = %s",
+                    rparams,
+                )
+        if questions is not None:
+            sent = conn.execute(
+                """
+                SELECT 1 FROM historian_capture_deliveries
+                WHERE campaign_id = %s AND sent_at IS NOT NULL LIMIT 1
+                """,
+                (cid,),
+            ).fetchone()
+            if sent:
+                raise HistorianCaptureError("cannot replace questions after send")
+            conn.execute(
+                "DELETE FROM historian_capture_questions WHERE campaign_id = %s",
+                (cid,),
+            )
+            for body in questions:
+                text = (body or "").strip()
+                if text:
+                    _insert_question(conn, cid, text, sort_order=None)
+    return get_campaign(str(cid))
+
+
 def stop_campaign(campaign_id: str) -> dict[str, Any]:
     cid = _parse_uuid(campaign_id, field="campaign_id")
     with connection() as conn:
@@ -1161,9 +1323,10 @@ def _process_respondent_opt_out(
 def tick_scheduler(
     *, now: datetime | None = None, adapter: Any | None = None
 ) -> dict[str, Any]:
-    """Send pending deliveries; process follow-up deadlines; schedule next questions."""
+    """Poll inbound mail, send pending deliveries, process follow-up deadlines."""
     now = now or _now()
     adapter = adapter or get_email_adapter()
+    ingest = poll_and_ingest(adapter=adapter)
     sent_ids: list[str] = []
     failed_ids: list[str] = []
     reminders: list[str] = []
@@ -1325,6 +1488,13 @@ def tick_scheduler(
         "failed": failed_ids,
         "reminders": reminders,
         "no_responses": no_responses,
+        "ingest": {
+            "created": len(ingest.get("created") or []),
+            "quarantined": len(ingest.get("quarantined") or []),
+            "duplicates": len(ingest.get("duplicates") or []),
+            "skipped": len(ingest.get("skipped") or []),
+            "examined": ingest.get("examined"),
+        },
         "at": _iso(now),
         "email_provider": email_adapter_status(),
     }
@@ -1758,6 +1928,7 @@ def poll_and_ingest(*, adapter: Any | None = None) -> dict[str, Any]:
         created.append(cap["id"])
         adapter.mark_processed(mid)
 
+    debug = getattr(adapter, "last_poll_debug", None) or {}
     return {
         "ok": True,
         "created": created,
@@ -1766,6 +1937,11 @@ def poll_and_ingest(*, adapter: Any | None = None) -> dict[str, Any]:
         "skipped": skipped,
         "opt_outs": opt_outs,
         "examined": len(items),
+        "debug": {
+            "error": debug.get("error"),
+            "merged": debug.get("merged"),
+            "query_hits": debug.get("query_hits"),
+        },
     }
 
 
@@ -1787,7 +1963,8 @@ def get_capture_item(capture_item_id: str) -> dict[str, Any]:
         if row.get("campaign_respondent_id"):
             resp = conn.execute(
                 """
-                SELECT display_name_snapshot, contact_route_value, people_id
+                SELECT display_name_snapshot, contact_route_value, people_id, status,
+                       opted_out_at, opt_out_source
                 FROM historian_capture_campaign_respondents WHERE id = %s
                 """,
                 (row["campaign_respondent_id"],),
@@ -1805,6 +1982,9 @@ def get_capture_item(capture_item_id: str) -> dict[str, Any]:
     out["respondent_people_id"] = (
         str(resp["people_id"]) if resp and resp.get("people_id") else None
     )
+    out["respondent_status"] = resp["status"] if resp else None
+    out["respondent_opted_out_at"] = _iso(resp.get("opted_out_at")) if resp else None
+    out["respondent_opt_out_source"] = resp.get("opt_out_source") if resp else None
     out["campaign_title"] = camp["title"] if camp else None
     out["campaign_status"] = camp["status"] if camp else None
     return out
@@ -1819,24 +1999,72 @@ def list_capture_items(
     clauses = ["1=1"]
     params: list[Any] = []
     if campaign_id:
-        clauses.append("campaign_id = %s")
+        clauses.append("i.campaign_id = %s")
         params.append(_parse_uuid(campaign_id, field="campaign_id"))
     if match_status:
-        clauses.append("match_status = %s")
+        clauses.append("i.match_status = %s")
         params.append(match_status)
     params.append(limit)
     where = " AND ".join(clauses)
     with connection() as conn:
         rows = conn.execute(
             f"""
-            SELECT id FROM historian_capture_items
+            SELECT i.id, i.campaign_id, i.delivery_id, i.from_address, i.subject, i.extracted_text,
+                   i.received_at, i.match_status, i.preserved_raw_uri, i.content_hash,
+                   r.display_name_snapshot AS respondent_name,
+                   c.title AS campaign_title,
+                   q.body_text AS question_body,
+                   latest_v.verdict,
+                   latest_a.assessment_code
+            FROM historian_capture_items i
+            LEFT JOIN historian_capture_campaign_respondents r
+                ON r.id = i.campaign_respondent_id
+            LEFT JOIN historian_capture_campaigns c ON c.id = i.campaign_id
+            LEFT JOIN historian_capture_questions q ON q.id = i.question_id
+            LEFT JOIN LATERAL (
+                SELECT verdict FROM historian_capture_verdicts v
+                WHERE v.capture_item_id = i.id
+                ORDER BY v.decided_at DESC, v.id DESC
+                LIMIT 1
+            ) latest_v ON TRUE
+            LEFT JOIN LATERAL (
+                SELECT assessment_code FROM historian_capture_owner_assessments a
+                WHERE a.capture_item_id = i.id
+                ORDER BY a.set_at DESC, a.id DESC
+                LIMIT 1
+            ) latest_a ON TRUE
             WHERE {where}
-            ORDER BY received_at DESC
+            ORDER BY i.received_at DESC
             LIMIT %s
             """,
             params,
         ).fetchall()
-    return [get_capture_item(str(r["id"])) for r in rows]
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        verdict = row.get("verdict")
+        assess = row.get("assessment_code")
+        out.append(
+            {
+                "id": str(row["id"]),
+                "campaign_id": str(row["campaign_id"]) if row.get("campaign_id") else None,
+                "delivery_id": str(row["delivery_id"]) if row.get("delivery_id") else None,
+                "from_address": row.get("from_address"),
+                "subject": row.get("subject"),
+                "extracted_text": row.get("extracted_text"),
+                "received_at": _iso(row.get("received_at")),
+                "match_status": row.get("match_status"),
+                "preserved_raw_uri": row.get("preserved_raw_uri"),
+                "content_hash": row.get("content_hash"),
+                "respondent_name": row.get("respondent_name"),
+                "campaign_title": row.get("campaign_title"),
+                "question_body": row.get("question_body"),
+                "latest_verdict": {"verdict": verdict} if verdict else None,
+                "latest_assessment": (
+                    {"assessment_code": assess} if assess else None
+                ),
+            }
+        )
+    return out
 
 
 def list_unmatched_items(*, limit: int = 100) -> list[dict[str, Any]]:
@@ -2082,11 +2310,14 @@ def promote_to_story(
         if not draft:
             raise HistorianCaptureError("current review draft required for promotion")
         existing_promo = conn.execute(
-            "SELECT id FROM historian_capture_promotions WHERE capture_item_id = %s LIMIT 1",
+            """
+            SELECT id FROM historian_capture_promotions
+            WHERE capture_item_id = %s AND promoted_type = 'story'
+            """,
             (iid,),
         ).fetchone()
         if existing_promo:
-            raise HistorianCaptureError("capture item already promoted")
+            raise HistorianCaptureError("capture item already promoted to Story")
         narrator_person_id = None
         narrator_name = None
         if item.get("campaign_respondent_id"):
@@ -2143,6 +2374,184 @@ def promote_to_story(
             "story_id": str(story.id),
             "title": story.title,
         },
+    }
+
+
+def capture_item_source_bytes(capture_item_id: str) -> bytes:
+    item = get_capture_item(capture_item_id)
+    raw = _read_raw_from_uri(item.get("preserved_raw_uri"))
+    if raw is None:
+        raise HistorianCaptureError("preserved source is not available")
+    return raw
+
+
+def capture_item_source_text(capture_item_id: str) -> str:
+    """Human-readable download of the immutable inbound email."""
+    item = get_capture_item(capture_item_id)
+    headers = item.get("header_json") or {}
+    lines = [
+        f"From: {item.get('from_address') or headers.get('from') or ''}",
+        f"Subject: {item.get('subject') or ''}",
+        f"Received: {item.get('received_at') or ''}",
+        f"Message-ID: {headers.get('message-id') or item.get('inbound_message_id') or ''}",
+        "",
+        item.get("extracted_text") or "",
+    ]
+    return "\r\n".join(lines)
+
+
+def _read_raw_from_uri(uri: str | None) -> bytes | None:
+    if not uri:
+        return None
+    from urllib.parse import unquote, urlparse
+
+    parsed = urlparse(uri)
+    if parsed.scheme == "file":
+        raw = unquote(parsed.path or "")
+        if os.name == "nt" and raw.startswith("/") and len(raw) >= 3 and raw[2] == ":":
+            raw = raw[1:]
+        path = Path(raw)
+    else:
+        path = Path(uri)
+    if path.is_file():
+        return path.read_bytes()
+    return None
+
+
+def promote_to_artifact(
+    capture_item_id: str,
+    *,
+    kind: str = "document",
+    label: str | None = None,
+    description: str | None = None,
+    actor_key: str = "owner",
+) -> dict[str, Any]:
+    """Promote reviewed capture to I10B Artifact with .eml representation + provenance."""
+    from memorybox.artifact import add_mb_managed_representation, create_artifact
+
+    iid = _parse_uuid(capture_item_id, field="capture_item_id")
+    with connection() as conn:
+        item = conn.execute(
+            "SELECT * FROM historian_capture_items WHERE id = %s", (iid,)
+        ).fetchone()
+        if not item:
+            raise HistorianCaptureError("capture item not found")
+        verdict = _latest_verdict(conn, iid)
+        if not verdict or verdict["verdict"] != "promotion_authorized":
+            raise HistorianCaptureError(
+                "promotion requires verdict=promotion_authorized"
+            )
+        draft = _current_draft(conn, iid)
+        if not draft:
+            raise HistorianCaptureError("current review draft required for promotion")
+        existing_promo = conn.execute(
+            """
+            SELECT id FROM historian_capture_promotions
+            WHERE capture_item_id = %s AND promoted_type = 'artifact'
+            """,
+            (iid,),
+        ).fetchone()
+        if existing_promo:
+            raise HistorianCaptureError("capture item already promoted to Artifact")
+        person_ids: list[str] = []
+        if item.get("campaign_respondent_id"):
+            resp = conn.execute(
+                "SELECT people_id FROM historian_capture_campaign_respondents WHERE id = %s",
+                (item["campaign_respondent_id"],),
+            ).fetchone()
+            if resp and resp.get("people_id"):
+                person_ids.append(str(resp["people_id"]))
+        body = (draft["body_text"] or item.get("extracted_text") or "").strip()
+        art_label = (label or body[:80] or "Historian capture").strip()
+        art_desc = (description or body[:2000] or None)
+
+    artifact = create_artifact(
+        kind=kind,
+        label=art_label,
+        description=art_desc,
+        person_ids=person_ids or None,
+        actor_key=actor_key,
+        unresolved_context={"person": not person_ids, "place": True, "event": True},
+    )
+    raw_bytes = _read_raw_from_uri(item.get("preserved_raw_uri"))
+    if raw_bytes:
+        add_mb_managed_representation(
+            str(artifact.id),
+            data=raw_bytes,
+            filename="capture_source.txt",
+            content_type="text/plain",
+            label="Original email source",
+            view_kind="document",
+            caption="Immutable Historian Capture inbound source (RFC822 bytes preserved)",
+        )
+    elif body:
+        add_mb_managed_representation(
+            str(artifact.id),
+            data=body.encode("utf-8"),
+            filename="capture_text.txt",
+            content_type="text/plain",
+            label="Extracted text",
+            view_kind="document",
+        )
+
+    promo_id = uuid4()
+    with connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO historian_capture_promotions (
+                id, capture_item_id, review_draft_id, verdict_id,
+                promoted_type, promoted_id, promoted_by, provenance_json
+            ) VALUES (%s, %s, %s, %s, 'artifact', %s, %s, %s::jsonb)
+            """,
+            (
+                promo_id,
+                iid,
+                draft["id"],
+                verdict["id"],
+                UUID(str(artifact.id)),
+                actor_key,
+                json.dumps(
+                    {
+                        "capture_item_id": str(iid),
+                        "review_draft_id": str(draft["id"]),
+                        "verdict_id": str(verdict["id"]),
+                        "preserved_raw_uri": item.get("preserved_raw_uri"),
+                    }
+                ),
+            ),
+        )
+    return {
+        "promotion_id": str(promo_id),
+        "promoted_type": "artifact",
+        "promoted_id": str(artifact.id),
+        "capture_item_id": str(iid),
+        "artifact": {
+            "artifact_id": str(artifact.id),
+            "label": artifact.label,
+        },
+    }
+
+
+def thank_you_preview_body() -> str:
+    return _THANK_YOU_TEMPLATE
+
+
+def unmatched_count() -> int:
+    return len(list_unmatched_items(limit=1000))
+
+
+def connection_probe() -> dict[str, Any]:
+    """Stage 1 FlightSim prove — Gmail profile + label without sending."""
+    adapter = get_email_adapter()
+    probe = getattr(adapter, "connection_probe", None)
+    if callable(probe):
+        return probe()
+    st = email_adapter_status()
+    return {
+        "ok": bool(st.get("ok")),
+        "live": bool(st.get("live")),
+        "detail": st.get("detail"),
+        "user_email": st.get("user_email"),
     }
 
 
@@ -2437,6 +2846,8 @@ __all__ = [
     "create_campaign",
     "get_campaign",
     "list_campaigns",
+    "update_draft_campaign",
+    "delete_campaign",
     "add_questions",
     "add_respondents",
     "update_question",
@@ -2444,6 +2855,7 @@ __all__ = [
     "start_campaign",
     "pause_campaign",
     "resume_campaign",
+    "advance_campaign",
     "stop_campaign",
     "skip_question",
     "tick_scheduler",
@@ -2451,6 +2863,8 @@ __all__ = [
     "record_capture_item",
     "poll_and_ingest",
     "get_capture_item",
+    "capture_item_source_bytes",
+    "capture_item_source_text",
     "list_capture_items",
     "list_unmatched_items",
     "new_capture_count",
@@ -2459,6 +2873,10 @@ __all__ = [
     "set_owner_assessment",
     "set_verdict",
     "promote_to_story",
+    "promote_to_artifact",
+    "thank_you_preview_body",
+    "unmatched_count",
+    "connection_probe",
     "send_thank_you_if_enabled",
     "search_historian_capture_for_ask",
     "re_split_tokens",

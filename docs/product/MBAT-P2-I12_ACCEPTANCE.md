@@ -1,7 +1,7 @@
 # MBAT-P2-I12 — Historian Collection Acceptance
 
 **Increment:** P2-I12 Historian Collection & Campaigns V1  
-**Status:** Planning **LOCKED** 2026-09-03 (founder cadence/assessment/opt-out/ack **2026-09-03**) · **BUILD NOT AUTHORIZED**  
+**Status:** **ACCEPTED** 2026-09-04 (Tom: “i12 is accepted”) · Planning **LOCKED** 2026-09-03 · **BUILD AUTHORIZED S1–S5** 2026-09-03  
 **Prove (proposed):** `python -m memorybox prove-historian-capture` · `--flightsim` for live mailbox  
 **Definition:** [MBBS-P2_INCREMENT_12_DEFINITION.md](MBBS-P2_INCREMENT_12_DEFINITION.md)  
 **PRD:** [MBPRD-P2-I12_HISTORIAN_COLLECTION_CAMPAIGNS.md](MBPRD-P2-I12_HISTORIAN_COLLECTION_CAMPAIGNS.md)

@@ -4465,6 +4465,13 @@ def hc_respondent_options(limit: int = Query(200, ge=1, le=500)) -> dict[str, An
     return {"options": respondent_options(limit=limit)}
 
 
+@app.get("/historian-capture/starter-questions")
+def hc_starter_questions(limit: int = Query(12, ge=1, le=50)) -> dict[str, Any]:
+    from memorybox.historian_capture import starter_questions
+
+    return {"questions": starter_questions(limit=limit)}
+
+
 @app.get("/historian-capture/new-count")
 def hc_new_count() -> dict[str, Any]:
     from memorybox.historian_capture import HistorianCaptureError, new_capture_count
@@ -4494,7 +4501,7 @@ def hc_create_campaign(body: dict[str, Any]) -> dict[str, Any]:
         return create_campaign(
             title=body.get("title"),
             cadence_config_json=cadence,
-            follow_up_interval_seconds=int(body.get("follow_up_interval_seconds") or 259200),
+            follow_up_interval_seconds=int(body.get("follow_up_interval_seconds") or 604800),
             send_thank_you_ack=bool(body.get("send_thank_you_ack", True)),
             timezone_name=str(body.get("timezone_name") or "UTC"),
             respondents=[
@@ -4520,12 +4527,47 @@ def hc_get_campaign(campaign_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
+@app.put("/historian-capture/campaigns/{campaign_id}")
+def hc_update_campaign(campaign_id: str, body: dict[str, Any]) -> dict[str, Any]:
+    from memorybox.historian_capture import HistorianCaptureError, update_draft_campaign
+
+    try:
+        pattern = str(body.get("cadence_pattern") or "weekly")
+        cadence = {"pattern": pattern, "send_time_local": "09:00"}
+        if pattern == "seconds":
+            cadence["interval_seconds"] = int(body.get("cadence_interval_seconds") or 60)
+        follow = body.get("follow_up_interval_seconds")
+        return update_draft_campaign(
+            campaign_id,
+            title=body.get("title"),
+            cadence_config_json=cadence,
+            follow_up_interval_seconds=int(follow) if follow is not None else None,
+            people_id=body.get("people_id"),
+            email=body.get("email"),
+            display_name=body.get("display_name"),
+            questions=list(body.get("questions")) if body.get("questions") is not None else None,
+        )
+    except HistorianCaptureError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.delete("/historian-capture/campaigns/{campaign_id}")
+def hc_delete_campaign(campaign_id: str) -> dict[str, Any]:
+    from memorybox.historian_capture import HistorianCaptureError, delete_campaign
+
+    try:
+        return delete_campaign(campaign_id)
+    except HistorianCaptureError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
 @app.post("/historian-capture/campaigns/{campaign_id}/{action}")
 def hc_campaign_action(campaign_id: str, action: str) -> dict[str, Any]:
     from memorybox.historian_capture import (
         HistorianCaptureError,
         pause_campaign,
         resume_campaign,
+        advance_campaign,
         start_campaign,
         stop_campaign,
     )
@@ -4537,6 +4579,8 @@ def hc_campaign_action(campaign_id: str, action: str) -> dict[str, Any]:
             return pause_campaign(campaign_id)
         if action == "resume":
             return resume_campaign(campaign_id)
+        if action == "advance":
+            return advance_campaign(campaign_id)
         if action == "stop":
             return stop_campaign(campaign_id)
         raise HistorianCaptureError(f"unknown action: {action}")
@@ -4583,6 +4627,21 @@ def hc_get_item(item_id: str) -> dict[str, Any]:
         return get_capture_item(item_id)
     except HistorianCaptureError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/historian-capture/items/{item_id}/source")
+def hc_item_source(item_id: str) -> Response:
+    from memorybox.historian_capture import HistorianCaptureError, capture_item_source_text
+
+    try:
+        text = capture_item_source_text(item_id)
+    except HistorianCaptureError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return Response(
+        content=text,
+        media_type="text/plain; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="historian-capture.txt"'},
+    )
 
 
 @app.post("/historian-capture/items/{item_id}/draft")
@@ -4650,11 +4709,18 @@ def hc_promote_story(item_id: str, body: dict[str, Any]) -> dict[str, Any]:
 
 
 @app.post("/historian-capture/items/{item_id}/thank-you")
-def hc_thank_you(item_id: str) -> dict[str, Any]:
-    from memorybox.historian_capture import HistorianCaptureError, send_thank_you_if_enabled
+def hc_thank_you(item_id: str, body: dict[str, Any] | None = None) -> dict[str, Any]:
+    from memorybox.historian_capture import (
+        HistorianCaptureError,
+        send_thank_you_if_enabled,
+        thank_you_preview_body,
+    )
 
+    extra = str((body or {}).get("extra_text") or "").strip()
+    canned = thank_you_preview_body()
+    send_body = f"{canned}\n\n{extra}".strip() if extra else canned
     try:
-        return send_thank_you_if_enabled(item_id)
+        return send_thank_you_if_enabled(item_id, body=send_body)
     except HistorianCaptureError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -4664,3 +4730,32 @@ def hc_unmatched(limit: int = Query(100, ge=1, le=500)) -> dict[str, Any]:
     from memorybox.historian_capture import list_unmatched_items
 
     return {"items": list_unmatched_items(limit=limit)}
+
+
+@app.get("/historian-capture/connection-probe")
+def hc_connection_probe() -> dict[str, Any]:
+    from memorybox.historian_capture import connection_probe
+
+    return connection_probe()
+
+
+@app.get("/historian-capture/thank-you/preview")
+def hc_thank_you_preview() -> dict[str, Any]:
+    from memorybox.historian_capture import thank_you_preview_body
+
+    return {"body": thank_you_preview_body()}
+
+
+@app.post("/historian-capture/items/{item_id}/promote-artifact")
+def hc_promote_artifact(item_id: str, body: dict[str, Any]) -> dict[str, Any]:
+    from memorybox.historian_capture import HistorianCaptureError, promote_to_artifact
+
+    try:
+        return promote_to_artifact(
+            item_id,
+            kind=str(body.get("kind") or "document"),
+            label=body.get("label"),
+            description=body.get("description"),
+        )
+    except HistorianCaptureError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc

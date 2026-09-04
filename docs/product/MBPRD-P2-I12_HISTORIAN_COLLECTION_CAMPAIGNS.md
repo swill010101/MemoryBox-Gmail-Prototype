@@ -1,6 +1,6 @@
 # MBPRD-P2-I12 — Historian Collection & Campaigns V1
 
-**Status:** PRD **LOCKED FOR PLANNING** 2026-09-03 · **BUILD AUTHORIZED S1–S4** 2026-09-03 (founder O3–O8 locked) · **S5 NOT AUTHORIZED**  
+**Status:** PRD **LOCKED** 2026-09-03 · **BUILD AUTHORIZED S1–S5** 2026-09-03 · **ACCEPTED** 2026-09-04 (Tom: “i12 is accepted”)  
 **Definition:** [MBBS-P2_INCREMENT_12_DEFINITION.md](MBBS-P2_INCREMENT_12_DEFINITION.md)  
 **Roadmap:** [MBRM-001B](MBRM-001B_P2_HISTORIAN_COLLECTION_AND_CAMPAIGNS.md)  
 **Domain:** [MBDC-P2-I12_DOMAIN_MODEL.md](MBDC-P2-I12_DOMAIN_MODEL.md)  
@@ -345,8 +345,26 @@ See [MBMP-P2-I12_MIGRATION_REPLAY.md](MBMP-P2-I12_MIGRATION_REPLAY.md).
 
 S1–S4 **BUILD AUTHORIZED** 2026-09-03 on branch `cursor/p2-i12-s1-s4-implementation-7f27`.
 
-**S5 NOT AUTHORIZED** — no live FlightSim prove, real email, credential changes, deployment, or Artifact promotion without explicit founder authorization.
+S5 **BUILD AUTHORIZED** 2026-09-03 — live Historian Capture Gmail adapter (`memorybox@marvinbot.net`), Artifact promotion, Archive Health unmatched integration, staged `--flightsim` prove (Stage 1 connection → Stage 2 single round-trip → Stage 3 acceptance campaign). MarvinCapture SQLite replay remains optional/deferred.
+
+FlightSim prove:
+
+```bash
+export MEMORYBOX_P1_RUNTIME_HOST=1
+export MEMORYBOX_HC_GMAIL_CREDENTIALS=config/historian_capture_gmail_credentials.json
+export MEMORYBOX_HC_GMAIL_TOKEN=config/historian_capture_gmail_token.json
+export MEMORYBOX_HC_USER_EMAIL=memorybox@marvinbot.net
+# Stage 1 only:
+python3 -m memorybox prove-historian-capture --flightsim --slice s5
+# Stage 2 (after Stage 1 passes):
+export MEMORYBOX_HC_FLIGHTSIM_STAGE=2
+export MEMORYBOX_HC_FLIGHTSIM_RECIPIENT=tom@example.com
+python3 -m memorybox prove-historian-capture --flightsim --slice s5
+# Stage 3 (after Stage 2 passes):
+export MEMORYBOX_HC_FLIGHTSIM_STAGE=3
+python3 -m memorybox prove-historian-capture --flightsim --slice s5
+```
 
 ---
 
-**PLANNING LOCKED 2026-09-03.**
+**PLANNING LOCKED 2026-09-03 · S5 BUILD AUTHORIZED 2026-09-03.**

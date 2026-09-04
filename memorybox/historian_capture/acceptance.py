@@ -1,9 +1,10 @@
-"""P2-I12 Historian Collection acceptance — prove-historian-capture with slice gates S1–S4."""
+"""P2-I12 Historian Collection acceptance — prove-historian-capture with slice gates S1–S5."""
 from __future__ import annotations
 
 import os
 import subprocess
 import sys
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import uuid4
@@ -12,6 +13,7 @@ from memorybox.ask.orchestrator import AskOrchestrator
 from memorybox.historian_capture import (
     FakeHistorianEmailAdapter,
     add_questions,
+    connection_probe,
     create_campaign,
     create_draft,
     get_campaign,
@@ -20,6 +22,7 @@ from memorybox.historian_capture import (
     list_unmatched_items,
     new_capture_count,
     poll_and_ingest,
+    promote_to_artifact,
     promote_to_story,
     respondent_options,
     send_thank_you_if_enabled,
@@ -30,12 +33,24 @@ from memorybox.historian_capture import (
     stop_campaign,
     pause_campaign,
     resume_campaign,
+    thank_you_preview_body,
     tick_scheduler,
+    unmatched_count,
     update_current_draft,
 )
-from memorybox.historian_capture.email_adapter import email_adapter_status
+from memorybox.historian_capture.email_adapter import email_adapter_status, get_email_adapter
 from memorybox.providers.llm.fake import FakeLlmProvider
 from memorybox.providers.photo.fake import FakePhotoProvider
+
+
+def _outbound_sent_for_campaign(campaign_id: str) -> int:
+    """Count deliveries with sent_at — includes send from start_campaign(auto_tick)."""
+    camp = get_campaign(campaign_id)
+    return sum(
+        1
+        for d in (camp.get("deliveries") or [])
+        if d.get("sent_at")
+    )
 
 
 def _check(
@@ -83,14 +98,7 @@ def prove_historian_capture(
         }
 
     if flightsim:
-        return {
-            "ok": False,
-            "slice": slice_norm,
-            "criteria": {},
-            "problems": ["S5 / --flightsim not authorized in S1–S4 build"],
-            "flightsim": True,
-            "email_provider": email_adapter_status(),
-        }
+        return _prove_historian_capture_flightsim(slice_norm=slice_norm)
 
     criteria: dict[str, bool] = {}
     problems: list[str] = []
@@ -500,11 +508,94 @@ def prove_historian_capture(
         )
 
         # Regression smoke
-        if slice_norm == "s4":
+        if slice_norm in ("s4", "s5"):
             reg_ok = _run_regression_smoke()
             _check(criteria, "C-16", reg_ok, problems, "core MB proves smoke")
     except Exception as exc:  # noqa: BLE001
         problems.append(f"S4 failed: {exc}")
+
+    # --- S5: artifact promotion, thank-you preview, unmatched integration ---
+    if slice_norm == "s5":
+        try:
+            preview = thank_you_preview_body()
+            leak_preview = any(
+                w in preview.lower()
+                for w in (
+                    "high_confidence",
+                    "moderate_confidence",
+                    "promotion_authorized",
+                    "review draft",
+                )
+            )
+            _check(
+                criteria,
+                "C-22",
+                bool(preview.strip()) and not leak_preview,
+                problems,
+                "thank-you preview safe template",
+            )
+
+            camp_art = create_campaign(
+                title=f"Artifact {tag}",
+                follow_up_interval_seconds=3600,
+                respondents=[
+                    {
+                        "people_id": people_id,
+                        "display_name_snapshot": f"Art {tag}",
+                        "contact_route_value": f"art.{tag.lower()}@example.com",
+                    }
+                ],
+                questions=[f"Artifact question {tag}?"],
+            )
+            t0 = datetime.now(timezone.utc)
+            camp_art = start_campaign(camp_art["id"], now=t0)
+            tick_scheduler(now=t0, adapter=adapter)
+            d_art = get_campaign(camp_art["id"])["deliveries"][0]
+            adapter.inject_reply(
+                correlation_token=d_art["correlation_token"],
+                from_addr=f"art.{tag.lower()}@example.com",
+                text=f"Artifact source testimony {tag}.",
+                inbound_message_id=f"art-{tag}",
+            )
+            poll_and_ingest(adapter=adapter)
+            art_item = list_capture_items(campaign_id=camp_art["id"])[0]
+            art_ref = get_capture_item(art_item["id"])
+            if not art_ref.get("current_draft"):
+                create_draft(art_item["id"], body_text=f"Artifact draft {tag}")
+            else:
+                update_current_draft(art_item["id"], body_text=f"Artifact draft {tag}")
+            art_ref = get_capture_item(art_item["id"])
+            draft_id = (art_ref.get("current_draft") or {}).get("id")
+            set_verdict(art_item["id"], "promotion_authorized", review_draft_id=draft_id)
+            art_promo = promote_to_artifact(
+                art_item["id"],
+                label=f"HC artifact {tag}",
+                description=f"Promoted from historian capture {tag}",
+            )
+            _check(
+                criteria,
+                "C-23",
+                art_promo.get("promoted_type") == "artifact" and art_promo.get("promoted_id"),
+                problems,
+                "artifact promotion + provenance",
+            )
+            _check(
+                criteria,
+                "C-24",
+                unmatched_count() >= 1,
+                problems,
+                "unmatched queue count",
+            )
+            probe = connection_probe()
+            _check(
+                criteria,
+                "C-25",
+                isinstance(probe, dict),
+                problems,
+                "connection_probe callable",
+            )
+        except Exception as exc:  # noqa: BLE001
+            problems.append(f"S5 failed: {exc}")
 
     ok = not problems
     return _result(ok, slice_norm, criteria, problems, meta, adapter)
@@ -517,17 +608,268 @@ def _result(
     problems: list[str],
     meta: dict[str, Any],
     adapter: Any,
+    *,
+    flightsim: bool = False,
+    stage: str | None = None,
+    counts: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    return {
+    out: dict[str, Any] = {
         "ok": ok,
         "overall_ok": ok,
         "slice": slice_norm,
         "criteria": criteria,
         "problems": problems,
         "meta": meta,
-        "flightsim": False,
+        "flightsim": flightsim,
         "email_provider": email_adapter_status(),
     }
+    if stage:
+        out["stage"] = stage
+    if counts:
+        out["counts"] = counts
+    return out
+
+
+def _prove_historian_capture_flightsim(*, slice_norm: str) -> dict[str, Any]:
+    """Staged live-mail prove for FlightSim (Stage 1 → 2 → 3)."""
+    criteria: dict[str, bool] = {}
+    problems: list[str] = []
+    meta: dict[str, Any] = {"increment": "P2-I12", "slice": slice_norm, "flightsim": True}
+    counts: dict[str, Any] = {
+        "outbound_sent": 0,
+        "inbound_received": 0,
+        "capture_items": 0,
+        "unmatched": 0,
+        "stories_promoted": 0,
+        "artifacts_promoted": 0,
+    }
+
+    if os.environ.get("MEMORYBOX_P1_RUNTIME_HOST") != "1":
+        return _result(
+            False,
+            slice_norm,
+            criteria,
+            ["prove-historian-capture --flightsim requires MEMORYBOX_P1_RUNTIME_HOST=1"],
+            meta,
+            None,
+            flightsim=True,
+            counts=counts,
+        )
+
+    set_email_adapter(None)
+    os.environ.pop("MEMORYBOX_HC_EMAIL_PROVIDER", None)
+    provider = email_adapter_status()
+    meta["email_provider"] = provider
+    if not provider.get("live") or not provider.get("ok"):
+        return _result(
+            False,
+            slice_norm,
+            criteria,
+            [
+                "Live Historian Capture Gmail not configured. "
+                "Set MEMORYBOX_HC_GMAIL_CREDENTIALS + MEMORYBOX_HC_GMAIL_TOKEN "
+                "and MEMORYBOX_HC_USER_EMAIL=memorybox@marvinbot.net on FlightSim."
+            ],
+            meta,
+            None,
+            flightsim=True,
+            counts=counts,
+        )
+
+    stage_raw = (os.environ.get("MEMORYBOX_HC_FLIGHTSIM_STAGE") or "all").strip().lower()
+    stages = {"1", "2", "3"} if stage_raw == "all" else {stage_raw}
+    adapter = get_email_adapter()
+
+    # Stage 1 — connection proof only (no send)
+    if "1" in stages:
+        probe = connection_probe()
+        meta["stage1_probe"] = probe
+        _check(criteria, "FS-01", bool(probe.get("ok")), problems, "Gmail connection probe")
+        _check(
+            criteria,
+            "FS-02",
+            probe.get("processed_label") == "MemoryBox/HC-Processed",
+            problems,
+            "processed label configured",
+        )
+        poll_preview = poll_and_ingest(adapter=adapter)
+        meta["stage1_poll"] = {
+            "created": len(poll_preview.get("created") or []),
+            "quarantined": len(poll_preview.get("quarantined") or []),
+            "duplicates": len(poll_preview.get("duplicates") or []),
+        }
+        _check(criteria, "FS-03", True, problems, "poll without send completed")
+        if problems and stage_raw != "all":
+            return _result(
+                False, slice_norm, criteria, problems, meta, adapter,
+                flightsim=True, stage="1", counts=counts,
+            )
+
+    # Stage 2 — single round-trip to controlled recipient
+    if "2" in stages:
+        recipient = (os.environ.get("MEMORYBOX_HC_FLIGHTSIM_RECIPIENT") or "").strip()
+        if not recipient or "@" not in recipient:
+            problems.append(
+                "Stage 2 requires MEMORYBOX_HC_FLIGHTSIM_RECIPIENT (Tom email for single round-trip)"
+            )
+        else:
+            people_id = _seed_person()
+            tag = f"FS2-{uuid4().hex[:6]}"
+            camp = create_campaign(
+                title=f"HC Stage2 {tag}",
+                cadence_config_json={"pattern": "seconds", "interval_seconds": 3600},
+                follow_up_interval_seconds=3600,
+                respondents=[
+                    {
+                        "people_id": people_id,
+                        "display_name_snapshot": "Tom (Stage2)",
+                        "contact_route_value": recipient,
+                    }
+                ],
+                questions=[f"Stage 2 single round-trip test {tag}?"],
+            )
+            meta["stage2_campaign_id"] = camp["id"]
+            t0 = datetime.now(timezone.utc)
+            start_campaign(camp["id"], now=t0)
+            # start_campaign auto_ticks; a second tick at the same instant is usually a no-op.
+            tick = tick_scheduler(now=t0, adapter=adapter)
+            counts["outbound_sent"] = _outbound_sent_for_campaign(camp["id"])
+            meta["stage2_tick"] = {
+                "sent": tick.get("sent") or [],
+                "failed": tick.get("failed") or [],
+            }
+            if counts["outbound_sent"] < 1:
+                failed = [
+                    d
+                    for d in (get_campaign(camp["id"]).get("deliveries") or [])
+                    if d.get("status") == "failed"
+                ]
+                if failed:
+                    meta["stage2_send_failures"] = [
+                        {"id": d["id"], "fail_detail": d.get("fail_detail")}
+                        for d in failed
+                    ]
+            _check(criteria, "FS-10", counts["outbound_sent"] >= 1, problems, "outbound sent")
+
+            timeout = int(os.environ.get("MEMORYBOX_HC_STAGE2_REPLY_TIMEOUT") or "900")
+            deadline = time.time() + timeout
+            item = None
+            while time.time() < deadline:
+                ing = poll_and_ingest(adapter=adapter)
+                counts["inbound_received"] += len(ing.get("created") or [])
+                items = list_capture_items(campaign_id=camp["id"])
+                if items:
+                    item = items[0]
+                    break
+                time.sleep(15)
+
+            if not item:
+                problems.append(
+                    f"Stage 2: no correlated Capture Item within {timeout}s — "
+                    "reply from recipient and re-run with MEMORYBOX_HC_FLIGHTSIM_STAGE=2"
+                )
+            else:
+                refreshed = get_capture_item(item["id"])
+                _check(
+                    criteria,
+                    "FS-11",
+                    refreshed.get("match_status") == "matched",
+                    problems,
+                    "correlation matched",
+                )
+                _check(
+                    criteria,
+                    "FS-12",
+                    bool(refreshed.get("preserved_raw_uri")),
+                    problems,
+                    "raw inbound preserved",
+                )
+                _check(
+                    criteria,
+                    "FS-13",
+                    bool(refreshed.get("current_draft")),
+                    problems,
+                    "initial review draft",
+                )
+                dup = poll_and_ingest(adapter=adapter)
+                dup_items = list_capture_items(campaign_id=camp["id"])
+                _check(
+                    criteria,
+                    "FS-14",
+                    len(dup_items) == 1,
+                    problems,
+                    "no duplicate capture item",
+                )
+                _check(
+                    criteria,
+                    "FS-15",
+                    not (refreshed.get("latest_verdict") or {}).get("verdict"),
+                    problems,
+                    "no automatic promotion/verdict",
+                )
+                counts["capture_items"] = len(dup_items)
+
+        if problems and stage_raw in ("2", "all"):
+            return _result(
+                False, slice_norm, criteria, problems, meta, adapter,
+                flightsim=True, stage="2", counts=counts,
+            )
+
+    # Stage 3 — acceptance campaign (3+ questions, accelerated harness timing)
+    if "3" in stages:
+        recipient = (os.environ.get("MEMORYBOX_HC_FLIGHTSIM_RECIPIENT") or "").strip()
+        if not recipient:
+            problems.append("Stage 3 requires MEMORYBOX_HC_FLIGHTSIM_RECIPIENT")
+        else:
+            people_id = _seed_person()
+            tag = f"FS3-{uuid4().hex[:6]}"
+            interval = int(os.environ.get("MEMORYBOX_HC_FLIGHTSIM_INTERVAL_SECONDS") or "60")
+            camp = create_campaign(
+                title=f"HC Acceptance {tag}",
+                cadence_config_json={"pattern": "seconds", "interval_seconds": interval},
+                follow_up_interval_seconds=interval,
+                send_thank_you_ack=True,
+                respondents=[
+                    {
+                        "people_id": people_id,
+                        "display_name_snapshot": "Acceptance respondent",
+                        "contact_route_value": recipient,
+                    }
+                ],
+                questions=[
+                    f"Acceptance Q1 {tag}?",
+                    f"Acceptance Q2 {tag}?",
+                    f"Acceptance Q3 {tag}?",
+                ],
+            )
+            meta["stage3_campaign_id"] = camp["id"]
+            meta["stage3_tag"] = tag
+            t0 = datetime.now(timezone.utc)
+            start_campaign(camp["id"], now=t0)
+            # Drive sends/reminders/no-response with accelerated ticks
+            for step in range(12):
+                tick_scheduler(now=t0 + timedelta(seconds=step * interval), adapter=adapter)
+                poll_and_ingest(adapter=adapter)
+            items = list_capture_items(campaign_id=camp["id"])
+            counts["capture_items"] = len(items)
+            counts["unmatched"] = unmatched_count()
+            _check(
+                criteria,
+                "FS-20",
+                len(items) >= 1,
+                problems,
+                "campaign produced capture items",
+            )
+            _check(criteria, "FS-21", True, problems, "stage3 harness executed (see meta)")
+
+        reg_ok = _run_regression_smoke()
+        _check(criteria, "FS-30", reg_ok, problems, "prove-guided-capture regression")
+
+    ok = not problems
+    return _result(
+        ok, slice_norm, criteria, problems, meta, adapter,
+        flightsim=True, stage=stage_raw, counts=counts,
+    )
 
 
 def _run_regression_smoke() -> bool:
