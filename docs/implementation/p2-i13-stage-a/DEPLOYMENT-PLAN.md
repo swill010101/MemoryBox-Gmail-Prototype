@@ -167,3 +167,7 @@ See [ASK-CONTEXT-CORRECTION.md](ASK-CONTEXT-CORRECTION.md) for the new `clear al
 ## Fragment correction proposal prepared
 
 Tom approved preparing the bounded correction and asked to consider restarting Learn and wiping fragments. [The proposal](FRAGMENT-CORRECTION-PROPOSAL.md) recommends an evidence-preserving source-only projection first, explains why rerunning the unfixed grouper can recreate fragments, and separates any later Learn attempt from publication. No deletion or processing has started.
+
+## Gallery lineage correlated
+
+[Source-specific Gallery correlation and offline preview](FRAGMENT-GALLERY-CORRELATION.md): seven supplied rendered card IDs exactly match the traced native half-second moments. The full trace supports two provisional sample groups retaining all 79 moments, with the twenty-second gap preserved. The earlier fifteen-card count is not reconstructed by this later capture. No runtime correction or processing has started.
