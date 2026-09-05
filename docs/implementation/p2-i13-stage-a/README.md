@@ -56,3 +56,5 @@ Before advancing: review the corrected Stage A code and transcription evidence b
 ## 2026-09-05 correction
 
 See [ANNOTATION-WORKFLOW.md](ANNOTATION-WORKFLOW.md). Tom confirmed membership and rejected manual owner-truth preparation as the bootstrap requirement. The corrected admission separates evidence generation from acceptance/learning. FlightSim passed the original 22 tests after Node installation and returned a read-only repeatable-read inventory at 2026-09-05 10:18:58 UTC with the same reported table counts. These are operator-reported checks of 686a11a, not validation of this correction on FlightSim. Current offline regression results are in test-proof.json.
+
+The correction at `1ecad04e8bf8f798181bbce4447b4941d1df8947` is founder-approved. Full I13 acceptance remains pending, including the explicit [voice acceptance checklist](ACCEPTANCE-CHECKLIST.md). Next: prepare the corrected FlightSim worktree and run its 26 offline tests plus read-only preview.

@@ -13,3 +13,7 @@ Forbidden in this authorization: recognition, transcription, cleanup, remediatio
 Tom confirmed membership of the 22 proposed sources, then clarified that owner annotations must be made inside MB by selecting transcript text/face evidence and assigning a Person; MB retains the evidence timestamps. Manual filename/time/name worksheets are not a prerequisite. Tom authorized correcting the gate and deployment plan.
 
 Separate bounded evidence generation from owner-confirmed acceptance/learning. Membership approval is not processing approval. No migration, runtime processing, deployment, or later annotation implementation is authorized by this correction. Existing immutable transcript/overlay and retirement decisions remain in force.
+
+## Corrected Stage A approved - 2026-09-05
+
+Tom approved correction commit `1ecad04e8bf8f798181bbce4447b4941d1df8947` and directed proceeding to the next step with voice recognition explicitly included in acceptance. This records approval of the correction, not successful full I13 voice acceptance. Next is preparing the corrected FlightSim checkout and verifying its offline tests and read-only preview. Tom remains the deploy operator. Separate migration/processing gates remain; no runtime action was performed by this documentation update.

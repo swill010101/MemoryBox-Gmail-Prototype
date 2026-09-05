@@ -122,3 +122,7 @@ This is a step-by-step proposal, not deployment authorization. The agent perform
 ## Updating the prepared FlightSim checkout for this correction
 
 The already prepared release at 686a11a remains preserved. After founder review of the correction commit, fetch the branch and create a new unused detached worktree at the exact corrected SHA (for example `C:\MemoryBox-releases\p2-i13-stage-a-correction`). Do not repeat `worktree add` against the existing directory or assume a branch fetch updates a detached checkout. Run the corrected offline tests there; expected count is 26. Preserve FlightSim's staged `application/marvin_capture` dependency and current service paths; resolve that existing live I12 dependency before any deployment switch. No service switch is authorized by these preparation instructions.
+
+## Current next step after correction approval
+
+Tom approved correction `1ecad04e8bf8f798181bbce4447b4941d1df8947`. Prepare that exact commit in the new correction worktree described above; rerun the 26 offline tests and Step 7 preview. Review ACCEPTANCE-CHECKLIST.md: actual bounded voice recognition, including off-camera speech, remains required for full I13 acceptance. A transcription-only bootstrap is not voice acceptance. Complete the migration backup/pending-schema and live I12 dependency checks before requesting the separate migration/locked-deployment decision.
