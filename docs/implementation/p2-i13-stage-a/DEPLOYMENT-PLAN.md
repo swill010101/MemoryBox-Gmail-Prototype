@@ -138,3 +138,7 @@ Tom's read-only output confirms AI trace and all 12 expected I12 tables exist; i
 ## Backup/restore preparation
 
 Follow [BACKUP-RESTORE-PLAN.md](BACKUP-RESTORE-PLAN.md), starting with client/storage readiness. Restore verification uses a new test database and stops before migration.
+
+## Existing startmb launch arrangement
+
+See [LOCKED-LAUNCH-PLAN.md](LOCKED-LAUNCH-PLAN.md). The native serve command auto-migrates and performs trace cleanup/bootstrap; do not use it as a read-only or migration-free preflight. Resolve effective source/derived/config paths through preflight-launch.py before completing a separate locked launcher. The original launcher and I12 files remain untouched.
