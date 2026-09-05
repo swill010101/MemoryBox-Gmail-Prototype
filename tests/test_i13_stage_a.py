@@ -278,6 +278,18 @@ class HttpTests(unittest.TestCase):
             self.assertEqual(c.post('/people/sync/immich').status_code,403)
             self.assertEqual(calls,[]);self.assertEqual(c.get('/historian-capture/ui').status_code,200)
 
+class MigrationTests(unittest.TestCase):
+    def test_i13_is_pending_after_reported_flightsim_history_without_changing_sql(self):
+        paths=sorted((ROOT/'memorybox/migrations').glob('[0-9][0-9][0-9]_*.sql'))
+        versions=[p.name.split('_',1)[0] for p in paths]
+        self.assertEqual(len(versions),len(set(versions)))
+        applied={f"{i:03}" for i in range(1,30)}
+        self.assertEqual([p.name for p in paths if p.name.split('_',1)[0] not in applied],
+                         ['030_p2_i13_scope_admission.sql'])
+        old=subprocess.check_output(['git','show','7ac838d76a888aff794eb1c381113e697f3d8e3d:memorybox/migrations/026_p2_i13_scope_admission.sql'],cwd=ROOT)
+        new=(ROOT/'memorybox/migrations/030_p2_i13_scope_admission.sql').read_bytes()
+        self.assertEqual(new.replace(b'\r\n',b'\n'),old.replace(b'\r\n',b'\n'))
+
 class PlaybackTests(unittest.TestCase):
     def test_real_binder_seeks_and_never_clamps_or_restarts(self):
         js=(ROOT/'memorybox/explore/static/explore.js').read_text(encoding='utf-8')

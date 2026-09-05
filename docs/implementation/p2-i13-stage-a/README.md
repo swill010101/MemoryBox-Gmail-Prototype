@@ -4,7 +4,7 @@ Base: accepted assessment `bc2b967274d51ffce356a12895df2cd8f77d73b0`.
 Branch: `codex/p2-i13-stage-a`. Worktree: `C:/MemoryBox-worktrees/p2-i13-assessment`.
 Founder authorization and confirmed playback/transcript/retirement decisions are recorded in [FOUNDER-AUTHORIZATION.md](FOUNDER-AUTHORIZATION.md).
 
-**Stage A code is submitted for review; processing remains locked. Migration 026 is authored and unapplied. Tom confirmed the exact 22-source membership. Owner truth will be created through MB annotation, not manual prerequisite worksheets. The transcription-only evidence proposal requires separate processing review/start; membership approval does not authorize processing.**
+**Stage A code is submitted for review; processing remains locked. Migration 030 is authored and unapplied. Tom confirmed the exact 22-source membership. Owner truth will be created through MB annotation, not manual prerequisite worksheets. The transcription-only evidence proposal requires separate processing review/start; membership approval does not authorize processing.**
 
 ## Changed
 
@@ -58,3 +58,7 @@ Before advancing: review the corrected Stage A code and transcription evidence b
 See [ANNOTATION-WORKFLOW.md](ANNOTATION-WORKFLOW.md). Tom confirmed membership and rejected manual owner-truth preparation as the bootstrap requirement. The corrected admission separates evidence generation from acceptance/learning. FlightSim passed the original 22 tests after Node installation and returned a read-only repeatable-read inventory at 2026-09-05 10:18:58 UTC with the same reported table counts. These are operator-reported checks of 686a11a, not validation of this correction on FlightSim. Current offline regression results are in test-proof.json.
 
 The correction at `1ecad04e8bf8f798181bbce4447b4941d1df8947` is founder-approved. Full I13 acceptance remains pending, including the explicit [voice acceptance checklist](ACCEPTANCE-CHECKLIST.md). Next: prepare the corrected FlightSim worktree and run its 26 offline tests plus read-only preview.
+
+## Migration collision correction
+
+FlightSim subsequently passed all 26 correction tests and the expected evidence preview. Its read-only migration ledger revealed I13 number 026 was already occupied by unrelated communications SQL. I13 is now 030 (unchanged SQL); see [MIGRATION-RECONCILIATION.md](MIGRATION-RECONCILIATION.md) and the updated deployment preflight. Existing AI trace and I12 tables were reported present; complete schema/workflow compatibility remains unproven. This new correction requires review before deployment.

@@ -4,7 +4,7 @@ This is a step-by-step proposal, not deployment authorization. The agent perform
 
 ## Gate 1 - Review and prepare, without running the application
 
-1. Review `FOUNDER-AUTHORIZATION.md`, `README.md`, the code diff, migration 026, runtime/source inventories, tests, and playback screenshot. Record the exact Stage A commit accepted by the founder. Do not use a moving branch tip as the deployment identity.
+1. Review `FOUNDER-AUTHORIZATION.md`, `README.md`, the code diff, migration 030, runtime/source inventories, tests, and playback screenshot. Record the exact Stage A commit accepted by the founder. Do not use a moving branch tip as the deployment identity.
 2. On FlightSim, identify the current service process/task names, working directories, Python environments, configured provider endpoints and source roots. Preserve the existing deployment and its environment. Keep passwords/tokens out of logs and Git. The dev machine is Toms-Desktop; target PostgreSQL is FlightSim. Source roots confirmed by SMB are `\\flightsim\photos\Home Videos` and `\\flightsim\photos\Videos`; the latter was empty. The dev machine's P: points at media-server, so do not infer a FlightSim drive from this machine.
 3. Inspect Git and obtain the reviewed branch. These commands do not switch the existing deployment:
 
@@ -61,17 +61,17 @@ This is a step-by-step proposal, not deployment authorization. The agent perform
 
 ## Gate 2 - Separate approval to apply migration and deploy locked code
 
-8. Obtain explicit approval to apply **026_p2_i13_scope_admission.sql** and deploy the reviewed code in locked mode. Stage A implementation authorization did not grant this approval.
+8. Obtain explicit approval to apply **030_p2_i13_scope_admission.sql** and deploy the reviewed code in locked mode. Stage A implementation authorization did not grant this approval.
 9. Before switching service code, use the existing operator procedures to stop recognition/speech scheduling and old processing workers. Record the exact processes stopped and preserve current job records. Do not mark the 72 historical running rows failed/complete, reset the queue, or migrate/quarantine observations. The inventory status is not proof that any particular process is alive. Old binaries do not enforce I13 gates; leaving them running would bypass the new controls.
-10. Take a consistent PostgreSQL backup using established FlightSim backup procedures (`pg_dump` or the existing backup mechanism), and verify restore to a separate disposable database. Preserve relevant service configuration and the old release path. No source media or derivative cleanup is needed. Keep backups outside Git. Schema migration 026 is additive: new admission/event/unit/attempt tables, nullable queue admission stamps, indexes, and immutable-plan trigger; it does not stamp or alter old queue rows.
-11. Check `schema_migrations` directly in a read-only transaction. Do not use `memorybox.migrate.pending()` as a read-only probe: it runs schema bootstrap. Verify that **026 is the only unapplied migration** in this checkout. If other migrations are pending, stop and reconcile them with the founder; do not apply them incidentally.
+10. Take a consistent PostgreSQL backup using established FlightSim backup procedures (`pg_dump` or the existing backup mechanism), and verify restore to a separate disposable database. Preserve relevant service configuration and the old release path. No source media or derivative cleanup is needed. Keep backups outside Git. Schema migration 030 is additive: new admission/event/unit/attempt tables, nullable queue admission stamps, indexes, and immutable-plan trigger; it does not stamp or alter old queue rows.
+11. Check `schema_migrations` directly in a read-only transaction. Do not use `memorybox.migrate.pending()` as a read-only probe: it runs schema bootstrap. Verify that **030 is the only unapplied migration** in this checkout. If other migrations are pending, stop and reconcile them with the founder; do not apply them incidentally.
 12. Only after steps 8-11 pass, run the repository migrator in the reviewed release environment:
 
    ```powershell
    python -B -m memorybox migrate
    ```
 
-   Expected output: only `026_p2_i13_scope_admission.sql`. Record the result and schema version. If it fails, stop; do not manually patch runtime tables or continue serving new processing code. This command is documented here for Tom's future approved deployment and was **not executed** by the agent.
+   Expected output: only `030_p2_i13_scope_admission.sql`. Record the result and schema version. If it fails, stop; do not manually patch runtime tables or continue serving new processing code. This command is documented here for Tom's future approved deployment and was **not executed** by the agent.
 13. Point the service launch configuration at the new release, preserve all existing runtime/source/provider locations, and retain:
 
    ```powershell
@@ -116,7 +116,7 @@ This is a step-by-step proposal, not deployment authorization. The agent perform
 ## Rollback / hold
 
 21. If locked deployment fails, keep drains disabled and the admission ID unset. Stop the new processing services using the established operator procedure. Restore service routing to the preserved prior release only after ensuring its old drains/scheduled archive passes will remain disabled; old code lacks I13 admission enforcement. Do not run `startmb` blindly on rollback.
-22. Prefer leaving additive migration 026 and its audit/history in place; older code ignores these fields. Do not drop new tables/columns, erase admission history, delete generated files, reset queues, or restore an old database over newer data without a separate reviewed recovery decision. For an active later grant, `python -B -m memorybox.processing stop --id <UUID> --reference <STOP_DECISION>` closes new work admission; it is not a data rollback or forced cancellation of in-flight work.
+22. Prefer leaving additive migration 030 and its audit/history in place; older code ignores these fields. Do not drop new tables/columns, erase admission history, delete generated files, reset queues, or restore an old database over newer data without a separate reviewed recovery decision. For an active later grant, `python -B -m memorybox.processing stop --id <UUID> --reference <STOP_DECISION>` closes new work admission; it is not a data rollback or forced cancellation of in-flight work.
 23. Report exact release SHA, migration state, service environment/paths (without secrets), gate/admission IDs and digest, observed checks, failures and the next founder decision. Preserve I12 without redesign or migration of its records.
 
 ## Updating the prepared FlightSim checkout for this correction
@@ -126,3 +126,11 @@ The already prepared release at 686a11a remains preserved. After founder review 
 ## Current next step after correction approval
 
 Tom approved correction `1ecad04e8bf8f798181bbce4447b4941d1df8947`. Prepare that exact commit in the new correction worktree described above; rerun the 26 offline tests and Step 7 preview. Review ACCEPTANCE-CHECKLIST.md: actual bounded voice recognition, including off-camera speech, remains required for full I13 acceptance. A transcription-only bootstrap is not voice acceptance. Complete the migration backup/pending-schema and live I12 dependency checks before requesting the separate migration/locked-deployment decision.
+
+## Migration collision correction - 2026-09-05
+
+This section supersedes the earlier next-step commit reference for deployment. Do not deploy 686a11a or 1ecad04: their I13 migration number 026 collides with FlightSim history. The review correction renames only the unapplied I13 migration to 030, with identical SQL bytes. Review and prepare the correction commit in a new unused worktree, then run 27 offline tests and the unchanged evidence preview.
+
+Before any migration approval, run `python -B docs/implementation/p2-i13-stage-a/preflight-migrations.py` using FlightSim's existing database environment. This does not import the app or migrator and issues only read-only metadata queries. Expected pending list is only 030_p2_i13_scope_admission.sql, with historical filename differences at 009 and 025 reported explicitly. A new collision at 030, missing local migration files, or any additional pending migration blocks this deployment procedure. Do not edit schema_migrations or replay 009/025 to hide differences.
+
+Tom's read-only output confirms AI trace and all 12 expected I12 tables exist; it does not prove their columns/constraints or live I12 workflow. Preserve existing I12 schema and code. Review the metadata exported by preflight, verify backups/restore and the staged live Capture dependency, and obtain migration/locked-deployment approval before proceeding. The migrator remains number-based; this correction does not claim a general migration identity redesign. See MIGRATION-RECONCILIATION.md.

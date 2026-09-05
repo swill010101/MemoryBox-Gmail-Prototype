@@ -2,6 +2,7 @@ docs/implementation/p2-i13-stage-a/ACCEPTANCE-CHECKLIST.md
 docs/implementation/p2-i13-stage-a/ANNOTATION-WORKFLOW.md
 docs/implementation/p2-i13-stage-a/DEPLOYMENT-PLAN.md
 docs/implementation/p2-i13-stage-a/FOUNDER-AUTHORIZATION.md
+docs/implementation/p2-i13-stage-a/MIGRATION-RECONCILIATION.md
 docs/implementation/p2-i13-stage-a/README.md
 docs/implementation/p2-i13-stage-a/bounded-manifest-proposal.json
 docs/implementation/p2-i13-stage-a/browser-playback-proof.json
@@ -10,6 +11,7 @@ docs/implementation/p2-i13-stage-a/cartesian-reconciliation.json
 docs/implementation/p2-i13-stage-a/changed-files.txt
 docs/implementation/p2-i13-stage-a/inventory-runtime.py
 docs/implementation/p2-i13-stage-a/inventory-selected-sources.py
+docs/implementation/p2-i13-stage-a/preflight-migrations.py
 docs/implementation/p2-i13-stage-a/runtime-inventory.json
 docs/implementation/p2-i13-stage-a/scope-plan-schema.md
 docs/implementation/p2-i13-stage-a/source-candidates.json
@@ -22,7 +24,7 @@ hvrt/scripts/review_app.py
 memorybox/__main__.py
 memorybox/app.py
 memorybox/explore/static/explore.js
-memorybox/migrations/026_p2_i13_scope_admission.sql
+memorybox/migrations/030_p2_i13_scope_admission.sql
 memorybox/person/immich_sync.py
 memorybox/processing/__init__.py
 memorybox/processing/__main__.py
