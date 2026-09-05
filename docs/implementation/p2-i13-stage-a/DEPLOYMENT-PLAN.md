@@ -195,4 +195,11 @@ Tom approved the exact 1530 source/run extension. Twelve focused tests pass; the
 
 ### Latest video modal layout correction
 
-Both source videos pass by Tom's report. The video modal clipping correction reserves visible, independently scrollable transcript space and removes the redundant moment description. See FRAGMENT-CORRECTION-IMPLEMENTATION.md for verification and deployment. Live FlightSim transcript-fit review remains pending; this does not authorize processing or complete I13 acceptance.
+Both source videos pass by Tom's report. The video modal clipping correction reserves visible, independently scrollable transcript space and removes the redundant moment description. See FRAGMENT-CORRECTION-IMPLEMENTATION.md for verification and deployment. Tom subsequently accepted this correction; record that as owner acceptance. This does not authorize processing or complete I13 acceptance.
+
+
+## Current position and next step (supersedes historical next-step notes)
+
+Tom accepted modal release 33eff43d34ecf1d4314509519bd4549a66f1befe and asked to proceed. Locked deployment and the reviewed two-source playback/presentation corrections have owner acceptance. Full Gate 2 aggregate queue/health proof is not inferred from UI acceptance. Gate 3 processing has not been authorized by this acceptance; Gate 4 remains locked.
+
+The next prepared slice is [annotation-only persistence](ANNOTATION-IMPLEMENTATION-PLAN.md). Code inspection confirms current Learn also performs recognition/queue work and current transcript replacement deletes old words. Resolve these conflicts with the accepted additive-overlay/immutable-transcript decisions before any new evidence run. The new plan gives implementation order, tests and review boundaries. No deployment is needed for this documentation update.

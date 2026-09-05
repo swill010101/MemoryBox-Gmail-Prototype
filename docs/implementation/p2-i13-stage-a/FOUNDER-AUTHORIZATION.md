@@ -31,3 +31,8 @@ Following lookup result 46089221bbb6e48c9c0a95412a8fbb94f492d132 and the explici
 ## Video modal fit correction authorized
 
 Tom reports both source videos work, but the enlarged player clips the transcript. He explicitly requests removing the evidence-description line, moving the transcript up and fitting everything inside the modal. Authorize the scoped UI correction, responsive browser verification and commit/push. Preserve playback, jump navigation, source grouping, evidence and runtime locks; no processing or runtime data changes.
+
+
+## Modal acceptance and next-step preparation
+
+Tom accepted correction 33eff43d34ecf1d4314509519bd4549a66f1befe and requested the next step. Recorded owner acceptance and prepared ANNOTATION-IMPLEMENTATION-PLAN.md after inspecting existing persistence. No approval for a new recognition/transcription run, deletion or archive start is inferred.
