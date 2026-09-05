@@ -107,6 +107,7 @@ def sample_faces_from_path(
         fps = float(cap.get(cv2.CAP_PROP_FPS) or 0) or 25.0
         frame_count = float(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
         duration = float(duration_sec or 0) or (frame_count / fps if fps else 0)
+        interval = max(MIN_INTERVAL_SEC, min(MAX_INTERVAL_SEC, (duration or 90.0) / 40.0))
         times = sample_times(duration or 90.0, max_samples=max_samples)
         for t in extra_times or []:
             try:
@@ -137,6 +138,7 @@ def sample_faces_from_path(
                 out.append(
                     {
                         "t_sec": float(t),
+                        "sample_interval_sec": interval,
                         "embedding": [float(x) for x in list(emb)],
                         "bbox": bbox,
                     }
@@ -306,6 +308,9 @@ def collect_insightface_scan_samples(
             return samples, None
     posters, err = sample_faces_from_posters(video_provider, video_external_id, times)
     if posters:
+        interval = max(MIN_INTERVAL_SEC, min(MAX_INTERVAL_SEC, (duration or 90.0) / 40.0))
+        for sample in posters:
+            sample["sample_interval_sec"] = interval
         return posters, None
     if path is None:
         return [], err or "video_file_not_found"

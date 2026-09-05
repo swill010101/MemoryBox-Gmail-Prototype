@@ -171,3 +171,7 @@ Tom approved preparing the bounded correction and asked to consider restarting L
 ## Gallery lineage correlated
 
 [Source-specific Gallery correlation and offline preview](FRAGMENT-GALLERY-CORRELATION.md): seven supplied rendered card IDs exactly match the traced native half-second moments. The full trace supports two provisional sample groups retaining all 79 moments, with the twenty-second gap preserved. The earlier fifteen-card count is not reconstructed by this later capture. No runtime correction or processing has started.
+
+## Fragment correction implemented; deployment review pending
+
+[Implementation and deployment procedure](FRAGMENT-CORRECTION-IMPLEMENTATION.md): source-only evidence navigation plus recorded-cadence grouping for future admitted scans. 65 offline tests and synthetic browser proof pass. Existing data remains intact; no recognition/Learn or migration has run. Query-limited moments stay query-limited; other sources remain outside this presentation pilot. The new start-fragment-release.ps1 helper defaults to check-only.

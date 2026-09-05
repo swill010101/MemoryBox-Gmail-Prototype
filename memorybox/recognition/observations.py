@@ -145,12 +145,18 @@ def group_assigned_into_ranges(
     observations: list[dict[str, Any]],
     *,
     gap_sec: float = RANGE_GAP_SEC,
+    barriers: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
+    # Recorded cadence only; legacy observations retain the conservative default.
     assigned = sorted(
         [o for o in observations if o.get("review_state") == "assigned" and o.get("person_id")],
         key=lambda o: float(o["t_sec"]),
     )
+    blockers = [(float(o["t_sec"]), float(o["t_sec"])) for o in observations
+                if o.get("review_state") != "assigned" or not o.get("person_id")]
+    blockers.extend((float(b["start_sec"]), float(b["end_sec"])) for b in barriers or [])
     ranges: list[dict[str, Any]] = []
+    previous: dict[str, Any] | None = None
     cur: dict[str, Any] | None = None
     for o in assigned:
         t = float(o["t_sec"])
@@ -162,8 +168,17 @@ def group_assigned_into_ranges(
                 "scores": [float(o.get("match_score") or 0)],
                 "person_id": o["person_id"],
             }
+            previous = o
             continue
-        if t - float(cur["end_sec"]) <= gap_sec:
+        cadence = o.get("sample_interval_sec")
+        prior_cadence = (previous or {}).get("sample_interval_sec")
+        allowed_gap = gap_sec
+        if isinstance(cadence, (int, float)) and cadence == prior_cadence and 0 < cadence <= 10:
+            allowed_gap = float(cadence) + 0.011  # sample_times rounds to 2 decimals
+        same_partition = all(o.get(k) == (previous or {}).get(k) for k in
+                             ("person_id", "video_provider_key", "video_external_id", "processing_run_id", "embedding_model"))
+        blocked = any(a <= t and b >= float(cur["end_sec"]) for a, b in blockers)
+        if same_partition and not blocked and t - float(cur["end_sec"]) <= allowed_gap:
             cur["end_sec"] = t
             cur["observation_ids"].append(o["id"])
             cur["scores"].append(float(o.get("match_score") or 0))
@@ -176,6 +191,7 @@ def group_assigned_into_ranges(
                 "scores": [float(o.get("match_score") or 0)],
                 "person_id": o["person_id"],
             }
+        previous = o
     if cur:
         ranges.append(cur)
     for r in ranges:

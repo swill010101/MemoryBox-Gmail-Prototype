@@ -119,7 +119,7 @@ def list_appearance_moments(
                    start_sec, end_sec, face_external_id, method, confidence,
                    confirmation_state, authority, play_url, meta_json, created_at,
                    COALESCE(status, 'accepted') AS status,
-                   model_version,
+                   model_version, processing_run_id::text, observation_ids,
                    COALESCE(evidence_lineage,
                      CASE WHEN method = 'mb_native_i8b' THEN 'mb_native_i8b' ELSE 'i1_hvrt' END
                    ) AS evidence_lineage
@@ -146,6 +146,8 @@ def list_appearance_moments(
     out = []
     for r in rows:
         d = dict(r)
+        if "observation_ids" in d:
+            d["observation_ids"] = [str(x) for x in d["observation_ids"] or []]
         if d.get("created_at") is not None:
             d["created_at"] = d["created_at"].isoformat()
         if isinstance(d.get("meta_json"), str):

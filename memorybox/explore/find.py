@@ -362,6 +362,7 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
             paused_frame=True,
             face_identity=v.get("mb_person_name") or "Unknown",
             spoken_text=v.get("spoken_text"),
+            appearance_evidence=v.get("appearance_evidence"),
         )
         if v.get("spoken_text"):
             item["preview"] = str(v.get("spoken_text"))[:160]
@@ -378,6 +379,9 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
             }
         video_raw.append(item)
 
+    from memorybox.recognition.source_moments import project_source_cards
+    video_raw = project_source_cards(video_raw)
+
     # Collapse stacked ranges on the same file (same visit / overlapping starts)
     video_kept: list[dict[str, Any]] = []
     video_slots: set[tuple[str, int]] = set()
@@ -385,6 +389,9 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
     pending_order: list[str] = []
     for it in video_raw:
         vid = str(it.get("video_external_id") or "")
+        if it.get("source_moments"):
+            video_kept.append(it)
+            continue
         if it.get("spoken_text"):
             if vid not in pending:
                 pending_order.append(vid)

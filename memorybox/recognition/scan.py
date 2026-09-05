@@ -130,6 +130,8 @@ def scan_video_for_person(
             pid = None
             uncertain += 1
         else:
+            # A sampled non-match blocks joining positive observations around it.
+            observations.append({"t_sec": t_sec, "person_id": None, "review_state": "no_match"})
             continue
         oid = insert_observation(
             video_provider_key=vpk,
@@ -143,7 +145,11 @@ def scan_video_for_person(
             embedding_model=MODEL_ID,
             exemplar_id=best.get("id") if best else None,
             processing_run_id=run_id,
-            meta={"lineage": LINEAGE_NATIVE},
+            meta={
+                "lineage": LINEAGE_NATIVE,
+                "sample_interval_sec": sample.get("sample_interval_sec"),
+                "grouping_policy": "sample-cadence-v1",
+            },
         )
         observations.append(
             {
@@ -152,9 +158,10 @@ def scan_video_for_person(
                 "person_id": pid,
                 "review_state": state,
                 "match_score": score,
+                "sample_interval_sec": sample.get("sample_interval_sec"),
             }
         )
-    ranges = group_assigned_into_ranges(observations)
+    ranges = group_assigned_into_ranges(observations, barriers=withdrawals)
     range_ids = []
     for r in ranges:
         mid = persist_native_range(

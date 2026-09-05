@@ -1,0 +1,18 @@
+{
+  "kind": "actual_source_card_and_moment_navigation_synthetic_browser",
+  "disabledBefore": true,
+  "enabledAfter": true,
+  "firstSeek": 0.5,
+  "chosenSeek": 1.5,
+  "pausedAfterSeek": true,
+  "pastEnd": true,
+  "sourceUnchanged": true,
+  "itemUnchanged": true,
+  "options": 2,
+  "cardBadge": "2 moments",
+  "limits": [
+    "Synthetic browser component, not FlightSim media",
+    "Gallery snapshot navigation covered separately; owner workflow acceptance pending"
+  ],
+  "passed": true
+}

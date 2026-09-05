@@ -328,6 +328,7 @@ class VideoHit:
     state: str | None = None
     duration_sec: float | None = None
     media_type: str | None = None
+    appearance_evidence: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -3188,6 +3189,8 @@ def _merge_overlapping_video_hits(
     """One gallery card per presence span. Stacked native writes of the same visit collapse."""
     from memorybox.recognition.process import ensure_timeslot_play_url
 
+    from memorybox.recognition.source_moments import is_pilot_evidence
+
     by_vid: dict[str, list[VideoHit]] = {}
     order: list[str] = []
     for h in hits:
@@ -3205,7 +3208,11 @@ def _merge_overlapping_video_hits(
                 merged.append(h)
                 continue
             prev = merged[-1]
-            if float(h.start_sec or 0) <= float(prev.end_sec or 0) + float(gap_sec):
+            protected = (
+                is_pilot_evidence(h.video_external_id, h.provider_key, h.appearance_evidence)
+                or is_pilot_evidence(prev.video_external_id, prev.provider_key, prev.appearance_evidence)
+            )
+            if not protected and float(h.start_sec or 0) <= float(prev.end_sec or 0) + float(gap_sec):
                 start = min(float(prev.start_sec or 0), float(h.start_sec or 0))
                 end = max(float(prev.end_sec or 0), float(h.end_sec or 0))
                 keep = h if _hit_score(h) > _hit_score(prev) else prev
@@ -3234,12 +3241,18 @@ def _dedupe_video_hits(
     Overlapping or adjacent spans on the same file become one card whose
     entry time (and poster) is the earliest start_sec — not file t=0.
     """
-    buckets: dict[tuple[str, int], VideoHit] = {}
-    order: list[tuple[str, int]] = []
+    from memorybox.recognition.source_moments import is_pilot_evidence
+
+    buckets: dict[tuple, VideoHit] = {}
+    order: list[tuple] = []
     for h in hits:
         vid = str(h.video_external_id or h.external_id or "")
         slot = int(float(h.start_sec or 0) // window_sec)
-        key = (vid, slot)
+        key = (
+            (vid, slot, h.external_id)
+            if is_pilot_evidence(vid, h.provider_key, h.appearance_evidence)
+            else (vid, slot)
+        )
         prev = buckets.get(key)
         if prev is None:
             buckets[key] = h
@@ -3489,6 +3502,13 @@ def search_videos(
                             VideoHit(
                                 provider_key=mom["video_provider_key"],
                                 external_id=mom["id"],
+                                appearance_evidence={
+                                    k: mom.get(k) for k in (
+                                        "id", "processing_run_id", "observation_ids",
+                                        "model_version", "method", "authority",
+                                        "confirmation_state", "status",
+                                    )
+                                },
                                 video_external_id=vid,
                                 start_sec=t0,
                                 end_sec=float(mom["end_sec"]),

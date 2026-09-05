@@ -2251,3 +2251,10 @@ html[data-mb-surface="explore"] .mb-explore.is-present-locked .mb-explore-timeli
 }
 .mb-qp-day { min-width: 16rem; }
 .mb-qp-day li { margin: 0.25rem 0; }
+
+/* Source-linked evidence navigation, within the existing dark viewer. */
+.mb-source-moments { padding: 12px 0; }
+.mb-source-moments label { font-size: 14px; }
+.mb-source-moments select { margin-left: 8px; padding: 6px 10px; color: #edf3ff; background: #182335; border: 1px solid #40516c; border-radius: 6px; }
+.mb-source-moments select:focus-visible { outline: 2px solid #75a7ff; outline-offset: 2px; }
+.mb-source-moments select:disabled { opacity: .6; }

@@ -2566,7 +2566,7 @@
         ? `<img class="mb-card-thumb" data-src="${escapeAttr(media)}" alt="" />`
         : "";
       return `${bg}<span class="mb-card-play" aria-hidden="true">▶</span>${
-        startClock ? `<span class="mb-card-dur">${startClock}</span>` : ""
+        Array.isArray(it.source_moments) ? `<span class="mb-card-dur">${it.source_moments.length} moments</span>` : startClock ? `<span class="mb-card-dur">${startClock}</span>` : ""
       }<span class="mb-card-preview">${prev}</span>`;
     }
     if (t === "audio" || t === "voice") {
@@ -3883,6 +3883,7 @@
     bindSmsAttachActions(item);
     bindEmailStructuredView(item);
     bindExploreVideoPlayer(item);
+    bindSourceMoments(item);
     bindFaceHoldReveal();
     renderViewerFooter(item);
     bindSpeechTranscript(item);
@@ -5757,6 +5758,49 @@
     };
     el.addEventListener("loadedmetadata", onMeta);
     seekToStart();
+  }
+
+  function bindSourceMoments(item) {
+    const moments = item && item.source_moments;
+    const player = document.querySelector(".mb-ev-video-player");
+    if (!player || !Array.isArray(moments) || !moments.length) return;
+    const wrap = document.createElement("div");
+    wrap.className = "mb-source-moments";
+    const label = document.createElement("label");
+    label.textContent = "Jump to a moment ";
+    const select = document.createElement("select");
+    select.setAttribute("aria-label", "Jump to a moment in this source video");
+    select.disabled = true;
+    moments.forEach((moment, i) => {
+      const t = Number(moment.start_sec);
+      if (!Number.isFinite(t) || t < 0) return;
+      const option = document.createElement("option");
+      option.value = String(i);
+      const minutes = Math.floor(t / 60);
+      const seconds = (t % 60).toFixed(1).padStart(4, "0");
+      option.textContent = `${minutes}:${seconds}`;
+      select.appendChild(option);
+    });
+    label.appendChild(select);
+    wrap.appendChild(label);
+    const note = document.createElement("p");
+    note.className = "mb-rail-empty";
+    note.textContent = `${moments.length} evidence moments in this result. Playback continues through the source video.`;
+    wrap.appendChild(note);
+    player.parentNode.insertAdjacentElement("afterend", wrap);
+    const ready = () => { select.disabled = !player.isConnected || !player.controls || !player.videoWidth; };
+    player.addEventListener("loadedmetadata", ready);
+    player.addEventListener("error", () => { select.disabled = true; });
+    if (player.readyState >= 1) ready();
+    select.addEventListener("change", () => {
+      if (select.disabled || !player.isConnected) return;
+      const moment = moments[Number(select.value)];
+      const t = Number(moment && moment.start_sec);
+      if (!Number.isFinite(t) || t < 0 || (Number.isFinite(player.duration) && t >= player.duration)) return;
+      // Keep the Gallery item/snapshot and full-source URL. Never clamp to evidence end.
+      player.currentTime = t;
+      player.focus();
+    });
   }
 
   function bindExploreVideoPlayer(item) {
