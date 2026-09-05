@@ -1,0 +1,59 @@
+{
+  "plan_id": "p2-i13-playable-copy-pilot",
+  "version": "0.1",
+  "status": "proposal_runtime_preflight_and_execution_review_pending",
+  "execution_authorized": false,
+  "purpose": "existing_source_browser_playback_only",
+  "manifest_ref": {
+    "id": "p2-i13-flightsim-22",
+    "version": "0.2-membership-confirmed"
+  },
+  "sources": [
+    {
+      "provider_key": "hvrt",
+      "video_external_id": "vid-c57dbd21f993f6d1",
+      "relative_path": "20111105_1532.MP4",
+      "source_sha256": "26f3646b4adbda7573ff19c02da3b11bafceff4ac5cd7d967d5b0053a2e10705",
+      "size_bytes": 1251525801,
+      "duration_sec": 1105.104
+    }
+  ],
+  "proposed_media_root": "P:\\Photos\\Home Videos",
+  "proposed_derived_root": "C:\\Users\\tomwi\\AppData\\Local\\Temp\\memorybox_video_derived",
+  "expected_proxy_relative_path": "browser_proxies/edda398dc1204bb272364d87.mp4",
+  "limits": {
+    "source_count": 1,
+    "conversion_attempts": 1,
+    "parallel_jobs": 1,
+    "encoder_threads": 2,
+    "wall_time_seconds": 7200,
+    "max_output_bytes": 4294967296,
+    "minimum_free_bytes": 10737418240
+  },
+  "output_proposal": {
+    "container": "mp4",
+    "video_codec": "h264",
+    "pixel_format": "yuv420p",
+    "audio_codec": "aac_if_present",
+    "faststart": true,
+    "source_timebase": "full_source_zero_origin_no_trim",
+    "max_duration_difference_sec": 0.5
+  },
+  "preservation": {
+    "overwrite_existing_files": false,
+    "delete_files": false,
+    "mutate_database": false,
+    "recognition": false,
+    "transcription": false,
+    "learn": false,
+    "archive_processing": false
+  },
+  "pending_evidence": [
+    "FlightSim source hash and size revalidation",
+    "actual video/audio stream metadata and rotation",
+    "existing target status and derivative destination free space",
+    "ffmpeg/ffprobe availability and versions",
+    "reviewed isolated operator helper with output validation and no-overwrite publication",
+    "explicit execution approval for this exact source and output"
+  ]
+}
