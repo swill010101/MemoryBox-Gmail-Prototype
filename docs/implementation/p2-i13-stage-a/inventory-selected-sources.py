@@ -2,8 +2,8 @@
 
 Input JSON: {"manifest_id":..., "version":..., "sources":[{"path":...,
 "provider_key":..., "video_external_id":..., "duration_sec":...,
-"owner_truth_ref":..., "owner_confirmed":true, "coverage_tags":[...], "truth":[...]}]}.
-Owner truth is supplied, never inferred by this script. No directory scan or substitutions.
+"owner_truth_ref":null, "owner_confirmed":false, "coverage_tags":[...], "truth":[...]}]}.
+Owner truth may be empty for evidence generation; when supplied it is never inferred by this script. No directory scan or substitutions.
 Output remains local until founder reviews permission to commit identity/truth references.
 """
 import argparse

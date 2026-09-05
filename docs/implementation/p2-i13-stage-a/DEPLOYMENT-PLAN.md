@@ -29,7 +29,7 @@ This is a step-by-step proposal, not deployment authorization. The agent perform
    git rev-parse HEAD
    ```
 
-5. Use FlightSim's existing compatible Python environment and the documented dependencies. Do not launch the monolith. In the new deployment terminal set both drains off and leave the admission ID unset:
+5. Use FlightSim's existing compatible Python environment and the documented dependencies. Node.js on PATH is required by the playback regression test (`node --version`); reopen the terminal after installation. This is a test prerequisite, not an application startup step. Do not launch the monolith. In the new deployment terminal set both drains off and leave the admission ID unset:
 
    ```powershell
    $env:MEMORYBOX_RECOGNITION_DRAIN = '0'
@@ -47,19 +47,17 @@ This is a step-by-step proposal, not deployment authorization. The agent perform
    ```
 
    Expected: `read_only=on`, `isolation=repeatable read`, timestamped aggregates. Compare counts by status/provider/reason to `runtime-inventory.json`; normal external activity may change counts. Do not repair discrepancies during this step.
-7. Finalize the **exact** 22-source selection from the 48 candidates with Tom. A directory or first-N scan is not approval. Verify each stable provider/source ID, source hash, duration, modality coverage and owner-confirmed identity/time truth. Use an explicitly authored selection JSON with exact file paths and IDs, then read/hash only those selected files:
+7. Tom confirmed the exact 22-source membership on 2026-09-05. The versioned proposal now records that decision separately from owner truth. Verify the existing IDs/hashes/durations read-only if files have changed; do not select the first 22 files or substitute another directory. Do not ask Tom to prepare timestamp/name worksheets. Owner annotations are intended to be made in MB by selecting timestamp-backed transcript words or face evidence and assigning a Person.
+
+   Preview the corrected evidence-generation proposal, without registering or starting anything:
 
    ```powershell
-   python -B docs/implementation/p2-i13-stage-a/inventory-selected-sources.py --selection <EXACT_22_SOURCE_SELECTION_JSON>
+   python -B -m memorybox.processing preview --plan docs/implementation/p2-i13-stage-a/bounded-manifest-proposal.json
    ```
 
-   This reads bytes for hashes and strips machine-specific paths from the manifest output. It performs no media decoding or models. Truth and coverage must be supplied by the owner, never filled from recognition guesses. A source's size/mtime must remain stable while hashed. Assemble the reviewed plan in the schema documented in `scope-plan-schema.md`. Run only the read-only preview:
+   Expected: purpose `evidence_generation`, 22 sources, zero Person targets, 22 transcription items, at most 44 attempts with the proposed two-attempt limit. Empty owner truth/coverage is valid at this phase. This does not authorize learning, face/voice matching, archive processing, or any runtime write. The proposed 1,000-item ceiling still needs review; it does not schedule 1,000 items.
 
-   ```powershell
-   python -B -m memorybox.processing preview --plan <REVIEWED_PLAN_JSON>
-   ```
-
-   Until membership/truth are complete, rejection is expected. Record plan digest, source count, Person count, maximum work items and worst-case attempts. **Stop for founder review of the exact manifest and budget.**
+   Review the corrected code and this evidence budget before migration or processing approval. The annotation-only UI/overlay workflow is not complete in Stage A: existing Learn also creates exemplars and triggers recognition. Do not use it as an annotation-only shortcut. See ANNOTATION-WORKFLOW.md. Later acceptance/learning needs owner-confirmed truth/coverage exported from MB and a new reviewed plan, not mutation of this admission.
 
 ## Gate 2 - Separate approval to apply migration and deploy locked code
 
@@ -88,7 +86,7 @@ This is a step-by-step proposal, not deployment authorization. The agent perform
 
 ## Gate 3 - Future bounded processing authorization (not part of Stage A)
 
-16. Only after founder approves the exact 22-source plan, owner truth, work limits, migration, and a bounded run, register the immutable plan with a recorded review reference:
+16. Only after founder approves the membership-confirmed transcription evidence plan, work limits, migration, and a bounded evidence run, register the immutable plan with a recorded review reference:
 
    ```powershell
    python -B -m memorybox.processing register --plan <REVIEWED_PLAN_JSON> --review-ref <FOUNDER_PLAN_APPROVAL_REFERENCE>
@@ -101,12 +99,12 @@ This is a step-by-step proposal, not deployment authorization. The agent perform
    python -B -m memorybox.processing start --id <BOUNDED_ADMISSION_UUID> --reference <FOUNDER_BOUNDED_START_REFERENCE>
    ```
 
-   The command itself enqueues zero items and launches zero workers. Existing drains, if enabled later, may now consume stamped admitted work. Only enable the needed drains and explicitly enqueue the reviewed work after that separate authorization. Do not invoke `--full` for a bounded admission. The scoped face archive-pass now operates only on admitted People and sources, not an archive discovery sweep; speech limits reject truncation instead of silently choosing the first sources. Direct Learn is also scope-gated. Provider-wide seed/sync, old pending-crop teach, legacy recognition and old live prove commands remain disabled pending their own scoped designs.
+   The command itself enqueues zero items and launches zero workers. Existing drains, if enabled later, may now consume stamped admitted work. For the evidence-generation phase, only the speech transcription lane is eligible. Only enable its drain and explicitly enqueue the reviewed transcription work after that separate authorization. Do not invoke `--full` for a bounded admission. The scoped face archive-pass now operates only on admitted People and sources, not an archive discovery sweep; speech limits reject truncation instead of silently choosing the first sources. Direct Learn requires face/voice admission and is denied by this transcription-only evidence grant. Owner annotations must not be silently turned into exemplars or follow-on recognition; their separate workflow requires later implementation/review. Provider-wide seed/sync, old pending-crop teach, legacy recognition and old live prove commands remain disabled pending their own scoped designs.
 18. Follow the later approved run/proof plan. Queue reasons cannot create multiple admitted units for the same modality/Person/source; processing attempts are atomically bounded at 1-3 per item. The reviewed plan caps whole-work cardinality with a hard ceiling of 10,000 items. Stops block new reservations/claims; work already executing is not forcibly interrupted or rolled back. A stopped admission cannot restart; a new reviewed admission is required. Do not bypass the cap or revive old queue rows to force progress.
 
 ## Gate 4 - Future archive acceptance, unlock, then separate start
 
-19. Archive release is out of Stage A. After bounded acceptance, an archive plan must still contain explicit inventory membership, a reviewed workload budget and owner truth; it cannot use a wildcard. Register it as a separate `scope_kind=archive` plan. The bounded admission cannot be widened in place.
+19. Archive release is out of Stage A. After owner annotations are captured in MB and bounded acceptance is separately completed, an archive plan must still contain explicit inventory membership, a reviewed workload budget and owner truth; it cannot use a wildcard. Register it as a separate `scope_kind=archive` plan. The bounded admission cannot be widened in place.
 20. With separate founder acceptance and unlock references, an operator may **later** unlock it:
 
    ```powershell
@@ -120,3 +118,7 @@ This is a step-by-step proposal, not deployment authorization. The agent perform
 21. If locked deployment fails, keep drains disabled and the admission ID unset. Stop the new processing services using the established operator procedure. Restore service routing to the preserved prior release only after ensuring its old drains/scheduled archive passes will remain disabled; old code lacks I13 admission enforcement. Do not run `startmb` blindly on rollback.
 22. Prefer leaving additive migration 026 and its audit/history in place; older code ignores these fields. Do not drop new tables/columns, erase admission history, delete generated files, reset queues, or restore an old database over newer data without a separate reviewed recovery decision. For an active later grant, `python -B -m memorybox.processing stop --id <UUID> --reference <STOP_DECISION>` closes new work admission; it is not a data rollback or forced cancellation of in-flight work.
 23. Report exact release SHA, migration state, service environment/paths (without secrets), gate/admission IDs and digest, observed checks, failures and the next founder decision. Preserve I12 without redesign or migration of its records.
+
+## Updating the prepared FlightSim checkout for this correction
+
+The already prepared release at 686a11a remains preserved. After founder review of the correction commit, fetch the branch and create a new unused detached worktree at the exact corrected SHA (for example `C:\MemoryBox-releases\p2-i13-stage-a-correction`). Do not repeat `worktree add` against the existing directory or assume a branch fetch updates a detached checkout. Run the corrected offline tests there; expected count is 26. Preserve FlightSim's staged `application/marvin_capture` dependency and current service paths; resolve that existing live I12 dependency before any deployment switch. No service switch is authorized by these preparation instructions.

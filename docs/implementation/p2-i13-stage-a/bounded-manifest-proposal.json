@@ -1,10 +1,10 @@
 {
-  "status": "proposal_requires_founder_membership_and_truth_review",
+  "status": "membership_confirmed_evidence_plan_requires_processing_review",
   "processing_authorized": false,
   "scope_kind": "bounded",
   "manifest": {
     "id": "p2-i13-flightsim-22",
-    "version": "0.1-proposal",
+    "version": "0.2-membership-confirmed",
     "sources": [
       {
         "provider_key": "hvrt",
@@ -270,17 +270,18 @@
         "coverage_tags": [],
         "truth": []
       }
-    ]
+    ],
+    "membership_confirmed": true,
+    "membership_review_ref": "FOUNDER-AUTHORIZATION.md: Sequencing correction authorized 2026-09-05; Tom confirmed the 22 proposed selections"
   },
   "person_ids": [],
   "lanes": [
-    "face",
-    "voice",
     "transcribe"
   ],
   "max_work_items": 1000,
   "max_attempts_per_item": 2,
   "selection_basis": "Explicit proposed mix of 13 top-level shorter/longer clips, five home-movie files and four recorded-session files; no visual/identity/coverage conclusions inferred. Exact membership requires founder review.",
   "truth_status": "Owner identities, modality intervals, coverage and no-match truth not supplied; none fabricated.",
-  "hash_elapsed_seconds": 160.991
+  "hash_elapsed_seconds": 160.991,
+  "purpose": "evidence_generation"
 }

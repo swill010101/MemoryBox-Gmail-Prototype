@@ -24,11 +24,19 @@ def digest(plan: dict) -> str:
     return hashlib.sha256(json.dumps(plan, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()).hexdigest()
 
 def preview(plan: dict) -> dict:
-    """Validate exact membership/truth and calculate the whole authorized workload, no I/O."""
+    """Validate phase-specific membership/truth and calculate the whole authorized workload, no I/O."""
     try:
         kind = plan["scope_kind"]
         if kind not in {"bounded", "archive"}: raise ValueError()
+        purpose = plan.get("purpose", "acceptance_learning")
+        if purpose not in {"evidence_generation", "acceptance_learning"}: raise ValueError()
+        evidence = purpose == "evidence_generation"
+        if evidence and kind != "bounded": raise ScopeDenied("evidence_generation_requires_bounded_scope")
         manifest = plan["manifest"]
+        if evidence:
+            ref = manifest.get("membership_review_ref")
+            if manifest.get("membership_confirmed") is not True or not isinstance(ref, str) or not ref.strip():
+                raise ScopeDenied("source_membership_review_required")
         if any(not isinstance(manifest[k], str) or not manifest[k].strip() for k in ("id", "version")): raise ValueError()
         sources = manifest["sources"]
         if not isinstance(sources, list) or not sources: raise ValueError()
@@ -43,27 +51,29 @@ def preview(plan: dict) -> dict:
             if isinstance(duration,bool) or not math.isfinite(duration) or duration <= 0: raise ValueError()
             fingerprint = source["source_sha256"]
             if len(fingerprint) != 64 or any(c not in "0123456789abcdef" for c in fingerprint): raise ValueError()
-            if not source.get("owner_truth_ref") or source.get("owner_confirmed") is not True: raise ValueError()
+            if not evidence and (not source.get("owner_truth_ref") or source.get("owner_confirmed") is not True): raise ValueError()
             truth = source["truth"]
-            if not isinstance(truth,list) or not truth: raise ValueError()
+            if not isinstance(truth,list) or (not evidence and not truth): raise ValueError()
             for t in truth:
                 if t["modality"] not in {"face", "voice", "no_match"}: raise ValueError()
                 if t["modality"] != "no_match": UUID(t["person_id"])
                 a,b=t["start_sec"],t["end_sec"]
                 if not all(isinstance(x,(int,float)) and not isinstance(x,bool) and math.isfinite(x) for x in (a,b)) or not 0 <= a < b <= duration: raise ValueError()
             coverage.update(source["coverage_tags"])
-        if kind == "bounded" and not COVERAGE <= coverage: raise ScopeDenied("corpus_coverage_incomplete")
+        if not evidence and kind == "bounded" and not COVERAGE <= coverage: raise ScopeDenied("corpus_coverage_incomplete")
         people = plan["person_ids"]
         if not isinstance(people,list) or len(set(people)) != len(people): raise ValueError()
         for person in people: UUID(person)
         lanes = plan["lanes"]
         if not isinstance(lanes,list) or not lanes or len(set(lanes)) != len(lanes) or not set(lanes) <= LANES: raise ValueError()
+        if evidence and (lanes != ["transcribe"] or people):
+            raise ScopeDenied("evidence_generation_is_transcription_only_no_learning")
         if set(lanes)&{"face","voice"} and not people: raise ValueError()
         count = len(sources) * (len(people)*len(set(lanes)&{"face","voice"}) + int("transcribe" in lanes))
         limit = plan["max_work_items"]; attempts = plan["max_attempts_per_item"]
         if type(limit) is not int or not 0 < limit <= MAX_WORK_ITEMS or type(attempts) is not int or not 1 <= attempts <= MAX_ATTEMPTS_PER_ITEM: raise ValueError()
         if count > limit: raise ScopeDenied("workload_limit_exceeded")
-        return {"scope_kind":kind,"source_count":len(sources),"person_count":len(people),"work_items":count,"max_work_items":limit,"max_attempts":count*attempts,"plan_sha256":digest(plan)}
+        return {"purpose":purpose,"scope_kind":kind,"source_count":len(sources),"person_count":len(people),"work_items":count,"max_work_items":limit,"max_attempts":count*attempts,"plan_sha256":digest(plan)}
     except ScopeDenied: raise
     except (KeyError,TypeError,ValueError,OverflowError):
         raise ScopeDenied("invalid_scope_plan_or_owner_truth") from None

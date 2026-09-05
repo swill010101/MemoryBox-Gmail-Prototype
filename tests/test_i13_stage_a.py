@@ -39,6 +39,43 @@ def function(path,name,env=None):
     return ns[name]
 
 class ScopeTests(unittest.TestCase):
+    def evidence_plan(self):
+        p=plan();p.update(purpose="evidence_generation",lanes=["transcribe"],person_ids=[])
+        p["manifest"].update(membership_confirmed=True,membership_review_ref="synthetic owner selection approval")
+        for source in p["manifest"]["sources"]:
+            source.update(owner_confirmed=False,owner_truth_ref=None,truth=[],coverage_tags=[])
+        return p
+    def test_evidence_preview_without_truth_does_not_start(self):
+        p=self.evidence_plan()
+        self.assertEqual(scope.preview(p)["work_items"],22)
+        with self.assertRaisesRegex(scope.ScopeDenied,"processing_not_started"):
+            admission(p,state="registered").check("transcribe",[],[])
+        a=admission(p);a.check("transcribe",a.videos,[])
+        with self.assertRaisesRegex(scope.ScopeDenied,"off_manifest"):
+            a.check("transcribe",[{"video_provider_key":"synthetic","video_external_id":"outside"}],[])
+    def test_evidence_requires_membership_and_cannot_unlock_learning_or_archive(self):
+        for mutate in [
+            lambda p:p["manifest"].update(membership_confirmed=False),
+            lambda p:p["manifest"].update(membership_review_ref=" "),
+            lambda p:p.update(scope_kind="archive"),
+            lambda p:p.update(lanes=["voice"],person_ids=[PERSON]),
+            lambda p:p.update(lanes=["face"],person_ids=[PERSON]),
+            lambda p:p.update(max_work_items=21),
+            lambda p:p.update(purpose="acceptance_learning"),
+        ]:
+            p=self.evidence_plan();mutate(p)
+            with self.assertRaises(scope.ScopeDenied):scope.preview(p)
+    def test_evidence_does_not_relax_source_integrity_or_validate_bad_truth(self):
+        for field,value in [("source_sha256","invalid"),("duration_sec",-1),
+                            ("truth",[{"modality":"voice","person_id":PERSON,"start_sec":0,"end_sec":90}])]:
+            p=self.evidence_plan();p["manifest"]["sources"][0][field]=value
+            with self.assertRaises(scope.ScopeDenied):scope.preview(p)
+    def test_confirmed_repository_manifest_previews_only_transcription(self):
+        p=json.loads((ROOT/'docs/implementation/p2-i13-stage-a/bounded-manifest-proposal.json').read_text(encoding='utf-8'))
+        self.assertFalse(p["processing_authorized"])
+        self.assertEqual(scope.preview(p)["work_items"],22)
+        self.assertEqual(p["lanes"],["transcribe"])
+        self.assertTrue(all(not x["owner_confirmed"] and not x["truth"] for x in p["manifest"]["sources"]))
     def test_whole_workload_preview(self):
         self.assertEqual(scope.preview(plan())["work_items"],66)
         p=plan();p["person_ids"]=[str(UUID(int=i+1)) for i in range(80)]

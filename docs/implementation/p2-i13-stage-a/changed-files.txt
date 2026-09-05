@@ -1,3 +1,4 @@
+docs/implementation/p2-i13-stage-a/ANNOTATION-WORKFLOW.md
 docs/implementation/p2-i13-stage-a/DEPLOYMENT-PLAN.md
 docs/implementation/p2-i13-stage-a/FOUNDER-AUTHORIZATION.md
 docs/implementation/p2-i13-stage-a/README.md

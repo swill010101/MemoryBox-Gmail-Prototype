@@ -7,3 +7,9 @@ Confirmed: I13 source seek and natural continuous playback supersede ACR-P2-001 
 Stage A only: identify authoritative runtime and consistent read-only inventory; submit exact versioned 22-video manifest with owner truth; centralized scope admission, preview/cardinality limits, off-manifest rejection and archive lock across API/CLI/Learn/queue/retry/drain/worker; separate unlock/start; remove forced playback end while retaining seek/context; automated tests; detailed step-by-step deployment plan. Migrations may be authored, never applied to runtime.
 
 Forbidden in this authorization: recognition, transcription, cleanup, remediation, corpus/archive processing, legacy quarantine/deletion, derivative deletion, and I12 Historian Capture changes. Commit/push artifacts and stop for founder review before migration or processing. Runtime/corpus truth cannot be invented.
+
+## Sequencing correction authorized 2026-09-05
+
+Tom confirmed membership of the 22 proposed sources, then clarified that owner annotations must be made inside MB by selecting transcript text/face evidence and assigning a Person; MB retains the evidence timestamps. Manual filename/time/name worksheets are not a prerequisite. Tom authorized correcting the gate and deployment plan.
+
+Separate bounded evidence generation from owner-confirmed acceptance/learning. Membership approval is not processing approval. No migration, runtime processing, deployment, or later annotation implementation is authorized by this correction. Existing immutable transcript/overlay and retirement decisions remain in force.
