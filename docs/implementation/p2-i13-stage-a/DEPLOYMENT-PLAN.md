@@ -148,3 +148,7 @@ The prepared launch-locked.py now supplies the separate launcher with check-only
 ## Playback availability correction
 
 See [PLAYBACK-CORRECTION.md](PLAYBACK-CORRECTION.md). Video open now checks existing playable copies without conversion; missing copies show explicit feedback. Apply this code correction to both app and worker in locked mode, with no new migration or media generation. Offline test count is 33.
+
+## Ask context and Person-result correction
+
+See [ASK-CONTEXT-CORRECTION.md](ASK-CONTEXT-CORRECTION.md) for the new `clear all` command, fresh named-person searches, evidence membership guards, test commands and locked deployment verification. No migration or processing is required.

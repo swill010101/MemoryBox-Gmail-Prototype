@@ -1215,7 +1215,8 @@
   }
 
   async function liveFind(askText, extras) {
-    const q = personScopedAsk(askText);
+    const q = /^clear\s+all[.!]?$/i.test(String(askText || "").trim())
+      ? "clear all" : personScopedAsk(askText);
     const present = extras && extras.present;
     const ctrl = typeof AbortController === "function" ? new AbortController() : null;
     const timer =
@@ -1377,6 +1378,15 @@
   }
 
   function applyPayloadToState(payload, { keepPresentation } = {}) {
+    if (payload.context && payload.context.reset) {
+      keepPresentation = false;
+      if (window.mbShell && window.mbShell.setActivePerson) {
+        window.mbShell.setActivePerson(null);
+      }
+    }
+    if (payload.session_id) {
+      try { localStorage.setItem("mb_ask_session", payload.session_id); } catch (_) {}
+    }
     rawItems = Array.isArray(payload.items)
       ? payload.items.map((x) => Object.assign({}, x))
       : [];
@@ -1630,6 +1640,30 @@
     }
     if (state && state.domain) state.domain.askText = text;
     const lower = text.toLowerCase();
+
+    if (/^clear\s+all[.!]?$/i.test(text)) {
+      const gen = bumpFindGen();
+      hideQuickPreview();
+      liveFind("clear all").then((payload) => {
+        if (gen !== findGen) return;
+        if (window.mbShell && window.mbShell.setActivePerson) {
+          window.mbShell.setActivePerson(null);
+        }
+        applyPayloadToState(payload, { keepPresentation: false });
+        if (PERSON_MODE) {
+          window.location.href = "/explore/ui?session_id=" + encodeURIComponent(sessionId);
+          return;
+        }
+        const input = document.getElementById("mb-explore-ask");
+        if (input) input.value = "";
+        render();
+      }).catch((err) => {
+        if (gen !== findGen) return;
+        state.domain.summary = findErrorMessage(err);
+        renderCurator();
+      });
+      return;
+    }
 
     // Navigation / clear context — bare People picker (drop active person)
     if (MBQL_VERBS.go_to_people.test(text)) {
@@ -3972,15 +4006,6 @@
     if (Array.isArray(item.people)) item.people.forEach(push);
     push(item.face_identity);
     push(item.mb_person_name);
-    (state.domain.chips || []).forEach((c) => {
-      if (c && c.kind === "person") push(c.label);
-    });
-    const t = String(item.type || "").toLowerCase();
-    if (t !== "email" && t !== "sms" && t !== "text") {
-      const titleHead = String(item.title || "").split(" · ")[0].trim();
-      const vid = String(item.video_external_id || item.external_id || "").trim();
-      if (titleHead && titleHead !== vid && !looksLikeUuid(titleHead)) push(titleHead);
-    }
     return seen;
   }
 
@@ -4448,7 +4473,7 @@
               const initial = escapeHtml((n[0] || "?").toUpperCase());
               return `<div class="mb-rail-person"><span class="mb-rail-avatar" aria-hidden="true">${initial}</span><div><strong>${escapeHtml(
                 n
-              )}</strong><div style="font-size:0.72rem;color:#94a3b8">Confirmed / known</div></div></div>`;
+              )}</strong><div style="font-size:0.72rem;color:#94a3b8">Associated with this evidence</div></div></div>`;
             })
             .join("");
       }

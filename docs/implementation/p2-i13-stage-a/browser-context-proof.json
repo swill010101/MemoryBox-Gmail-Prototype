@@ -1,0 +1,13 @@
+{
+  "kind": "actual_ask_command_and_gallery_state_component",
+  "cleared": true,
+  "unsupported": [],
+  "supported": [
+    "Evidence Person"
+  ],
+  "passed": true,
+  "limits": [
+    "Synthetic server response; actual browser command and state functions",
+    "Live FlightSim retrieval still requires owner review"
+  ]
+}

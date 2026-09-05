@@ -1383,6 +1383,10 @@ def plan_ask(ask: str, ctx: AskContext) -> QueryPlan:
         if re.search(r"(?i)\b(just|only|those|that|this|after|else|then|there|other)\b", q):
             is_followup = True
 
+    # Bare place/event/year refinements retain the current Person.
+    if ctx.person_names and not u_people and re.match(r"(?i)^\s*(?:in|at|during)\s+", q):
+        is_followup = True
+
     # --- Subject-change / supersede (Rule D) ---
     subject_changed = False
     ctx_trips = _ctx_trips(ctx)

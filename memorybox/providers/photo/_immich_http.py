@@ -19,7 +19,7 @@ _PERSON_LIB_MEM_TTL_SEC = 6 * 3600
 _PERSON_LIB_DISK_TTL_SEC = 24 * 3600
 _PERSON_TIMELINE_YEAR_BUDGET = 80
 _PERSON_LIB_WALK_SEC = 40
-_PERSON_LIB_CACHE_VER = "v10"
+_PERSON_LIB_CACHE_VER = "v11_asset_membership"
 
 
 class ImmichAuthError(RuntimeError):
@@ -71,6 +71,22 @@ def read_immich_activity(*, limit: int = 200) -> list[dict[str, Any]]:
         if isinstance(row, dict):
             out.append(row)
     return out
+
+
+def asset_matches_people(asset, person_ids):
+    """Require asset-level provider membership, never query-derived identity."""
+    if not isinstance(asset, dict):
+        return False
+    wanted = {str(pid) for pid in person_ids if pid}
+    found = {str(p.get("id")) for p in (asset.get("people") or []) if isinstance(p, dict) and p.get("id")}
+    for face in asset.get("faces") or []:
+        if isinstance(face, dict):
+            person = face.get("person") or {}
+            pid = person.get("id") if isinstance(person, dict) else None
+            pid = pid or face.get("personId")
+            if pid:
+                found.add(str(pid))
+    return bool(found & wanted)
 
 
 class ImmichHttpClient:
@@ -485,7 +501,7 @@ class ImmichHttpClient:
         if cached:
             self._last_person_source = "cache"
             rows: list[dict[str, Any]] = [
-                dict(it) if isinstance(it, dict) else it for it in cached
+                dict(it) for it in cached if asset_matches_people(it, person_ids)
             ]
             if need_location:
                 by_cached: dict[str, dict[str, Any]] = {}
@@ -508,7 +524,7 @@ class ImmichHttpClient:
 
         def _add(rows: list[dict[str, Any]]) -> None:
             for it in rows:
-                if not isinstance(it, dict):
+                if not asset_matches_people(it, person_ids):
                     continue
                 eid = str(it.get("id") or "").strip()
                 if not eid or eid in by_id:
@@ -652,10 +668,9 @@ class ImmichHttpClient:
                     eid = str(it.get("id") or "").strip()
                     if not eid or eid in by_id:
                         continue
-                    people = it.get("people")
-                    if not isinstance(people, list) or not people:
-                        it = dict(it)
-                        it["people"] = [{"id": pid}]
+                    if not asset_matches_people(it, [pid]):
+                        self._person_lib_incomplete = True
+                        continue
                     by_id[eid] = it
             if years_walked < min(len(years), budget):
                 self._person_lib_incomplete = True
@@ -910,7 +925,7 @@ class ImmichHttpClient:
                 continue
             if status != 200:
                 continue
-            items = self._normalize_timeline_assets(data)
+            items = [it for it in self._normalize_timeline_assets(data) if asset_matches_people(it, [pid])]
             if items:
                 self._timeline_http = int(getattr(self, "_timeline_http", 0) or 0) + 1
                 setattr(self, attr, tmpl)

@@ -900,6 +900,30 @@ class AskOrchestrator:
         inference_stage: str = "ask",
         stop_before_historian: bool = False,
     ) -> AskResult:
+        from memorybox.ask.context_commands import is_clear_all, prepare_context
+        from memorybox.person import AmbiguousIdentityError, find_ask_person_by_name
+
+        def resolve_reset_person(name):
+            try:
+                return find_ask_person_by_name(name, lazy_seed=False)
+            except AmbiguousIdentityError:
+                # Let normal Ask clarification resolve ambiguity without old scope.
+                return True
+
+        ctx, context_reset = prepare_context(
+            self.store, text, session_id,
+            resolve_reset_person,
+        )
+        session_id = ctx.session_id
+        if is_clear_all(text):
+            return AskResult(
+                session_id=session_id, ask=text, plan={},
+                context={**ctx.to_dict(), "reset": True},
+                answer_kind="context_cleared", answer_text="All Ask context cleared.",
+                statements=[], citations=[], evidence_hits=[], photo_hits=[],
+                story_hits=[], journal_hits=[], video_hits=[], artifact_hits=[],
+                guided_capture_hits=[], missing_disclosure=None, provider_status={},
+            )
         from memorybox.ai_trace.request import tracing_ask
         from memorybox.ask.progress import note_ask_progress
         from memorybox.ask import stage_clock
@@ -916,6 +940,7 @@ class AskOrchestrator:
                     inference_stage=inference_stage,
                     stop_before_historian=stop_before_historian,
                 )
+                result.context["reset"] = context_reset
                 plan = result.plan if isinstance(result.plan, dict) else {}
                 tr.note_planner(plan)
                 inf = {}

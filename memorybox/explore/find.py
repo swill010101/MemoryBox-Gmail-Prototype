@@ -215,10 +215,6 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
 
             if not any(asked_name_matches_person(mb_name, n) for n in people):
                 mb_name = None
-        if not people:
-            for n in ask_people:
-                if n not in people:
-                    people.append(n)
         name = mb_name or (people[0] if people else None)
         title = name or "Photo"
         place = p.get("place") or None
@@ -1131,6 +1127,14 @@ def build_explore_find(
 
     result_obj = orchestrator.ask(text, session_id=session_id)
     result = result_obj.to_dict() if hasattr(result_obj, "to_dict") else dict(result_obj)
+    if result.get("answer_kind") == "context_cleared":
+        return {
+            "ok": True, "demo": False, "live": True, "ask_text": "",
+            "title": "What would you like to see?",
+            "summary": "All Ask context cleared. Start a new search.",
+            "chips": [], "items": [], "counts": {}, "provider_status": {},
+            "session_id": result["session_id"], "context": result["context"],
+        }
     plan_early = result.get("plan") or {}
     tell_mode = str(plan_early.get("output_mode") or result.get("output_mode") or "show") == "tell"
     show_sms = explicit_text_gallery(result, text)

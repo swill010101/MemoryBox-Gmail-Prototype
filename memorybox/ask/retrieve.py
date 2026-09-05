@@ -19,7 +19,7 @@ from memorybox.db import connection
 from memorybox.ingest import rebuild_index
 from memorybox.planner import QueryPlan
 from memorybox.providers.base import ProviderError, ProviderUnavailable
-from memorybox.providers.photo.dto import PhotoAssetDto, PhotoSearchQuery
+from memorybox.providers.photo.dto import PhotoAssetDto, PhotoPersonRef, PhotoSearchQuery
 from memorybox.providers.photo.protocol import PhotoProvider
 
 
@@ -2774,6 +2774,8 @@ def search_photos(
                 except Exception:  # noqa: BLE001
                     continue
                 for face in faces or []:
+                    if str(getattr(face, "external_person_id", "")) != pid:
+                        continue
                     aid = str(getattr(face, "source_asset_id", None) or "").strip()
                     if not aid or "/" in aid or aid in seen:
                         continue
@@ -2785,6 +2787,7 @@ def search_photos(
                             provider_key=getattr(photo, "provider_key", "immich")
                             or "immich",
                             external_id=aid,
+                            people=(PhotoPersonRef(getattr(photo, "provider_key", "immich") or "immich", pid, ""),),
                         )
                     )
                     if len(out) >= cap:
@@ -2967,8 +2970,9 @@ def search_photos(
                     if hit_meta:
                         meta = hit_meta
                         break
-                if not meta and mapped_meta:
-                    meta = mapped_meta[0]
+                if not meta:
+                    status["unverified_person_assets_excluded"] = status.get("unverified_person_assets_excluded", 0) + 1
+                    continue
                 hits.append(
                     _asset_to_hit(
                         a,
@@ -3403,9 +3407,10 @@ def search_videos(
             segs = video.search_segments(q)
             by_face = {m["external_id"]: m for m in mapped_meta}
             for s in segs:
-                meta = by_face.get(s.face_external_id or "") or (
-                    mapped_meta[0] if mapped_meta else {}
-                )
+                meta = by_face.get(s.face_external_id or "")
+                if not meta:
+                    status["unverified_person_segments_excluded"] = status.get("unverified_person_segments_excluded", 0) + 1
+                    continue
                 trust = meta.get("trust") or "confirmed"
                 if trust == "trusted_provider":
                     attrib = (
