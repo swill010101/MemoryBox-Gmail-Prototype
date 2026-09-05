@@ -278,6 +278,51 @@ class HttpTests(unittest.TestCase):
             self.assertEqual(c.post('/people/sync/immich').status_code,403)
             self.assertEqual(calls,[]);self.assertEqual(c.get('/historian-capture/ui').status_code,200)
 
+class LockedLaunchTests(unittest.TestCase):
+    def launcher(self):
+        import runpy
+        return runpy.run_path(str(ROOT/'docs/implementation/p2-i13-stage-a/launch-locked.py'))
+    def test_locks_override_inherited_and_file_settings_without_mutation(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d);(root/'config').mkdir()
+            (root/'config/memorybox_app.env').write_text('MEMORYBOX_RECOGNITION_DRAIN=1\nMEMORYBOX_I13_ADMISSION_ID=unsafe\n')
+            original={'MEMORYBOX_SPEECH_DRAIN':'1','MEMORYBOX_I13_ADMISSION_ID':'old'}
+            env,_=self.launcher()['configuration'](root,original,root/'media',root/'derived')
+            self.assertEqual(env['MEMORYBOX_RECOGNITION_DRAIN'],'0')
+            self.assertEqual(env['MEMORYBOX_SPEECH_DRAIN'],'0')
+            self.assertNotIn('MEMORYBOX_I13_ADMISSION_ID',env)
+            self.assertEqual(original['MEMORYBOX_SPEECH_DRAIN'],'1')
+            self.assertFalse((root/'derived').exists())
+    def test_check_only_does_not_connect_or_import_application(self):
+        import tempfile,io
+        from contextlib import redirect_stdout
+        ns=self.launcher();fn=ns['main']
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d);(root/'config').mkdir()
+            for n in ['immich.env','historian_capture.json','historian_capture_gmail_credentials.json','historian_capture_gmail_token.json']:
+                (root/'config'/n).write_text('{}')
+            for n in ['media','derived','.memorybox_hc_mail']:(root/n).mkdir()
+            package=root/'application/marvin_capture';package.mkdir(parents=True)
+            for n in ['__init__.py','gmail_client.py','config.py','plus_address.py','reply_extract.py']:
+                (package/n).write_text('raise AssertionError("must not import Capture")')
+            argv=['launcher','--runtime-root',d,'--expected-sha','test-sha','--media-root',str(root/'media'),'--derived-dir',str(root/'derived')]
+            out=io.StringIO()
+            with patch.object(sys,'argv',argv),patch.dict(os.environ,{'MEMORYBOX_DATABASE_URL':'secret-sentinel','MEMORYBOX_QDRANT_URL':'local'},clear=True),patch('subprocess.check_output',side_effect=['test-sha','']),patch.dict(fn.__globals__,{'check_schema':lambda _:self.fail('DB opened in check mode')}),redirect_stdout(out):
+                self.assertEqual(fn(),0)
+            self.assertNotIn('secret-sentinel',out.getvalue())
+            self.assertEqual(json.loads(out.getvalue())['mode'],'check only')
+    def test_missing_migration_blocks_launch_schema_guard(self):
+        ns=self.launcher()
+        class C:
+            def execute(self,sql,args=()):return Result()
+        @contextmanager
+        def connect(*args,**kwargs):
+            self.assertIn('default_transaction_read_only=on',kwargs['options'])
+            yield C()
+        with patch('psycopg.connect',side_effect=connect):
+            with self.assertRaisesRegex(RuntimeError,'030'):ns['check_schema']('synthetic')
+
 class MigrationTests(unittest.TestCase):
     def test_i13_is_pending_after_reported_flightsim_history_without_changing_sql(self):
         paths=sorted((ROOT/'memorybox/migrations').glob('[0-9][0-9][0-9]_*.sql'))

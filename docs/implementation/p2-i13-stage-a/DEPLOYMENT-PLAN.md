@@ -142,3 +142,5 @@ Follow [BACKUP-RESTORE-PLAN.md](BACKUP-RESTORE-PLAN.md), starting with client/st
 ## Existing startmb launch arrangement
 
 See [LOCKED-LAUNCH-PLAN.md](LOCKED-LAUNCH-PLAN.md). The native serve command auto-migrates and performs trace cleanup/bootstrap; do not use it as a read-only or migration-free preflight. Resolve effective source/derived/config paths through preflight-launch.py before completing a separate locked launcher. The original launcher and I12 files remain untouched.
+
+The prepared launch-locked.py now supplies the separate launcher with check-only default; see LOCKED-LAUNCH-PLAN.md. Source/derived directories were confirmed by Tom. Run its check before any migration or service-start decision. Tests now include three offline launcher boundary checks (30 total).

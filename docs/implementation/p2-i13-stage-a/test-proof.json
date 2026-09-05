@@ -1,10 +1,10 @@
 {
   "accepted_base": "bc2b967274d51ffce356a12895df2cd8f77d73b0",
   "branch": "codex/p2-i13-stage-a",
-  "tests_run": 27,
+  "tests_run": 30,
   "failures": 0,
   "errors": 0,
-  "elapsed_seconds": 1.965,
+  "elapsed_seconds": 2.925,
   "python_files_parsed": 3,
   "javascript_syntax": "passed",
   "git_diff_check": "passed",
@@ -17,7 +17,8 @@
     "Previous synthetic Chromium proof remains applicable to unchanged playback code; no live annotation UI tested.",
     "Annotation-only audited overlays and anonymous face-evidence generation require later implementation.",
     "Evidence processing, migration and deployment remain unapproved; membership is confirmed.",
-    "FlightSim supplied table presence and migration names; full schema compatibility remains unverified. Migration preflight was syntax-checked only, not run against runtime by the agent."
+    "FlightSim supplied table presence and migration names; full schema compatibility remains unverified. Migration preflight was syntax-checked only, not run against runtime by the agent.",
+    "Locked launcher check-only tested with synthetic paths; actual service startup and live I12 dependency imports were not executed."
   ],
   "correction_base": "686a11a48047d2d60d6dbd32376bdc25742c15db",
   "correction_date": "2026-09-05",
@@ -34,5 +35,6 @@
   },
   "migration_correction_base": "7ac838d76a888aff794eb1c381113e697f3d8e3d",
   "i13_migration": "030_p2_i13_scope_admission.sql",
-  "migration_sql_unchanged": true
+  "migration_sql_unchanged": true,
+  "locked_launcher_tests": 3
 }

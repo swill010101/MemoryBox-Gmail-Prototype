@@ -20,8 +20,18 @@ After environment loading, force both native drains off and remove the admission
 
 Run preflight-launch.py --runtime-root C:/MemoryBox from the release containing this documentation. It only reads optional environment files and checks file paths. It never imports MB/Capture, reads OAuth content, opens a database, starts services or writes environment/files. Output contains path metadata and presence flags, not database URLs or credentials. Missing inherited settings are not proof the currently running app lacks them; reconcile them against startmb defaults and the actual deployment before completing the launcher.
 
-Status: arrangement prepared; executable start path intentionally not supplied until effective source/derived/config paths are resolved. No service switch, migration or processing occurred. Existing I12 code remains unchanged.
+Status: launch-locked.py is prepared with check-only default and explicit --start. Tom confirmed P:/photos/home videos and the existing TEMP/memorybox_video_derived directory. detections.json was absent; this is not an instruction to create/repair it. No service switch, migration or processing occurred. Existing I12 code remains unchanged.
 
 ## Recovery verification received
 
 Tom reported a 424764650-byte full dump, SHA256 B879D850D0A84B4B6E682C9A63673A7D312A9126A311969D2CEB223920075FCE, independently restored into mb_i13_restore_947883684e4a4cab9e63daf2ab499844. Ledger 001-029, recognition queue 155854, speech queue 2011, transcript words 140441, one Capture campaign and five Capture items were present. Tom reported all four source/restore metadata comparisons true (tables, columns, constraints, indexes). This verifies the inspected database recovery artifact, not a live application workflow or a quiescent final maintenance snapshot.
+
+## Prepared launcher
+
+Use launch-locked.py with --runtime-root, --expected-sha, --media-root and --derived-dir. Default mode reads optional env files into a private configuration map, checks existing paths, hashes only Capture Python code, verifies package origins and clean release SHA, and prints a noncredential report. It opens no database, imports no MB/Capture package and starts nothing. Both drains are forced off and admission cleared after env loading.
+
+Only after separate migration/locked-deployment approval, --start --role app (or worker in a second terminal) --deployment-reference with the recorded approval enables startup. The launcher first checks the 030 ledger identity, four admission tables and UUID queue stamp columns in a read-only transaction. It does not execute migrations or register/start admissions. The reference is an operator audit aid, not a cryptographically verified authorization mechanism.
+
+App startup uses uvicorn directly and skips memorybox serve's migration, stale-trace cleanup and owner-session bootstrap. The existing accepted owner session must therefore already exist. Normal app startup hooks still run (including the existing trace ensure-schema hook), so --start is not a read-only action. No startup path was exercised in implementation. This launcher does not stop old workers, replace processes on occupied ports or launch browsers. Tom must coordinate existing processes and ensure new code is serving the expected ports under the separately reviewed deployment procedure.
+
+Original runtime working directory preserves relative configuration references and mail storage. Explicit existing configuration overrides are retained. The original application.marvin_capture package remains an external deployment dependency, with transport code hashes in the check report. The check does not prove its third-party dependencies or live Gmail behavior. Historical I12 code remains unchanged.

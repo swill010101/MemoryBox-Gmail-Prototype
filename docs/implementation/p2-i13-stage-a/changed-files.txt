@@ -13,6 +13,7 @@ docs/implementation/p2-i13-stage-a/cartesian-reconciliation.json
 docs/implementation/p2-i13-stage-a/changed-files.txt
 docs/implementation/p2-i13-stage-a/inventory-runtime.py
 docs/implementation/p2-i13-stage-a/inventory-selected-sources.py
+docs/implementation/p2-i13-stage-a/launch-locked.py
 docs/implementation/p2-i13-stage-a/preflight-launch.py
 docs/implementation/p2-i13-stage-a/preflight-migrations.py
 docs/implementation/p2-i13-stage-a/runtime-inventory.json
