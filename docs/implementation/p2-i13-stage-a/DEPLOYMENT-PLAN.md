@@ -179,3 +179,7 @@ Tom approved preparing the bounded correction and asked to consider restarting L
 ## FlightSim fragment pilot result recorded
 
 Tom reports the fa09ec6 source card shows 7 moments, plays correctly and jumps between moments; the reported subset decreased from 15 entries to 9, exactly matching seven cards becoming one. See FRAGMENT-CORRECTION-IMPLEMENTATION.md for the owner evidence and remaining checks. Other entries still require source-specific read-only correlation. No further deployment or processing is needed for this documentation update.
+
+## Pilot return-context check passed; read-only source identification prepared
+
+Tom confirms closing the viewer retains the Video filter and scroll position; another remaining entry plays beyond its prior half-second end. The locked fa09ec6 release remains running. The source-identification helper looks up only the 47 previously supplied HVRT card IDs and reports source grouping/manifest mapping. Run from a separate helper checkout in the configured FlightSim shell; leave services and Learn unchanged. Await results before any broader projection or processing.
