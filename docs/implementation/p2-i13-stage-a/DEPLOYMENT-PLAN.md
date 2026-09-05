@@ -134,3 +134,7 @@ This section supersedes the earlier next-step commit reference for deployment. D
 Before any migration approval, run `python -B docs/implementation/p2-i13-stage-a/preflight-migrations.py` using FlightSim's existing database environment. This does not import the app or migrator and issues only read-only metadata queries. Expected pending list is only 030_p2_i13_scope_admission.sql, with historical filename differences at 009 and 025 reported explicitly. A new collision at 030, missing local migration files, or any additional pending migration blocks this deployment procedure. Do not edit schema_migrations or replay 009/025 to hide differences.
 
 Tom's read-only output confirms AI trace and all 12 expected I12 tables exist; it does not prove their columns/constraints or live I12 workflow. Preserve existing I12 schema and code. Review the metadata exported by preflight, verify backups/restore and the staged live Capture dependency, and obtain migration/locked-deployment approval before proceeding. The migrator remains number-based; this correction does not claim a general migration identity redesign. See MIGRATION-RECONCILIATION.md.
+
+## Backup/restore preparation
+
+Follow [BACKUP-RESTORE-PLAN.md](BACKUP-RESTORE-PLAN.md), starting with client/storage readiness. Restore verification uses a new test database and stops before migration.
