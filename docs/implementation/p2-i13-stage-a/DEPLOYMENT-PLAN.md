@@ -183,3 +183,7 @@ Tom reports the fa09ec6 source card shows 7 moments, plays correctly and jumps b
 ## Pilot return-context check passed; read-only source identification prepared
 
 Tom confirms closing the viewer retains the Video filter and scroll position; another remaining entry plays beyond its prior half-second end. The locked fa09ec6 release remains running. The source-identification helper looks up only the 47 previously supplied HVRT card IDs and reports source grouping/manifest mapping. Run from a separate helper checkout in the configured FlightSim shell; leave services and Learn unchanged. Await results before any broader projection or processing.
+
+## Remaining source entries identified
+
+[Lookup result and next-source proposal](GALLERY-SOURCE-LOOKUP-RESULT.md): all 47 captured HVRT IDs matched. The eight remaining entries in the pilot set belong to 20111105_1530.MP4, separate from the consolidated 20111105_1532.MP4. A reviewed source/run-only presentation extension would reduce that same nine-card subset to two source cards, preserving every moment. Four captured entries are off-manifest and remain excluded. No code or runtime change in this result update.
