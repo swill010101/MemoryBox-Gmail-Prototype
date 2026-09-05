@@ -383,7 +383,7 @@ class MigrationTests(unittest.TestCase):
         self.assertEqual(len(versions),len(set(versions)))
         applied={f"{i:03}" for i in range(1,30)}
         self.assertEqual([p.name for p in paths if p.name.split('_',1)[0] not in applied],
-                         ['030_p2_i13_scope_admission.sql'])
+                         ['030_p2_i13_scope_admission.sql', '031_p2_i13_transcript_annotations.sql'])
         old=subprocess.check_output(['git','show','7ac838d76a888aff794eb1c381113e697f3d8e3d:memorybox/migrations/026_p2_i13_scope_admission.sql'],cwd=ROOT)
         new=(ROOT/'memorybox/migrations/030_p2_i13_scope_admission.sql').read_bytes()
         self.assertEqual(new.replace(b'\r\n',b'\n'),old.replace(b'\r\n',b'\n'))

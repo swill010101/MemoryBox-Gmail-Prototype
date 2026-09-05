@@ -2294,3 +2294,12 @@ html[data-mb-surface="explore"] .mb-explore.is-present-locked .mb-explore-timeli
     grid-template-rows: minmax(0, 1fr) minmax(0, .35fr);
   }
 }
+
+.mb-transcript-annotations { margin-bottom: .6rem; border-bottom: 1px solid #40516c; padding-bottom: .4rem; }
+.mb-transcript-annotations label { display: block; margin: .35rem 0; }
+.mb-transcript-annotations textarea { width: 100%; box-sizing: border-box; }
+.mb-transcript-annotations select, .mb-transcript-annotations input,
+.mb-transcript-annotations textarea, .mb-transcript-annotations button {
+  color: #edf3ff; background: #182335; border: 1px solid #40516c; border-radius: 5px; padding: .3rem;
+}
+.mb-transcript-annotations :focus-visible { outline: 2px solid #75a7ff; }

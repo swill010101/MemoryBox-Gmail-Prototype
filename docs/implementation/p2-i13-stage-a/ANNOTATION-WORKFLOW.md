@@ -22,3 +22,8 @@ The current evidence plan cannot call face/voice Learn or recognition, even afte
 ## Verification limits
 
 Regression tests cover membership without truth, no implicit start, off-manifest denial, malformed sources/truth, preserved truth requirements for acceptance/learning, and rejection of face/voice/archive expansion from evidence generation. No runtime migrations or processing ran; no live annotation workflow was exercised. The earlier Chromium playback proof remains valid for unchanged playback code.
+
+
+## Subsequent approved implementation
+
+The annotation-only slice is now implemented under Tom's later approval. See ANNOTATION-IMPLEMENTATION-REPORT.md for code, tests, limitations and the unapplied 031 migration. Earlier missing-implementation statements describe the Stage A correction at that time. Runtime deployment, full voice recognition and corpus processing remain separate.

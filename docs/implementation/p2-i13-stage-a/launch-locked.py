@@ -1,4 +1,4 @@
-"""Default: inspect only. --start requires prior operator deployment approval and schema 030."""
+"""Default: inspect only. --start requires prior operator deployment approval and schemas 030/031."""
 import argparse
 import hashlib
 import importlib.machinery
@@ -48,6 +48,11 @@ def check_schema(dsn):
         c.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
         row=c.execute("SELECT filename FROM public.schema_migrations WHERE version='030'").fetchone()
         if not row or row[0]!="030_p2_i13_scope_admission.sql":raise RuntimeError("Reviewed migration 030 is not recorded; no service started.")
+        row=c.execute("SELECT filename FROM public.schema_migrations WHERE version='031'").fetchone()
+        if not row or row[0]!="031_p2_i13_transcript_annotations.sql":raise RuntimeError("Reviewed migration 031 is not recorded; no service started.")
+        for name in ("i13_transcript_versions","i13_transcript_annotations","i13_current_transcripts","i13_effective_words","i13_effective_moments"):
+            if not c.execute("SELECT to_regclass(%s) IS NOT NULL",("public."+name,)).fetchone()[0]:
+                raise RuntimeError("Required annotation schema missing; no service started.")
         for name in ("i13_processing_admissions","i13_admission_events","i13_work_attempts","i13_queue_units"):
             if not c.execute("SELECT to_regclass(%s) IS NOT NULL",("public."+name,)).fetchone()[0]:
                 raise RuntimeError("Required I13 table missing; no service started.")

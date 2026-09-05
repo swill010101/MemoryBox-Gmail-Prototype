@@ -203,3 +203,8 @@ Both source videos pass by Tom's report. The video modal clipping correction res
 Tom accepted modal release 33eff43d34ecf1d4314509519bd4549a66f1befe and asked to proceed. Locked deployment and the reviewed two-source playback/presentation corrections have owner acceptance. Full Gate 2 aggregate queue/health proof is not inferred from UI acceptance. Gate 3 processing has not been authorized by this acceptance; Gate 4 remains locked.
 
 The next prepared slice is [annotation-only persistence](ANNOTATION-IMPLEMENTATION-PLAN.md). Code inspection confirms current Learn also performs recognition/queue work and current transcript replacement deletes old words. Resolve these conflicts with the accepted additive-overlay/immutable-transcript decisions before any new evidence run. The new plan gives implementation order, tests and review boundaries. No deployment is needed for this documentation update.
+
+
+## Annotation slice implemented; founder deployment review pending
+
+See [ANNOTATION-IMPLEMENTATION-REPORT.md](ANNOTATION-IMPLEMENTATION-REPORT.md). Tom approved implementation; 81 tests and synthetic browser proof pass. Migration 031 is authored and tested only against disposable PostgreSQL 17, not applied to FlightSim. The new launcher requires 031; do not start this release against the existing 030 runtime. Next preparation is exact-corpus read-only coverage and migration preflight, then PostgreSQL 16 clone rehearsal/performance review. Existing accepted locked code can remain running. No bounded run or archive unlock is authorized.

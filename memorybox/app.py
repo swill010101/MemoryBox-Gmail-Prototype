@@ -2808,10 +2808,10 @@ def recognition_video_people(
 
 
 @app.get("/speech/transcript")
-def speech_transcript_get(video_external_id: str = Query(..., min_length=1, max_length=500)) -> dict[str, Any]:
+def speech_transcript_get(video_external_id: str = Query(..., min_length=1, max_length=500), video_provider_key: str | None = Query(None, max_length=80)) -> dict[str, Any]:
     from memorybox.speech.store import list_transcript
 
-    return list_transcript(video_external_id)
+    return list_transcript(video_external_id, video_provider_key)
 
 
 @app.get("/speech/status")
@@ -4793,3 +4793,8 @@ def hc_promote_artifact(item_id: str, body: dict[str, Any]) -> dict[str, Any]:
         )
     except HistorianCaptureError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+# Annotation writes are separate from the processing-gated /speech namespace.
+from memorybox.speech.annotation_api import router as annotation_router
+app.include_router(annotation_router)

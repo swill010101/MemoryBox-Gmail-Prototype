@@ -1,0 +1,17 @@
+{
+  "kind": "actual_annotation_form_and_selection_synthetic_browser",
+  "checks": {
+    "emptyRejected": true,
+    "selectedExactWords": true,
+    "correction": true,
+    "annotationOnly": true,
+    "ownerHeader": true,
+    "refreshed": true,
+    "saveReachable": true
+  },
+  "passed": true,
+  "limits": [
+    "Synthetic API responses; persistence tested separately on disposable PostgreSQL",
+    "No runtime services or family media"
+  ]
+}

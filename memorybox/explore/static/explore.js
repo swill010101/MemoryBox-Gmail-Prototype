@@ -5600,7 +5600,7 @@
     }
     const ac = new AbortController();
     const abortTimer = window.setTimeout(() => ac.abort(), 12000);
-    fetch("/speech/transcript?video_external_id=" + encodeURIComponent(vid), {
+    fetch("/speech/transcript?video_external_id=" + encodeURIComponent(vid) + "&video_provider_key=" + encodeURIComponent(item.video_provider_key || item.provider_key || "hvrt"), {
       signal: ac.signal,
     })
       .then((r) =>
@@ -5620,6 +5620,7 @@
           );
           return;
         }
+        if (!box.isConnected || document.getElementById("mb-ev-transcript") !== box) return;
         const words = Array.isArray(data.words) ? data.words : [];
         const turns = Array.isArray(data.turns) ? data.turns : [];
         const moments = Array.isArray(data.moments) ? data.moments : [];
@@ -5658,10 +5659,10 @@
           .map((w, i) => {
             const st = Number(w.t_start != null ? w.t_start : w.start_sec || 0);
             const en = Number(w.t_end != null ? w.t_end : w.end_sec || st);
-            const label = String(w.token || w.text || w.word || "").trim();
+            const label = String(w.token != null ? w.token : w.text || w.word || "").trim();
             const spk = (turns.find((t) => Number(t.t_start) <= st && Number(t.t_end) >= st) || {})
               .status;
-            const who = spk && spk !== "anonymous" ? " " + String(spk) : "";
+            const who = ""; // Attribution is shown in annotation details, never inserted into machine text.
             return (
               '<span class="mb-ev-word" data-i="' +
               i +
@@ -5670,7 +5671,7 @@
               '" data-end="' +
               en +
               '" title="' +
-              escapeAttr(st.toFixed(1) + "s") +
+              escapeAttr(st.toFixed(1) + "s" + (w.annotation_id ? " ? Owner annotation" : "") + (w.person_id ? " ? " + ((knownPeopleOptions().find(p => p.id === w.person_id) || {}).label || w.person_id) : "")) +
               '">' +
               escapeHtml(label) +
               who +
@@ -5678,6 +5679,7 @@
             );
           })
           .join(" ");
+        bindTranscriptAnnotations(box, item, data);
         syncTranscribeButton();
         const player = document.querySelector(".mb-ev-video-player");
         const markActive = () => {
@@ -5711,7 +5713,7 @@
           const status = document.getElementById("mb-learn-status");
           if (status)
             status.textContent =
-              "Voice span " + tStart.toFixed(1) + "s–" + tEnd.toFixed(1) + "s. Choose a person and Learn.";
+              "Voice span " + tStart.toFixed(1) + "s–" + tEnd.toFixed(1) + "s. Save an assignment using Annotate transcript; Learn is separate.";
         });
         box.addEventListener("keydown", (ev) => {
           const span = state.modal.speechSpan;
@@ -5741,6 +5743,90 @@
           {}
         );
       });
+  }
+
+  function bindTranscriptAnnotations(box, item, data) {
+    if (!data.annotation_enabled || !data.version_id) return;
+    const tools = document.createElement("details");
+    tools.className = "mb-transcript-annotations";
+    tools.innerHTML = `<summary>Annotate transcript</summary>
+      <p data-annotation-status role="status">Highlight words, then choose a Person or mark unknown.</p>
+      <label>Speaker <select data-annotation-person><option value="">Choose a Person?</option><option value="unknown">Unknown speaker</option><option value="no_match">No matching MB Person</option></select></label>
+      <label><input type="checkbox" data-correct-text> Correct selected text</label>
+      <textarea data-annotation-text aria-label="Corrected text" rows="2" maxlength="8000" disabled></textarea>
+      <label>Reason <input data-annotation-reason maxlength="1000" value="Owner review"></label>
+      <button type="button" data-annotation-save disabled>Save assignment</button>
+      <button type="button" data-annotation-withdraw disabled>Withdraw assignment</button>
+      <details><summary>Annotation history</summary><div data-annotation-history></div></details>`;
+    box.prepend(tools);
+    const find = s => tools.querySelector(s), status = find("[data-annotation-status]");
+    const person = find("[data-annotation-person]"), text = find("[data-annotation-text]"), corrected = find("[data-correct-text]");
+    const save = find("[data-annotation-save]"), withdraw = find("[data-annotation-withdraw]");
+    let selected = [], prior = null, busy = false, retry = null;
+    fetch("/people?limit=500").then(r => { if (!r.ok) throw Error("Person list unavailable"); return r.json(); }).then(d => {
+      (d.people || []).forEach(p => { const o = document.createElement("option"); o.value = p.id; o.textContent = p.display_name || p.name || p.id; person.appendChild(o); tools.querySelectorAll('[data-history-person]').forEach(row => { if (row.dataset.historyPerson === p.id) row.firstChild.textContent = row.firstChild.textContent.replace(p.id, o.textContent); }); });
+    }).catch(e => { status.textContent = e.message; });
+    const history = data.history || [];
+    const superseded = new Set(history.map(a => a.supersedes).filter(Boolean));
+    const active = history.filter(a => !a.stale && a.action === "assign" && !superseded.has(a.id));
+    if (active.length) tools.querySelector("summary").textContent = "Annotate transcript ? " + active.length + " saved assignments";
+    const setSelection = ids => {
+      selected = ids; retry = null;
+      prior = active.find(a => JSON.stringify(a.word_ids) === JSON.stringify(ids)) || null;
+      save.disabled = !selected.length; withdraw.disabled = !prior;
+      if (prior) { person.value = prior.person_id || prior.speaker_state; corrected.checked = prior.correction !== null; }
+      else { person.value = ""; corrected.checked = false; }
+      text.disabled = !corrected.checked;
+      text.value = prior && prior.correction !== null ? prior.correction : data.words.filter(w => ids.includes(w.id)).map(w => w.machine_token).join(" ");
+      status.textContent = selected.length + " words selected" + (prior ? "; revising saved assignment." : ".");
+    };
+    const historyBox = find("[data-annotation-history]");
+    history.forEach(a => {
+      const row = document.createElement("p");
+      row.dataset.historyPerson = a.person_id || "";
+      row.textContent = `${a.created_at} ? ${a.action} ? ${a.person_id || a.speaker_state} ? ${a.reason}${a.stale ? " ? Earlier transcript version" : ""}`;
+      if (a.correction !== null) row.appendChild(document.createTextNode(" ? Text: " + a.correction));
+      if (active.includes(a)) { const edit = document.createElement("button"); edit.type = "button"; edit.textContent = "Review assignment"; edit.onclick = () => setSelection(a.word_ids); row.appendChild(edit); }
+      historyBox.appendChild(row);
+    });
+    const pick = () => {
+      if (busy) return;
+      const sel = window.getSelection();
+      if (!sel || sel.isCollapsed) return;
+      const chosen = Array.from(box.querySelectorAll(".mb-ev-word")).filter(el => sel.containsNode(el, true));
+      if (!chosen.length) return;
+      const ids = chosen.map(el => data.words[Number(el.dataset.i)]?.id);
+      if (ids.some(id => !id)) return;
+      // Include zero-length rendered tokens inside a corrected span.
+      const from = Number(chosen[0].dataset.i), to = Number(chosen[chosen.length - 1].dataset.i);
+      const overlay = active.find(a => a.word_ids.includes(ids[0]) && ids.every(id => a.word_ids.includes(id)));
+      setSelection(overlay ? overlay.word_ids : data.words.slice(from, to + 1).map(w => w.id));
+      tools.open = true;
+    };
+    box.addEventListener("mouseup", pick); box.addEventListener("keyup", pick);
+    corrected.onchange = () => { text.disabled = !corrected.checked; };
+    const submit = async action => {
+      if (busy || !selected.length) return;
+      if (!person.value) { status.textContent = "Choose a Person or unknown state."; return; }
+      const stateValue = ["unknown", "no_match"].includes(person.value) ? person.value : "person";
+      const body = {provider_key:data.provider_key, source_id:item.video_external_id || item.external_id,
+        version_id:data.version_id, expected_head:data.expected_head, word_ids:selected,
+        person_id:stateValue === "person" ? person.value : null, speaker_state:stateValue, action,
+        correction:corrected.checked ? text.value : null, reason:find("[data-annotation-reason]").value,
+        supersedes:prior ? prior.id : null};
+      const fingerprint = JSON.stringify(body);
+      if (!retry || retry.fingerprint !== fingerprint) retry = {fingerprint, id:crypto.randomUUID()};
+      body.request_id = retry.id; busy = true; save.disabled = withdraw.disabled = true;
+      try {
+        const r = await fetch("/annotations/transcript", {method:"POST", headers:{"Content-Type":"application/json", "X-MB-Annotation":"1"}, body:JSON.stringify(body)});
+        const d = await r.json(); if (!r.ok) throw Error(typeof d.detail === "string" ? d.detail : "Assignment rejected; reopen transcript and review selection.");
+        if (!box.isConnected) return;
+        status.textContent = "Assignment saved. Original transcript preserved.";
+        bindSpeechTranscript(item);
+      } catch (e) { status.textContent = e.message; save.disabled = false; withdraw.disabled = !prior; }
+      finally { busy = false; }
+    };
+    save.onclick = () => submit("assign"); withdraw.onclick = () => submit("withdraw");
   }
 
   function appearanceViewBounds(item) {

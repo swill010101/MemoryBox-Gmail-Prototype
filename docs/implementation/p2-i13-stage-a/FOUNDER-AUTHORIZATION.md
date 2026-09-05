@@ -36,3 +36,13 @@ Tom reports both source videos work, but the enlarged player clips the transcrip
 ## Modal acceptance and next-step preparation
 
 Tom accepted correction 33eff43d34ecf1d4314509519bd4549a66f1befe and requested the next step. Recorded owner acceptance and prepared ANNOTATION-IMPLEMENTATION-PLAN.md after inspecting existing persistence. No approval for a new recognition/transcription run, deletion or archive start is inferred.
+
+
+## Annotation-only slice approved
+
+Tom approved ANNOTATION-IMPLEMENTATION-PLAN.md at 25290136b60653c2423c37b21c5e4b38203b9b11. Authorize implementation steps 1-6, offline/disposable database tests, code/test/documentation commit and push, and an unapplied migration. No runtime migration, recognition, transcription, deletion, deployment or archive processing. Preserve I12 and the original C:\MemoryBox working tree.
+
+
+## Explicit annotation publication approval
+
+After automatic approval review rejected publication, the assistant asked: "May I commit these changes and push them to origin/codex/p2-i13-stage-a?" Tom replied "approved." This explicitly authorizes committing and pushing the reviewed annotation implementation, tests, synthetic proof and unapplied migration. Runtime migration and deployment remain separate.

@@ -1,0 +1,25 @@
+{
+  "scope": "synthetic annotation slice; no FlightSim runtime operations",
+  "tests": {
+    "annotations": 14,
+    "stage_a": 33,
+    "ask_context": 18,
+    "fragment_correction": 12,
+    "fragment_trace": 4,
+    "total": 81
+  },
+  "database": "isolated local PostgreSQL 17; 11 integration tests",
+  "browser": [
+    "annotation selection and save",
+    "8 modal fit cases",
+    "source playback and moment navigation"
+  ],
+  "runtime_migration_applied": false,
+  "full_i13_acceptance": false,
+  "pending": [
+    "FlightSim PostgreSQL 16 clone rehearsal",
+    "realistic query/migration performance",
+    "live owner annotation workflow",
+    "separate voice/lifecycle acceptance"
+  ]
+}

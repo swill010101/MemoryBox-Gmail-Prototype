@@ -19,7 +19,8 @@ $env:PYTHONDONTWRITEBYTECODE = '1'
 $env:MEMORYBOX_RECOGNITION_DRAIN = '0'
 $env:MEMORYBOX_SPEECH_DRAIN = '0'
 Remove-Item Env:MEMORYBOX_I13_ADMISSION_ID -ErrorAction SilentlyContinue
-foreach ($i13Suite in @('test_i13_fragment_correction.py','test_i13_stage_a.py','test_i13_fragment_trace.py','test_i13_ask_context.py')) {
+Remove-Item Env:I13_SYNTHETIC_PG_TEST -ErrorAction SilentlyContinue
+foreach ($i13Suite in @('test_i13_fragment_correction.py','test_i13_stage_a.py','test_i13_fragment_trace.py','test_i13_ask_context.py','test_i13_annotations.py')) {
     & $i13Python -B -m unittest discover -s tests -p $i13Suite -v
     if ($LASTEXITCODE -ne 0) { throw "Tests failed: $i13Suite" }
 }

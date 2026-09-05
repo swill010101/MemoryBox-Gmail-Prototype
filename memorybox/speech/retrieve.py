@@ -55,7 +55,7 @@ def search_spoken_moments(plan: QueryPlan, *, limit: int = 48) -> list[dict[str,
     sql = f"""
         SELECT id::text, video_provider_key, video_external_id, t_start, t_end,
                text, person_id::text, speaker_state, confidence, status
-        FROM speech_spoken_moments
+        FROM i13_effective_moments
         WHERE {' AND '.join(clauses)}
         ORDER BY t_start ASC
         LIMIT %s
@@ -72,7 +72,7 @@ def search_spoken_moments(plan: QueryPlan, *, limit: int = 48) -> list[dict[str,
                         """
                         SELECT id::text, video_provider_key, video_external_id, t_start, t_end,
                                text, person_id::text, speaker_state, confidence, status
-                        FROM speech_spoken_moments
+                        FROM i13_effective_moments
                         WHERE id = %s::uuid AND COALESCE(status, 'accepted') <> 'withdrawn'
                         """,
                         (hid,),

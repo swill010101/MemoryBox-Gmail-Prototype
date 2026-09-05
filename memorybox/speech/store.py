@@ -68,22 +68,9 @@ def replace_video_transcript(
 ) -> dict[str, Any]:
     vpk, veid = video_provider_key, video_external_id
     with connection() as conn:
-        conn.execute(
-            """
-            DELETE FROM speech_spoken_moments
-            WHERE video_provider_key = %s AND video_external_id = %s
-              AND COALESCE(status, 'accepted') <> 'withdrawn'
-            """,
-            (vpk, veid),
-        )
-        conn.execute(
-            "DELETE FROM speech_speaker_turns WHERE video_provider_key = %s AND video_external_id = %s",
-            (vpk, veid),
-        )
-        conn.execute(
-            "DELETE FROM speech_transcript_words WHERE video_provider_key = %s AND video_external_id = %s",
-            (vpk, veid),
-        )
+        conn.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))',(vpk+':'+veid,))
+        if conn.execute('SELECT 1 FROM i13_transcript_versions WHERE provider_key=%s AND source_id=%s AND run_id=%s::uuid',(vpk,veid,run_id)).fetchone():
+            raise ValueError('transcript_run_already_persisted')
         for w in words:
             conn.execute(
                 """
@@ -161,6 +148,13 @@ def replace_video_transcript(
                 ),
             ).fetchone()
             moment_ids.append(str(row["id"]))
+        snapshot = {'provenance':'machine_run'}
+        for key, table in [('words','speech_transcript_words'),('turns','speech_speaker_turns'),('moments','speech_spoken_moments')]:
+            snapshot[key] = [dict(r) for r in conn.execute(
+                f'SELECT * FROM {table} WHERE video_provider_key=%s AND video_external_id=%s AND processing_run_id=%s::uuid ORDER BY t_start,t_end,id',
+                (vpk,veid,run_id)).fetchall()]
+        conn.execute('INSERT INTO i13_transcript_versions(provider_key,source_id,run_id,machine) VALUES (%s,%s,%s::uuid,%s::jsonb)',
+            (vpk,veid,run_id,json.dumps(snapshot,default=str)))
     return {"word_count": len(words), "turn_count": len(turns), "moment_ids": moment_ids}
 
 
@@ -172,73 +166,9 @@ def _speech_api_row(row: Any) -> dict[str, Any]:
     return d
 
 
-def list_transcript(video_external_id: str) -> dict[str, Any]:
-    vid = (video_external_id or "").strip()
-    with connection() as conn:
-        words = [
-            _speech_api_row(r)
-            for r in conn.execute(
-                """
-                SELECT token, t_start, t_end, confidence
-                FROM speech_transcript_words
-                WHERE video_external_id = %s
-                ORDER BY t_start ASC, t_end ASC
-                """,
-                (vid,),
-            ).fetchall()
-        ]
-        turns = [
-            _speech_api_row(r)
-            for r in conn.execute(
-                """
-                SELECT id::text, t_start, t_end, anonymous_speaker_key,
-                       person_id::text, status, confidence
-                FROM speech_speaker_turns
-                WHERE video_external_id = %s
-                ORDER BY t_start ASC
-                """,
-                (vid,),
-            ).fetchall()
-        ]
-        moments = [
-            _speech_api_row(r)
-            for r in conn.execute(
-                """
-                SELECT id::text, t_start, t_end, text, person_id::text,
-                       speaker_state, status, turn_id::text
-                FROM speech_spoken_moments
-                WHERE video_external_id = %s
-                  AND COALESCE(status, 'accepted') <> 'withdrawn'
-                ORDER BY t_start ASC
-                """,
-                (vid,),
-            ).fetchall()
-        ]
-        qrow = conn.execute(
-            """
-            SELECT status, reason, enqueue_reason
-            FROM speech_queue_items
-            WHERE video_external_id = %s
-              AND enqueue_reason = 'transcribe'
-            ORDER BY updated_at DESC NULLS LAST, created_at DESC
-            LIMIT 1
-            """,
-            (vid,),
-        ).fetchone()
-    queue = dict(qrow) if qrow else None
-    full_text = " ".join(str(m.get("text") or "").strip() for m in moments).strip()
-    if not full_text:
-        full_text = " ".join(str(w.get("token") or "").strip() for w in words).strip()
-    return {
-        "ok": True,
-        "video_external_id": vid,
-        "words": words,
-        "turns": turns,
-        "moments": moments,
-        "queue": queue,
-        "full_text": full_text,
-        "word_count": len(words),
-    }
+def list_transcript(video_external_id: str, video_provider_key: str | None = None) -> dict[str, Any]:
+    from memorybox.speech.annotations import transcript
+    return transcript(video_provider_key, (video_external_id or '').strip())
 
 
 def persist_voice_exemplar(
@@ -368,31 +298,13 @@ def list_withdrawals(person_id: str, video_external_id: str) -> list[dict[str, A
 
 def has_transcript(video_external_id: str) -> bool:
     with connection() as conn:
-        row = conn.execute(
-            """
-            SELECT 1 FROM speech_transcript_words
-            WHERE video_external_id = %s
-            LIMIT 1
-            """,
-            (video_external_id,),
-        ).fetchone()
-    return bool(row)
+        return bool(conn.execute("SELECT 1 FROM i13_current_transcripts WHERE source_id=%s AND jsonb_array_length(machine->'words')>0 LIMIT 1",(video_external_id,)).fetchone())
 
 
 def list_videos_with_word_counts(*, limit: int = 12) -> list[dict[str, Any]]:
     with connection() as conn:
-        rows = conn.execute(
-            """
-            SELECT video_external_id, count(*)::int AS word_count
-            FROM speech_transcript_words
-            GROUP BY video_external_id
-            HAVING count(*) > 0
-            ORDER BY count(*) DESC
-            LIMIT %s
-            """,
-            (int(limit),),
-        ).fetchall()
-    return [{"video_external_id": str(r["video_external_id"]), "word_count": int(r["word_count"])} for r in rows]
+        rows=conn.execute("SELECT source_id AS video_external_id,jsonb_array_length(machine->'words') AS word_count FROM i13_current_transcripts WHERE jsonb_array_length(machine->'words')>0 ORDER BY word_count DESC LIMIT %s",(int(limit),)).fetchall()
+    return [dict(r) for r in rows]
 
 
 def set_moment_qdrant_id(moment_id: str, point_id: str) -> None:

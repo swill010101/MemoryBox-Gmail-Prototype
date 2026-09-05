@@ -57,3 +57,7 @@ Desktop.ini
 MemoryBox_P1_and_Mockup_Screens_PNG.zip
 ux-png-pack/
 mockups/MemoryBox_P1_and_Mockup_Screens_PNG.zip
+
+# Isolated synthetic I13 database validation (never runtime data).
+/.i13-annotation-test-pg/
+/.i13-annotation-test-pg.log

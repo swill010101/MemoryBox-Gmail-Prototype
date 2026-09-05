@@ -17,8 +17,8 @@ def main():
         raise SystemExit("Load the existing database environment without printing credentials.")
     expected = []
     for p in paths:
-        if p.name[:3] in {"009", "025", "030"}:
-            expected.extend(re.findall(r"CREATE TABLE IF NOT EXISTS\s+(\w+)", p.read_text(encoding="utf-8"), re.I))
+        if p.name[:3] in {"009", "025", "030", "031"}:
+            expected.extend(re.findall(r"CREATE TABLE (?:IF NOT EXISTS\s+)?(\w+)", p.read_text(encoding="utf-8"), re.I))
     with psycopg.connect(dsn, connect_timeout=5,
                           options="-c default_transaction_read_only=on -c statement_timeout=20000") as conn:
         conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
@@ -36,7 +36,7 @@ def main():
             "limits": "Metadata only; does not establish full schema or I12 workflow compatibility. No migration or processing authorized."
         }
     print(json.dumps(report,indent=2,default=str))
-    if report["pending"] != ["030_p2_i13_scope_admission.sql"] or any(c["version"] not in {"009","025"} for c in report["filename_conflicts"]):
+    if report["pending"] != ["031_p2_i13_transcript_annotations.sql"] or any(c["version"] not in {"009","025"} for c in report["filename_conflicts"]):
         raise SystemExit("Unexpected migration history; stop for reconciliation.")
 
 if __name__ == "__main__":
