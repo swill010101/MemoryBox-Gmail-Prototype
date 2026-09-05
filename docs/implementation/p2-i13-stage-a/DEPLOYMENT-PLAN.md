@@ -163,3 +163,7 @@ See [PLAYBACK-CORRECTION.md](PLAYBACK-CORRECTION.md). Video open now checks exis
 ## Ask context and Person-result correction
 
 See [ASK-CONTEXT-CORRECTION.md](ASK-CONTEXT-CORRECTION.md) for the new `clear all` command, fresh named-person searches, evidence membership guards, test commands and locked deployment verification. No migration or processing is required.
+
+## Fragment correction proposal prepared
+
+Tom approved preparing the bounded correction and asked to consider restarting Learn and wiping fragments. [The proposal](FRAGMENT-CORRECTION-PROPOSAL.md) recommends an evidence-preserving source-only projection first, explains why rerunning the unfixed grouper can recreate fragments, and separates any later Learn attempt from publication. No deletion or processing has started.
