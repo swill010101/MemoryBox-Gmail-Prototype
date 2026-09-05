@@ -30,3 +30,11 @@ Future admitted scans now carry the sampler's planned interval into observation 
 6. Select a later moment, play beyond its old half-second end, navigate Previous/Next and return to the same Gallery filters/sort/scroll. Confirm other sources and photo results remain available and transcript text/owner overlays persist. Do not select Learn.
 7. Report results and stop for founder review. Do not enable processing or apply migrations.
 8. Rollback: stop only these app/worker consoles, then use the prior release's locked launcher with its own exact SHA and existing configuration. No media, DB records, observations or credentials are restored/deleted because this deployment does not change them.
+
+## FlightSim owner report - 2026-09-05
+
+After the fa09ec646e669aefdbe6c747ba350650b1d857b3 release checks/start instructions, Tom reports that the previously counted 15 clips are now 9; one card is labeled 7 moments, plays correctly and jumps between moments. The supplied screenshot shows the 7-moments badge. Count reconciliation: replacing seven separate entries with one source card reduces the count by six (15 - 7 + 1 = 9). This is a presentation change, not deletion of six records or media files.
+
+Record source-card consolidation, playback and moment navigation as passing by owner report. The remaining eight entries in that reported set are not established to be the same source; their exact provider/source/evidence lineage requires read-only correlation before extending projection. Similar thumbnails do not establish identical files. The screenshot's broader 57-visible Gallery count is not the same as the reported 15-to-9 subset.
+
+This report does not independently confirm Gallery-return context, all modal navigation, transcript overlays, full I13 acceptance or face/voice accuracy. No additional processing, migration, deletion, conversion or broader projection is authorized/performed by this update. Keep the deployed code at fa09ec6 pending review; this documentation update needs no redeploy.

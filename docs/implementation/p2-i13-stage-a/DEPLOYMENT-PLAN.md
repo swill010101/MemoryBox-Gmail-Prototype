@@ -175,3 +175,7 @@ Tom approved preparing the bounded correction and asked to consider restarting L
 ## Fragment correction implemented; deployment review pending
 
 [Implementation and deployment procedure](FRAGMENT-CORRECTION-IMPLEMENTATION.md): source-only evidence navigation plus recorded-cadence grouping for future admitted scans. 65 offline tests and synthetic browser proof pass. Existing data remains intact; no recognition/Learn or migration has run. Query-limited moments stay query-limited; other sources remain outside this presentation pilot. The new start-fragment-release.ps1 helper defaults to check-only.
+
+## FlightSim fragment pilot result recorded
+
+Tom reports the fa09ec6 source card shows 7 moments, plays correctly and jumps between moments; the reported subset decreased from 15 entries to 9, exactly matching seven cards becoming one. See FRAGMENT-CORRECTION-IMPLEMENTATION.md for the owner evidence and remaining checks. Other entries still require source-specific read-only correlation. No further deployment or processing is needed for this documentation update.
