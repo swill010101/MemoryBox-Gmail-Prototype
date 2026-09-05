@@ -1,7 +1,7 @@
 {
   "plan_id": "p2-i13-playable-copy-pilot",
-  "version": "0.1",
-  "status": "proposal_runtime_preflight_and_execution_review_pending",
+  "version": "0.2",
+  "status": "helper_prepared_execution_review_pending",
   "execution_authorized": false,
   "purpose": "existing_source_browser_playback_only",
   "manifest_ref": {
@@ -34,7 +34,7 @@
     "container": "mp4",
     "video_codec": "h264",
     "pixel_format": "yuv420p",
-    "audio_codec": "aac_if_present",
+    "audio_codec": "copy_existing_aac_unchanged",
     "faststart": true,
     "source_timebase": "full_source_zero_origin_no_trim",
     "max_duration_difference_sec": 0.5
@@ -49,11 +49,37 @@
     "archive_processing": false
   },
   "pending_evidence": [
-    "FlightSim source hash and size revalidation",
-    "actual video/audio stream metadata and rotation",
-    "existing target status and derivative destination free space",
-    "ffmpeg/ffprobe availability and versions",
-    "reviewed isolated operator helper with output validation and no-overwrite publication",
-    "explicit execution approval for this exact source and output"
-  ]
+    "Exact helper commit review and live check-only revalidation",
+    "Explicit approval for one staging/validation attempt",
+    "Owner visual/audio staged review followed by separate publication approval"
+  ],
+  "preflight_owner_report": {
+    "source_sha256_matches": true,
+    "size_bytes": 1251525801,
+    "duration_sec": 1105.104,
+    "video": {
+      "codec": "mpeg4",
+      "tag": "mp4v",
+      "width": 1280,
+      "height": 720,
+      "pixel_format": "yuv420p",
+      "frames": 33120,
+      "frame_rate": "30000/1001",
+      "start_time": 0
+    },
+    "audio": {
+      "codec": "aac",
+      "sample_rate": 24000,
+      "channels": 1,
+      "duration_sec": 1105.066667,
+      "start_time": 0
+    },
+    "proxy_exists": false,
+    "c_drive_free_bytes": 1240324608000,
+    "ffmpeg_version": "9.0-full_build-www.gyan.dev",
+    "ffprobe_version": "9.0-full_build-www.gyan.dev",
+    "provenance": "Tom supplied FlightSim preflight output; not independently rerun by agent"
+  },
+  "operator_helper": "playable-copy-pilot.py",
+  "publication": "separate --publish after visual review; atomic same-volume hard link with no overwrite"
 }
