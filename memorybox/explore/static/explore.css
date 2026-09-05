@@ -2253,8 +2253,44 @@ html[data-mb-surface="explore"] .mb-explore.is-present-locked .mb-explore-timeli
 .mb-qp-day li { margin: 0.25rem 0; }
 
 /* Source-linked evidence navigation, within the existing dark viewer. */
-.mb-source-moments { padding: 12px 0; }
+.mb-source-moments { padding: 4px 0; flex: 0 0 auto; }
 .mb-source-moments label { font-size: 14px; }
 .mb-source-moments select { margin-left: 8px; padding: 6px 10px; color: #edf3ff; background: #182335; border: 1px solid #40516c; border-radius: 6px; }
 .mb-source-moments select:focus-visible { outline: 2px solid #75a7ff; outline-offset: 2px; }
 .mb-source-moments select:disabled { opacity: .6; }
+
+/* Reserve visible transcript space without allowing intrinsic media size to
+   push the footer outside the fixed-height video dialog. */
+.mb-viewer.is-video .mb-viewer-chrome { flex: 0 0 auto; }
+.mb-viewer.is-video .mb-viewer-main {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 3fr) minmax(0, 2fr);
+  overflow: hidden;
+}
+.mb-viewer.is-video .mb-modal-body,
+.mb-viewer.is-video .mb-viewer-footer { min-height: 0; box-sizing: border-box; }
+.mb-viewer.is-video .mb-ev-video-shell { height: auto; gap: .35rem; overflow: hidden; }
+.mb-viewer.is-video .mb-ev-video-frame { min-height: 0; flex: 1 1 0; padding: .35rem; }
+.mb-viewer.is-video .mb-ev-video-player,
+.mb-viewer.is-video .mb-ev-video-frame img {
+  min-height: 0;
+  height: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+.mb-viewer.is-video .mb-viewer-footer .mb-ev-transcript {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
+  overflow: auto;
+  overscroll-behavior: contain;
+  box-sizing: border-box;
+}
+.mb-viewer.is-video .mb-video-playback-status { margin: .2rem 0; flex: 0 0 auto; }
+.mb-viewer.is-video .mb-video-playback-status:empty { display: none; }
+@media (max-width: 860px) {
+  .mb-viewer.is-video .mb-viewer-stage {
+    grid-template-rows: minmax(0, 1fr) minmax(0, .35fr);
+  }
+}

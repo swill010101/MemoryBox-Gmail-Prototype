@@ -3863,7 +3863,13 @@
     document.getElementById("mb-modal-close").focus();
   }
 
+  function setViewerMediaType(item) {
+    const viewer = document.querySelector("#mb-modal .mb-viewer");
+    if (viewer) viewer.classList.toggle("is-video", String(item.type || "").toLowerCase() === "video");
+  }
+
   function renderViewer(item) {
+    setViewerMediaType(item);
     const ids = visibleIds();
     const idx = ids.indexOf(item.id);
     document.getElementById("mb-modal-kicker").textContent = String(
@@ -5258,7 +5264,7 @@
     foot.innerHTML =
       (bits.length ? `<div class="mb-viewer-footrow">${bits.join("")}</div>` : "") +
       (t === "video"
-        ? `<div class="mb-ev-transcript is-on" id="mb-ev-transcript" aria-label="Synchronized transcript"><div class="mb-ev-transcript-empty">Loading transcript…</div></div>`
+        ? `<div class="mb-ev-transcript is-on" id="mb-ev-transcript" tabindex="0" aria-label="Synchronized transcript"><div class="mb-ev-transcript-empty">Loading transcript…</div></div>`
         : "");
     bindTranscribeThisTape(item);
   }
@@ -5783,10 +5789,6 @@
     });
     label.appendChild(select);
     wrap.appendChild(label);
-    const note = document.createElement("p");
-    note.className = "mb-rail-empty";
-    note.textContent = `${moments.length} evidence moments in this result. Playback continues through the source video.`;
-    wrap.appendChild(note);
     player.parentNode.insertAdjacentElement("afterend", wrap);
     const ready = () => { select.disabled = !player.isConnected || !player.controls || !player.videoWidth; };
     player.addEventListener("loadedmetadata", ready);

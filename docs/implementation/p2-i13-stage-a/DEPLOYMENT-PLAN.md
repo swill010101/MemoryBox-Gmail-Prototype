@@ -191,3 +191,8 @@ Tom confirms closing the viewer retains the Video filter and scroll position; an
 ## Second-source presentation extension ready
 
 Tom approved the exact 1530 source/run extension. Twelve focused tests pass; the fixture preserves fifteen evidence points in two separate source cards. Existing launcher/locks apply; the helper now discovers 67 offline tests. No runtime change or processing occurred. Deploy the new exact SHA in a new detached release only after review, retaining fa09ec6 for rollback.
+
+
+### Latest video modal layout correction
+
+Both source videos pass by Tom's report. The video modal clipping correction reserves visible, independently scrollable transcript space and removes the redundant moment description. See FRAGMENT-CORRECTION-IMPLEMENTATION.md for verification and deployment. Live FlightSim transcript-fit review remains pending; this does not authorize processing or complete I13 acceptance.

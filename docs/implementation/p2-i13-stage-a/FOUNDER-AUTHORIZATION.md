@@ -27,3 +27,7 @@ Scope: recorded-cadence grouping for future admitted scans; non-destructive Gall
 ## Second-source extension approved
 
 Following lookup result 46089221bbb6e48c9c0a95412a8fbb94f492d132 and the explicit recommendation to extend only the verified 1530 source/run, Tom replied "approved." Authorize that bounded code/test extension and commit/push for deployment review. No processing, migration, conversion or data deletion.
+
+## Video modal fit correction authorized
+
+Tom reports both source videos work, but the enlarged player clips the transcript. He explicitly requests removing the evidence-description line, moving the transcript up and fitting everything inside the modal. Authorize the scoped UI correction, responsive browser verification and commit/push. Preserve playback, jump navigation, source grouping, evidence and runtime locks; no processing or runtime data changes.

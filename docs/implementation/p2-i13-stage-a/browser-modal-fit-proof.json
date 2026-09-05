@@ -1,0 +1,122 @@
+{
+  "kind": "actual_modal_markup_css_and_video_transcript_renderers",
+  "cases": [
+    {
+      "width": 1208,
+      "height": 832,
+      "moments": true,
+      "transcriptHeight": 269.640625,
+      "playerHeight": 353.71875,
+      "footerVisible": true,
+      "lastReachable": true,
+      "jumpVisible": true,
+      "playerVisible": true,
+      "descriptionRemoved": true,
+      "modalFits": true,
+      "passed": true
+    },
+    {
+      "width": 1208,
+      "height": 832,
+      "moments": false,
+      "transcriptHeight": 269.640625,
+      "playerHeight": 398.3125,
+      "footerVisible": true,
+      "lastReachable": true,
+      "jumpVisible": true,
+      "playerVisible": true,
+      "descriptionRemoved": true,
+      "modalFits": true,
+      "passed": true
+    },
+    {
+      "width": 1024,
+      "height": 640,
+      "moments": true,
+      "transcriptHeight": 197.4375,
+      "playerHeight": 245.4375,
+      "footerVisible": true,
+      "lastReachable": true,
+      "jumpVisible": true,
+      "playerVisible": true,
+      "descriptionRemoved": true,
+      "modalFits": true,
+      "passed": true
+    },
+    {
+      "width": 1024,
+      "height": 640,
+      "moments": false,
+      "transcriptHeight": 197.4375,
+      "playerHeight": 290.03125,
+      "footerVisible": true,
+      "lastReachable": true,
+      "jumpVisible": true,
+      "playerVisible": true,
+      "descriptionRemoved": true,
+      "modalFits": true,
+      "passed": true
+    },
+    {
+      "width": 800,
+      "height": 600,
+      "moments": true,
+      "transcriptHeight": 130.078125,
+      "playerHeight": 144.40625,
+      "footerVisible": true,
+      "lastReachable": true,
+      "jumpVisible": true,
+      "playerVisible": true,
+      "descriptionRemoved": true,
+      "modalFits": true,
+      "passed": true
+    },
+    {
+      "width": 800,
+      "height": 600,
+      "moments": false,
+      "transcriptHeight": 130.078125,
+      "playerHeight": 189,
+      "footerVisible": true,
+      "lastReachable": true,
+      "jumpVisible": true,
+      "playerVisible": true,
+      "descriptionRemoved": true,
+      "modalFits": true,
+      "passed": true
+    },
+    {
+      "width": 640,
+      "height": 480,
+      "moments": true,
+      "transcriptHeight": 96.65625,
+      "playerHeight": 94.265625,
+      "footerVisible": true,
+      "lastReachable": true,
+      "jumpVisible": true,
+      "playerVisible": true,
+      "descriptionRemoved": true,
+      "modalFits": true,
+      "passed": true
+    },
+    {
+      "width": 640,
+      "height": 480,
+      "moments": false,
+      "transcriptHeight": 96.65625,
+      "playerHeight": 138.859375,
+      "footerVisible": true,
+      "lastReachable": true,
+      "jumpVisible": true,
+      "playerVisible": true,
+      "descriptionRemoved": true,
+      "modalFits": true,
+      "passed": true
+    }
+  ],
+  "passed": true,
+  "limits": [
+    "Synthetic video poster and transcript, no runtime services/media",
+    "Playback/navigation exercised by existing component tests"
+  ]
+}
