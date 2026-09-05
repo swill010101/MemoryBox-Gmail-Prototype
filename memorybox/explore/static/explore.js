@@ -1108,6 +1108,7 @@
   let askStatusTimer = null;
   let lastAskStatusLine = "";
   let askStatusGen = 0;
+  let askProgressId = null;
 
   function isAskWaitingSummary(s) {
     const t = String(s || "");
@@ -1154,15 +1155,21 @@
   function startAskStatusPoll() {
     stopAskStatusPoll();
     const gen = askStatusGen;
+    askProgressId = typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : Date.now().toString(36) + "-" + gen + "-" + Math.random().toString(36).slice(2);
+    const requestId = askProgressId;
     askStatusTimer = setInterval(function () {
       const sid = encodeURIComponent(sessionId || "");
-      fetch("/explore/api/ask-progress?session_id=" + sid, { cache: "no-store" })
+      fetch("/explore/api/ask-progress?session_id=" + sid + "&request_id=" + encodeURIComponent(requestId), { cache: "no-store" })
         .then(function (r) {
           return r.json();
         })
         .then(function (data) {
           if (gen !== askStatusGen) return;
-          if (data && data.line) setCuratorStatusLine(data.line);
+          if (data && data.line && data.line.trim().toLowerCase() !== "done") {
+            setCuratorStatusLine(data.line);
+          }
         })
         .catch(function () {});
     }, 280);
@@ -1220,6 +1227,8 @@
   }
 
   async function liveFind(askText, extras) {
+    const progressGen = askStatusGen;
+    const progressId = askProgressId;
     const q = /^clear\s+all[.!]?$/i.test(String(askText || "").trim())
       ? "clear all" : personScopedAsk(askText);
     const present = extras && extras.present;
@@ -1239,7 +1248,7 @@
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ask: q, session_id: sessionId || null,
-          context_place_names: contextPlaceOverride }),
+          context_place_names: contextPlaceOverride, progress_id: progressId }),
         cache: "no-store",
         ...(ctrl ? { signal: ctrl.signal } : {}),
       });
@@ -1247,8 +1256,10 @@
       return res.json();
     } finally {
       if (timer) clearTimeout(timer);
-      stopAskStatusPoll();
-      clearSearchingChrome();
+      if (progressGen === askStatusGen) {
+        stopAskStatusPoll();
+        clearSearchingChrome();
+      }
     }
   }
 

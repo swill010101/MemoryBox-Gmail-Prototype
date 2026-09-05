@@ -30,50 +30,48 @@ async def run(endpoint):
         await call("Emulation.setDeviceMetricsOverride", {"width":1000,"height":850,"deviceScaleFactor":1,"mobile":False})
         await call("Page.navigate",{"url":"about:blank"})
         code=(ROOT/"memorybox/explore/static/explore.js").read_text(encoding="utf-8")
-        extracted = code[code.index("  function applyPayloadToState("):code.index("  const ASK_HIST_KEY")]
-        extracted += code[code.index("  function peopleList("):code.index("  function syncRailTabs(")]
-        extracted += code[code.index("  function setPlaceFilter("):code.index("  function setViewMode(")]
+        extracted = code[code.index("  let askStatusTimer = null;"):code.index("  function showSearching(")]
         extracted += code[code.index("  async function liveFind("):code.index("  function currentAskText(")]
-        start = code.index("  function applyAskCommand(")
-        extracted += code[start:code.index("\n  function ", start + 10)]
         expression = """(async()=>{
  document.body.style='background:#0b1222;color:#edf3ff;font:18px system-ui;padding:32px';
- document.body.innerHTML='<h1>Ask context reset</h1><input id="mb-explore-ask" value="clear all"><pre id="result"></pre>';
- let state={domain:{chips:[{kind:'person',label:'Previous Person'}],typeFilter:'video',undatedFilter:true},gallery:{density:1,sort:'oldest',scrollTop:999}}, rawItems=[],sessionId='old',findGen=0,contextPlaceOverride=null,askStatusGen=0,askProgressId=null;
- const PERSON_MODE=false;const PERSON=null;
- const clearAskDirty=()=>{},rememberAskLocal=()=>{},hideQuickPreview=()=>{},clearSearchingChrome=()=>{},syncTimelineToEligibleDatedExtent=()=>{};
- const bumpFindGen=()=>++findGen;
- const extentOf=()=>({empty:true}),isDated=()=>false;
- const findErrorMessage=e=>String(e),renderCurator=()=>{};
- const render=()=>{document.getElementById('result').textContent=JSON.stringify(state,null,2)};
+ document.body.innerHTML='<h1>Curator progress</h1><div id="mb-explore-curator-body"></div><pre id="result"></pre>';
+ let state={domain:{}},sessionId='old-session',contextPlaceOverride=null;
+ const personScopedAsk=q=>q;
+ let tick,reply={line:'Done'},releaseOld;
  const requests=[];
- const personScopedAsk=q=>q,stopAskStatusPoll=()=>{};
- window.fetch=async(url,opts)=>{requests.push(JSON.parse(opts.body));return {ok:true,json:async()=>({session_id:'fresh',context:{reset:true},items:[],chips:[],summary:'All Ask context cleared.',ask_text:''})}};
- """ + extracted + """
- clearPlaceFilter();
- await liveFind('at Christmas');
- const chipClearSent=Array.isArray(requests[0].context_place_names)&&requests[0].context_place_names.length===0;
- setPlaceFilter('Florida');
- await liveFind('at Christmas');
- const chipSetSent=requests[1].context_place_names.join()==='Florida';
- applyAskCommand('clear all');
- await new Promise(r=>setTimeout(r,25));
- const cleared=state.domain.typeFilter==='all'&&!state.domain.undatedFilter&&state.domain.chips.length===0&&state.modal.openId===null&&sessionId==='fresh'&&rawItems.length===0;
- state.domain.chips=[{kind:'person',label:'Query Person'}];
- const unsupported=peopleList({title:'Query Person',type:'photo',people:[]});
- const supported=peopleList({type:'photo',people:['Evidence Person']});
- const proof={kind:'actual_ask_command_and_gallery_state_component',cleared,chipClearSent,chipSetSent,unsupported,supported,passed:cleared&&chipClearSent&&chipSetSent&&unsupported.length===0&&supported.join()==='Evidence Person',limits:['Synthetic server response; actual browser command and state functions','Live FlightSim retrieval still requires owner review']};
+ window.setInterval=fn=>{tick=fn;return 1};window.clearInterval=()=>{};
+ window.fetch=async(url,opts)=>{
+   if(opts.body){requests.push(JSON.parse(opts.body));return {ok:true,json:async()=>({})}}
+   if(reply==='deferred')return new Promise(resolve=>{releaseOld=resolve});
+   return {json:async()=>reply};
+ };
+ """+extracted+"""
+ const flush=()=>new Promise(r=>setTimeout(r,0));
+ setCuratorStatusLine('Collecting photos');
+ startAskStatusPoll();const firstId=askProgressId;
+ tick();await flush();
+ const oldDoneIgnored=state.domain.summary==='Collecting photos';
+ reply={line:'Collecting videos'};tick();await flush();
+ const currentShown=state.domain.summary==='Collecting videos';
+ reply='deferred';tick();await flush();
+ startAskStatusPoll();const secondId=askProgressId;
+ setCuratorStatusLine('Collecting photos');
+ releaseOld({json:async()=>({line:'Old request status'})});await flush();
+ const lateIgnored=state.domain.summary==='Collecting photos';
+ await liveFind('show me Example Person');
+ const idSent=requests[0].progress_id===secondId;
+ const proof={oldDoneIgnored,currentShown,lateIgnored,idSent,distinctIds:firstId!==secondId,passed:oldDoneIgnored&&currentShown&&lateIgnored&&idSent&&firstId!==secondId,limits:['Actual progress DOM and request functions with synthetic responses','Live curator acceptance remains pending']};
  document.getElementById('result').textContent=JSON.stringify(proof,null,2);
  return proof;
 })()"""
         result=await call("Runtime.evaluate",{"expression":expression,"awaitPromise":True,"returnByValue":True})
         if "exceptionDetails" in result:raise RuntimeError(result["exceptionDetails"])
         proof=result["result"]["value"]
-        (OUT/"browser-context-proof.json").write_text(json.dumps(proof,indent=2)+"\n",encoding="utf-8")
+        (OUT/"browser-progress-proof.json").write_text(json.dumps(proof,indent=2)+"\n",encoding="utf-8")
         shot=await call("Page.captureScreenshot",{"format":"png"})
-        (OUT/"browser-context-proof.png").write_bytes(base64.b64decode(shot["data"]))
+        (OUT/"browser-progress-proof.png").write_bytes(base64.b64decode(shot["data"]))
         print(json.dumps(proof,indent=2))
-        if not proof["passed"]:raise RuntimeError("context component proof failed")
+        if not proof["passed"]:raise RuntimeError("progress component proof failed")
 
 def main():
     browser=Path('C:/Program Files/Google/Chrome/Application/chrome.exe')

@@ -1,0 +1,12 @@
+{
+  "oldDoneIgnored": true,
+  "currentShown": true,
+  "lateIgnored": true,
+  "idSent": true,
+  "distinctIds": true,
+  "passed": true,
+  "limits": [
+    "Actual progress DOM and request functions with synthetic responses",
+    "Live curator acceptance remains pending"
+  ]
+}

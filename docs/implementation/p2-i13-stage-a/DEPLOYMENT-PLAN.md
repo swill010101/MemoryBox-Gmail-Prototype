@@ -9,8 +9,8 @@ This is a step-by-step proposal, not deployment authorization. The agent perform
 - Gate 1 preparation and exact 22-source membership review completed. Owner annotations/voice acceptance remain separate.
 - Backup restored and compared; final maintenance backup retained; Tom reported migration 030 committed. No further migration is needed for Ask corrections.
 - Locked app/worker deployment completed. Prior lock probes returned 403; Explore and Capture screens opened. This is not a full live I12 workflow re-prove.
-- Tom reports current photo Gallery corrected; Tom/Eugene named queries and combined Christmas/Florida queries work. A removed Alaska chip returns on the next Ask: context verification remains open.
-- Next: deploy and verify the place-chip context correction, then record founder review at step 15. Response-time recovery and full source playback remain unconfirmed.
+- Tom reports current photo Gallery corrected; Tom/Eugene named queries and combined Christmas/Florida queries work. Tom subsequently reports the chip correction and other current checks working; the curator displays Done as a new Ask starts.
+- Next: deploy and verify the curator progress correction, then record founder review at step 15. Response-time recovery and full source playback remain unconfirmed.
 - Gate 3 bounded processing has NOT started. Gate 4 archive acceptance/unlock/start has NOT started. Keep drains off and admission unset. Unplayable sources, fragment presentation and face/voice learning acceptance remain outstanding; no cleanup or conversion is authorized by this status update.
 
 ## Gate 1 - Review and prepare, without running the application

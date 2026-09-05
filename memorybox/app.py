@@ -804,14 +804,18 @@ def explore_find(
 
 
 @app.get("/explore/api/ask-progress")
-def explore_ask_progress(session_id: str | None = Query(None)) -> dict[str, Any]:
+def explore_ask_progress(
+    session_id: str | None = Query(None),
+    request_id: str | None = Query(None, max_length=100),
+) -> dict[str, Any]:
     """One-line curator status for the in-flight Ask (does not include evidence)."""
     from memorybox.ask.progress import get_ask_progress
 
-    return get_ask_progress(session_id)
+    return get_ask_progress(session_id, request_id)
 
 
 class ExploreFindRequest(AskRequest):
+    progress_id: str | None = Field(default=None, max_length=100)
     context_place_names: list[str] | None = None
 
 
@@ -829,13 +833,16 @@ def explore_find_post(
     _remember_ask_text(body.ask)
     try:
         orch = None if not str(body.ask or "").strip() else get_orchestrator()
-        return build_explore_find(
-            ask_text=body.ask,
-            session_id=body.session_id,
-            orchestrator=orch,
-            present=present,
-            context_place_names=body.context_place_names,
-        )
+        from memorybox.ask.progress import ask_progress_request
+
+        with ask_progress_request(body.progress_id):
+            return build_explore_find(
+                ask_text=body.ask,
+                session_id=body.session_id,
+                orchestrator=orch,
+                present=present,
+                context_place_names=body.context_place_names,
+            )
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"explore find failed: {exc}") from exc
 

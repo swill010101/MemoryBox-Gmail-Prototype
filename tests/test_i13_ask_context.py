@@ -164,5 +164,37 @@ class PlaceChipTests(unittest.TestCase):
         build = function("memorybox/explore/find.py", "build_explore_find")
         build(ask_text="at Christmas", session_id="old", orchestrator=types.SimpleNamespace(store=store, ask=ask), context_place_names=[])
 
+class ProgressTests(unittest.TestCase):
+    def test_previous_done_not_visible_to_new_request(self):
+        from memorybox.ask import progress as p
+        p.note_ask_progress("previous", "Done")
+        try:
+            self.assertEqual(p.get_ask_progress("previous", "new-request")["line"], "")
+            with p.ask_progress_request("new-request"):
+                p.note_ask_progress("rotated-session", "Collecting photos")
+                self.assertEqual(p.get_ask_progress("previous", "new-request")["line"], "Collecting photos")
+            self.assertEqual(p.get_ask_progress("previous", "new-request")["line"], "")
+        finally:
+            p.clear_ask_progress("previous")
+
+    def test_requests_have_independent_progress(self):
+        from memorybox.ask import progress as p
+        with p.ask_progress_request("first"):
+            p.note_ask_progress("shared", "Collecting photos")
+            with p.ask_progress_request("second"):
+                p.note_ask_progress("shared", "Collecting videos")
+                self.assertEqual(p.get_ask_progress("shared", "first")["line"], "Collecting photos")
+                self.assertEqual(p.get_ask_progress("shared", "second")["line"], "Collecting videos")
+            p.note_ask_progress("shared", "Writing the narrative")
+            self.assertEqual(p.get_ask_progress("shared", "first")["line"], "Writing the narrative")
+
+    def test_failed_request_progress_is_cleaned_up(self):
+        from memorybox.ask import progress as p
+        with self.assertRaises(ValueError):
+            with p.ask_progress_request("failed"):
+                p.note_ask_progress("shared", "Collecting photos")
+                raise ValueError("synthetic failure")
+        self.assertEqual(p.get_ask_progress("shared", "failed")["line"], "")
+
 if __name__ == "__main__":
     unittest.main()
