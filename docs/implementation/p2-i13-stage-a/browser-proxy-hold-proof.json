@@ -1,0 +1,17 @@
+{
+  "kind": "rendered_chromium_proxy_hold_component",
+  "calls": [
+    {
+      "url": "/review/videos/synthetic-proof/browser-proxy",
+      "method": "GET"
+    }
+  ],
+  "sourceLoaded": false,
+  "controls": false,
+  "message": "Playable copy unavailable. This video cannot play here yet. The original is preserved.",
+  "passed": true,
+  "limits": [
+    "Isolated actual binder, synthetic status response",
+    "No full Gallery or family media processing"
+  ]
+}

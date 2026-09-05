@@ -5,10 +5,13 @@ docs/implementation/p2-i13-stage-a/DEPLOYMENT-PLAN.md
 docs/implementation/p2-i13-stage-a/FOUNDER-AUTHORIZATION.md
 docs/implementation/p2-i13-stage-a/LOCKED-LAUNCH-PLAN.md
 docs/implementation/p2-i13-stage-a/MIGRATION-RECONCILIATION.md
+docs/implementation/p2-i13-stage-a/PLAYBACK-CORRECTION.md
 docs/implementation/p2-i13-stage-a/README.md
 docs/implementation/p2-i13-stage-a/bounded-manifest-proposal.json
 docs/implementation/p2-i13-stage-a/browser-playback-proof.json
 docs/implementation/p2-i13-stage-a/browser-playback-proof.png
+docs/implementation/p2-i13-stage-a/browser-proxy-hold-proof.json
+docs/implementation/p2-i13-stage-a/browser-proxy-hold-proof.png
 docs/implementation/p2-i13-stage-a/cartesian-reconciliation.json
 docs/implementation/p2-i13-stage-a/changed-files.txt
 docs/implementation/p2-i13-stage-a/inventory-runtime.py
@@ -50,5 +53,7 @@ memorybox/speech/process.py
 memorybox/speech/queue.py
 memorybox/speech/store.py
 memorybox/video_worker/__init__.py
+memorybox/video_worker/browser_proxy.py
 tests/browser_i13_playback.py
+tests/browser_i13_proxy_hold.py
 tests/test_i13_stage_a.py

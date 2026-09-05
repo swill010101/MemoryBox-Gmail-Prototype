@@ -4048,7 +4048,7 @@ def _worker_patch_face(
 @app.post("/review/videos/{video_external_id}/browser-proxy")
 def review_start_browser_proxy(video_external_id: str) -> dict[str, Any]:
     """Transcode source → H.264/AAC (HVRT POC fix for HEVC blank frames)."""
-    return _worker_browser_proxy(video_external_id, method="POST")
+    raise ScopeDenied("playable_copy_generation_requires_separate_authorization")
 
 
 @app.get("/review/videos/{video_external_id}/browser-proxy")

@@ -1,10 +1,10 @@
 {
   "accepted_base": "bc2b967274d51ffce356a12895df2cd8f77d73b0",
   "branch": "codex/p2-i13-stage-a",
-  "tests_run": 30,
+  "tests_run": 33,
   "failures": 0,
   "errors": 0,
-  "elapsed_seconds": 2.925,
+  "elapsed_seconds": 1.598,
   "python_files_parsed": 3,
   "javascript_syntax": "passed",
   "git_diff_check": "passed",
@@ -36,5 +36,7 @@
   "migration_correction_base": "7ac838d76a888aff794eb1c381113e697f3d8e3d",
   "i13_migration": "030_p2_i13_scope_admission.sql",
   "migration_sql_unchanged": true,
-  "locked_launcher_tests": 3
+  "locked_launcher_tests": 3,
+  "playback_availability_correction": true,
+  "browser_proxy_hold_proof": "browser-proxy-hold-proof.json"
 }

@@ -5719,30 +5719,51 @@
   function bindExploreVideoPlayer(item) {
     const el = document.querySelector(".mb-ev-video-player");
     if (!el) return;
-    const attach = () => bindAppearanceView(el, item);
+    const status = document.createElement("p");
+    status.className = "mb-rail-empty mb-video-playback-status";
+    status.setAttribute("role", "status");
+    el.parentNode.insertAdjacentElement("afterend", status);
+    const current = () => el.isConnected && document.querySelector(".mb-ev-video-player") === el;
+    const unavailable = (message) => {
+      if (!current()) return;
+      el.controls = false;
+      el.removeAttribute("src");
+      status.textContent = message || "Playable copy unavailable. This video cannot play here yet. The original is preserved.";
+    };
+    const useSource = (src) => {
+      if (!current()) return;
+      status.textContent = "Loading video...";
+      el.controls = true;
+      el.addEventListener("loadedmetadata", () => {
+        if (!current()) return;
+        if (!el.videoWidth || !el.videoHeight) {
+          unavailable("This media has no browser-playable video track. The original is preserved.");
+        } else status.textContent = "";
+      }, { once: true });
+      el.addEventListener("error", () => unavailable("Video could not be loaded. The original is preserved."), { once: true });
+      bindAppearanceView(el, item);
+      el.src = src;
+      el.load();
+    };
     const immichSrc = immichVideoSrc(item);
     if (immichSrc) {
-      el.src = String(immichSrc).split("?")[0];
-      el.preload = "metadata";
-      attach();
-      el.load();
+      useSource(String(immichSrc).split("?")[0]);
       return;
     }
     const vid = String((item && item.video_external_id) || "").trim();
-    if (!vid) return;
+    if (!vid) { unavailable(); return; }
     const encoded = encodeURIComponent(vid);
-    fetch("/review/videos/" + encoded + "/browser-proxy", { method: "POST" })
-      .then((res) => {
-        el.src =
-          "/review/media/" + encoded + (res.ok ? "?proxy=1" : "");
-        attach();
-        el.load();
+    el.controls = false;
+    status.textContent = "Checking playable copy...";
+    // Read existing status only. Opening a viewer must never start conversion.
+    fetch("/review/videos/" + encoded + "/browser-proxy", { method: "GET" })
+      .then((res) => res.ok ? res.json() : null)
+      .then((data) => {
+        if (!current()) return;
+        if (data && data.status === "ready") useSource("/review/media/" + encoded + "?proxy=1");
+        else unavailable();
       })
-      .catch(() => {
-        el.src = "/review/media/" + encoded;
-        attach();
-        el.load();
-      });
+      .catch(() => unavailable());
   }
 
   function looksLikeUuid(value) {
@@ -5942,9 +5963,7 @@
           : "";
       const posterAttr = media ? ` poster="${escapeAttr(media)}"` : "";
       const stage = stream
-        ? `<video class="mb-ev-video-player" controls preload="metadata" src="${escapeAttr(
-            stream
-          )}"${posterAttr}></video>`
+        ? `<video class="mb-ev-video-player" controls preload="none"${posterAttr}></video>`
         : media
           ? `<img src="${escapeAttr(media)}" alt="" />`
           : "Paused frame · face teach applies here only (not during playback)";

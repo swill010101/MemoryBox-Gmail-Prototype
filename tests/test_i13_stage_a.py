@@ -323,6 +323,59 @@ class LockedLaunchTests(unittest.TestCase):
         with patch('psycopg.connect',side_effect=connect):
             with self.assertRaisesRegex(RuntimeError,'030'):ns['check_schema']('synthetic')
 
+class PlayableCopyTests(unittest.TestCase):
+    def test_status_is_read_only_and_generation_is_closed(self):
+        import runpy,tempfile
+        manager_type=runpy.run_path(str(ROOT/'memorybox/video_worker/browser_proxy.py'))['BrowserProxyManager']
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d);derived=root/'absent';source=root/'source.mp4';source.write_bytes(b'synthetic')
+            manager=manager_type(derived)
+            self.assertEqual(manager.status('synthetic',source)['status'],'missing')
+            self.assertFalse(derived.exists())
+            with self.assertRaises(scope.ScopeDenied):manager.start('synthetic',source)
+            self.assertFalse(derived.exists())
+            manager.proxy_dir.mkdir(parents=True)
+            proxy=manager.proxy_path('synthetic');proxy.write_bytes(b'x'*1001)
+            self.assertTrue(manager.has_ready_proxy('synthetic',source))
+            os.utime(proxy,(1,1))
+            self.assertFalse(manager.has_ready_proxy('synthetic',source))
+    def test_api_and_worker_deny_generation_before_body_or_provider_access(self):
+        api=function('memorybox/app.py','review_start_browser_proxy',{'ScopeDenied':scope.ScopeDenied,'app':types.SimpleNamespace(post=lambda *a,**k:lambda f:f)})
+        with self.assertRaises(scope.ScopeDenied):api('synthetic')
+        from urllib.parse import urlparse
+        class Handler:
+            path='/videos/synthetic/browser-proxy'
+            def _json(self,status,body):self.result=(status,body)
+            def _read_json(self):raise AssertionError('body read')
+        h=Handler();function('memorybox/video_worker/__init__.py','do_POST',{'urlparse':urlparse})(h)
+        self.assertEqual(h.result[0],403)
+    def test_player_get_only_ready_missing_failure_and_stale_response(self):
+        js=(ROOT/'memorybox/explore/static/explore.js').read_text(encoding='utf-8')
+        binder=js[js.index('  function bindExploreVideoPlayer('):js.index('  function looksLikeUuid(')]
+        harness=r"""
+(async()=>{
+for(const mode of ['ready','missing','http-error','network-error','navigated']){
+ const calls=[],listeners={};let current=true;const messages=[];
+ const el={isConnected:true,controls:true,videoWidth:640,videoHeight:360,parentNode:{insertAdjacentElement(where,s){messages.push(s);}},removeAttribute(){delete this.src;},addEventListener(k,f){listeners[k]=f;},load(){this.loads=(this.loads||0)+1;}};
+ global.document={querySelector(){return current?el:null;},createElement(){return {setAttribute(){},textContent:''};}};
+ global.immichVideoSrc=()=>null;global.bindAppearanceView=()=>{};
+ global.fetch=async(url,options)=>{calls.push(options.method);if(mode==='network-error')throw Error();if(mode==='navigated')current=false;return {ok:mode!=='http-error',json:async()=>({status:mode==='ready'?'ready':'missing'})};};
+ bindExploreVideoPlayer({video_external_id:'synthetic'});
+ await new Promise(r=>setTimeout(r,0));
+ if(JSON.stringify(calls)!=='["GET"]')throw Error('mutation');
+ if(mode==='ready'){if(el.src!=='/review/media/synthetic?proxy=1')throw Error('wrong source');}
+ else if(el.src||el.loads)throw Error('unexpected media load');
+ if(['missing','http-error','network-error'].includes(mode)&&!messages[0].textContent.includes('Playable copy unavailable'))throw Error('missing explanation');
+}
+console.log('passed');
+})().catch(e=>{console.error(e);process.exitCode=1;});
+"""
+        r=subprocess.run(['node','-e',binder+harness],capture_output=True,text=True,check=True)
+        self.assertIn('passed',r.stdout)
+        markup=js[js.index('  function renderEvidenceBody('):]
+        a=markup.index('<video class="mb-ev-video-player"');tag=markup[a:markup.index('</video>',a)]
+        self.assertNotIn('src=',tag)
+
 class MigrationTests(unittest.TestCase):
     def test_i13_is_pending_after_reported_flightsim_history_without_changing_sql(self):
         paths=sorted((ROOT/'memorybox/migrations').glob('[0-9][0-9][0-9]_*.sql'))

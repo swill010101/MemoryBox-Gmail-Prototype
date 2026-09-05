@@ -26,7 +26,6 @@ class BrowserProxyManager:
     def __init__(self, working_dir: Path | str) -> None:
         self.working_dir = Path(working_dir)
         self.proxy_dir = self.working_dir / "browser_proxies"
-        self.proxy_dir.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
         self._jobs: dict[str, dict[str, Any]] = {}
 
@@ -116,35 +115,8 @@ class BrowserProxyManager:
         return job
 
     def start(self, video_external_id: str, source: Path) -> dict[str, Any]:
-        vid = (video_external_id or "").strip()
-        source = Path(source)
-        if not vid:
-            raise ValueError("video_external_id required")
-        if not source.is_file():
-            raise FileNotFoundError(f"missing source: {source}")
-        if self.has_ready_proxy(vid, source):
-            return self.status(vid, source)
-        with self._lock:
-            cur = self._jobs.get(vid) or {}
-            if cur.get("status") in ("queued", "running"):
-                return self.status(vid, source)
-            self._jobs[vid] = {
-                "status": "queued",
-                "progress_pct": 0,
-                "message": "Queued ffmpeg H.264 convert",
-                "log": [],
-                "started_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
-                "finished_at": None,
-                "error": None,
-            }
-        t = threading.Thread(
-            target=self._run,
-            args=(vid, source),
-            daemon=True,
-            name=f"browser-proxy-{_safe_key(vid)}",
-        )
-        t.start()
-        return self.status(vid, source)
+        from memorybox.processing.scope import ScopeDenied
+        raise ScopeDenied("playable_copy_generation_requires_separate_authorization")
 
     def _append(self, video_external_id: str, line: str) -> None:
         line = (line or "").rstrip()

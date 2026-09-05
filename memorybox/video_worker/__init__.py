@@ -73,7 +73,7 @@ _proxies: BrowserProxyManager | None = None
 def _proxies_mgr() -> BrowserProxyManager:
     global _proxies
     if _proxies is None:
-        _proxies = BrowserProxyManager(_derived_dir())
+        _proxies = BrowserProxyManager(_derived_dir(create=False))
     return _proxies
 
 
@@ -99,13 +99,14 @@ def _media_root() -> Path | None:
     return Path(raw)
 
 
-def _derived_dir() -> Path:
+def _derived_dir(*, create: bool = True) -> Path:
     raw = _env("MEMORYBOX_VIDEO_DERIVED_DIR")
     if raw:
         p = Path(raw)
     else:
         p = Path(os.environ.get("TEMP", ".")).joinpath("memorybox_video_derived")
-    p.mkdir(parents=True, exist_ok=True)
+    if create:
+        p.mkdir(parents=True, exist_ok=True)
     return p
 
 
@@ -522,13 +523,14 @@ class Handler(BaseHTTPRequestHandler):
             use_proxy = (qs.get("proxy") or ["0"])[0] in ("1", "true", "yes")
             source = _resolve_video_path(vid)
             if use_proxy:
-                file_path = _proxies_mgr().proxy_path(vid)
-                if not file_path.is_file():
+                manager = _proxies_mgr()
+                file_path = manager.proxy_path(vid)
+                if not source or not source.is_file() or not manager.has_ready_proxy(vid, source):
                     self._json(
                         404,
                         {
                             "ok": False,
-                            "detail": "Browser proxy not ready — POST /videos/{id}/browser-proxy first",
+                            "detail": "Playable copy unavailable; generation requires separate authorization",
                         },
                     )
                     return
@@ -617,21 +619,10 @@ class Handler(BaseHTTPRequestHandler):
         if path in {"/faces", "/detections/seed", "/derived/reset"}:
             self._json(403, {"ok": False, "detail": "legacy_processing_has_no_reviewed_source_mapping"})
             return
-        body = self._read_json()
-
         if path.startswith("/videos/") and path.endswith("/browser-proxy"):
-            mid = path[len("/videos/") : -len("/browser-proxy")]
-            source = _resolve_video_path(mid)
-            if not source or not source.is_file():
-                self._json(404, {"ok": False, "detail": f"missing source for {mid}"})
-                return
-            try:
-                st = _proxies_mgr().start(mid, source)
-            except FileNotFoundError as exc:
-                self._json(404, {"ok": False, "detail": str(exc)})
-                return
-            self._json(200, st)
+            self._json(403, {"ok": False, "detail": "playable_copy_generation_requires_separate_authorization"})
             return
+        body = self._read_json()
 
         if path == "/search":
             wanted = set(body.get("person_external_ids") or [])
