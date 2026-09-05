@@ -1,0 +1,13 @@
+{
+  "source_duration_for_cadence": 1105.104,
+  "synthetic_all_samples_assigned": true,
+  "sample_count": 80,
+  "sample_gap_sec": 10.0,
+  "last_sample_sec": 790.5,
+  "native_group_gap_sec": 8.0,
+  "native_ranges": 80,
+  "range_durations_sec": [
+    0.5
+  ],
+  "limits": "Actual pure sampler/grouper, synthetic observations; no media/models/runtime. Not proof that these are the 15 live entries."
+}
