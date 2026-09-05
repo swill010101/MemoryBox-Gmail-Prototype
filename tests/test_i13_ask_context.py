@@ -79,5 +79,53 @@ class MembershipTests(unittest.TestCase):
     def test_face_id_is_not_person_id(self):
         self.assertFalse(asset_matches_people({"faces":[{"id":"requested"}]}, ["requested"]))
 
+class CompactTimelineTests(unittest.TestCase):
+    def client(self, fail_metadata=False):
+        from memorybox.providers.photo._immich_http import ImmichHttpClient
+        client = object.__new__(ImmichHttpClient)
+        client._reset_call_log = lambda: None
+        client._circuit = lambda: False
+        client._read_person_lib_cache = lambda *a, **k: None
+        client._reported_person_asset_count = lambda ids: 100
+        client._merge_map_marker_gps = lambda rows: None
+        client._filter_assets_to_windows = lambda rows, windows: rows
+        client._finalize_person_library = lambda rows, windowed, target: windowed[:target]
+        client._note_transport_fail = lambda exc: None
+        client._write_person_lib_cache = lambda *a: self.fail("Incomplete library must not be cached")
+        client._assets_from_person_faces = lambda *a: [{"id":"feature", "people":[{"id":"person"}]}]
+        client._assets_from_person_timeline = lambda *a: client._list_person_bucket_assets("person", "2018-01-01T00:00:00.000Z")
+        calls = []
+        def request(method, path, **kwargs):
+            calls.append((method, path, kwargs.get("body")))
+            if method == "GET":
+                return 200, {"id":["photo"], "isImage":[True], "fileCreatedAt":["2018-01-02"]}
+            if fail_metadata:
+                raise TimeoutError("synthetic provider timeout")
+            body = kwargs["body"]
+            people = [{"id":"person"}] if body.get("withPeople") else []
+            return 200, {"assets":{"items":[
+                {"id":"photo", "type":"IMAGE", "people":people},
+                {"id":"feature", "type":"IMAGE", "people":people, "fileCreatedAt":"2018-01-02"},
+                {"id":"unrelated", "people":[{"id":"other"}]}
+            ]}}
+        client._request = request
+        return client, calls
+
+    def test_compact_timeline_and_feature_face_do_not_hide_photos(self):
+        client, calls = self.client()
+        rows = client.search_by_person_ids(["person"], size=10)
+        self.assertEqual({r["id"] for r in rows}, {"photo", "feature"})
+        self.assertEqual(next(r for r in rows if r["id"]=="feature")["fileCreatedAt"], "2018-01-02")
+        posts = [body for method, path, body in calls if method=="POST"]
+        self.assertTrue(posts)
+        self.assertTrue(all(b["withPeople"] and b["personIds"]==["person"] for b in posts))
+        self.assertEqual(sum(method=="GET" for method, _, _ in calls), 1)
+
+    def test_timeout_never_accepts_unverified_compact_assets(self):
+        client, calls = self.client(fail_metadata=True)
+        rows = client.search_by_person_ids(["person"], size=10)
+        self.assertEqual([r["id"] for r in rows], ["feature"])
+        self.assertTrue(client._person_lib_incomplete)
+
 if __name__ == "__main__":
     unittest.main()

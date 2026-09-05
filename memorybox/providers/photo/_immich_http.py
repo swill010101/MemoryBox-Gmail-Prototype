@@ -19,7 +19,7 @@ _PERSON_LIB_MEM_TTL_SEC = 6 * 3600
 _PERSON_LIB_DISK_TTL_SEC = 24 * 3600
 _PERSON_TIMELINE_YEAR_BUDGET = 80
 _PERSON_LIB_WALK_SEC = 40
-_PERSON_LIB_CACHE_VER = "v11_asset_membership"
+_PERSON_LIB_CACHE_VER = "v12_membership_metadata"
 
 
 class ImmichAuthError(RuntimeError):
@@ -484,6 +484,7 @@ class ImmichHttpClient:
             return []
         self._timeline_windows = tuple(time_windows or ())
         self._reset_call_log()
+        self._person_membership_missing = False
         self._person_lib_incomplete = False
         target = max(1, min(int(size), 5000))
         cache_key = (
@@ -527,17 +528,28 @@ class ImmichHttpClient:
                 if not asset_matches_people(it, person_ids):
                     continue
                 eid = str(it.get("id") or "").strip()
-                if not eid or eid in by_id:
+                if not eid:
                     continue
-                by_id[eid] = it
+                by_id[eid] = {**by_id.get(eid, {}), **it}
 
         _add(self._assets_from_person_faces(person_ids, target))
         if not self._circuit():
             _add(self._assets_from_person_timeline(person_ids, target))
-        # Any GET hit is enough to skip /search/metadata RST (0 photos / 1 video).
+        # A feature face is not a complete library. Compact timelines omit
+        # membership; obtain explicit people metadata instead of labelling from
+        # the query or returning just the feature-face subset.
+        metadata_attempted = False
+        if (not by_id or getattr(self, "_person_membership_missing", False)) and not self._circuit():
+            metadata_attempted = True
+            if self._person_membership_missing:
+                self._person_lib_incomplete = True
+            try:
+                _add(self._assets_from_person_metadata(person_ids, target))
+            except Exception as exc:  # noqa: BLE001
+                self._note_transport_fail(exc)
         if by_id:
             self._merge_map_marker_gps(by_id)
-            self._last_person_source = "faces_or_timeline"
+            self._last_person_source = "faces_timeline_metadata_attempted" if metadata_attempted else "faces_or_timeline"
             full = list(by_id.values())
             # Never cache a truncated walk — FlightSim re-asks kept 2015-only Peggy.
             # Cache the unwindowed library so Christmas / year asks reuse it.
@@ -551,20 +563,6 @@ class ImmichHttpClient:
             self._last_person_source = "timeout"
             return []
 
-        try:
-            _add(self._assets_from_person_metadata(person_ids, target))
-            if by_id:
-                self._last_person_source = "metadata"
-        except Exception as exc:  # noqa: BLE001
-            self._note_transport_fail(exc)
-        if by_id:
-            full = list(by_id.values())
-            if not self._circuit() and not getattr(self, "_person_lib_incomplete", False):
-                self._write_person_lib_cache(cache_key, full)
-            windowed = self._filter_assets_to_windows(
-                full, getattr(self, "_timeline_windows", ()) or ()
-            )
-            return self._finalize_person_library(full, windowed, target)
         self._last_person_source = "timeout" if self._circuit() else "empty"
         return []
 
@@ -925,7 +923,14 @@ class ImmichHttpClient:
                 continue
             if status != 200:
                 continue
-            items = [it for it in self._normalize_timeline_assets(data) if asset_matches_people(it, [pid])]
+            raw_items = self._normalize_timeline_assets(data)
+            items = [it for it in raw_items if asset_matches_people(it, [pid])]
+            if len(items) != len(raw_items):
+                self._person_membership_missing = True
+                self._person_lib_incomplete = True
+                # A 200 with compact, unverifiable membership is not an API
+                # failure. Avoid probing every query spelling for this bucket.
+                return items
             if items:
                 self._timeline_http = int(getattr(self, "_timeline_http", 0) or 0) + 1
                 setattr(self, attr, tmpl)
@@ -1278,6 +1283,7 @@ class ImmichHttpClient:
             nonlocal use_order, use_exif
             base: dict[str, Any] = {
                 "personIds": list(person_ids),
+                "withPeople": True,
                 "size": page_size,
                 "page": max(1, int(page)),
             }
