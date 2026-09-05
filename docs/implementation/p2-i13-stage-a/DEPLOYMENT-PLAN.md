@@ -187,3 +187,7 @@ Tom confirms closing the viewer retains the Video filter and scroll position; an
 ## Remaining source entries identified
 
 [Lookup result and next-source proposal](GALLERY-SOURCE-LOOKUP-RESULT.md): all 47 captured HVRT IDs matched. The eight remaining entries in the pilot set belong to 20111105_1530.MP4, separate from the consolidated 20111105_1532.MP4. A reviewed source/run-only presentation extension would reduce that same nine-card subset to two source cards, preserving every moment. Four captured entries are off-manifest and remain excluded. No code or runtime change in this result update.
+
+## Second-source presentation extension ready
+
+Tom approved the exact 1530 source/run extension. Twelve focused tests pass; the fixture preserves fifteen evidence points in two separate source cards. Existing launcher/locks apply; the helper now discovers 67 offline tests. No runtime change or processing occurred. Deploy the new exact SHA in a new detached release only after review, retaining fa09ec6 for rollback.

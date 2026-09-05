@@ -5,7 +5,7 @@ import sys
 from types import SimpleNamespace
 from unittest.mock import patch
 from test_i13_fragment_trace import pure
-from memorybox.recognition.source_moments import PILOT_SOURCE, PILOT_RUN, project_source_cards
+from memorybox.recognition.source_moments import PILOT_SOURCE, PILOT_RUN, SECOND_SOURCE, SECOND_RUN, project_source_cards
 from memorybox.explore.find import items_from_ask_result
 from memorybox.ask.retrieve import VideoHit, _dedupe_video_hits
 
@@ -113,6 +113,31 @@ class GalleryTests(unittest.TestCase):
         self.assertEqual(len(self.items([hit(.5),h])),2)
         h=hit(10.5);h["appearance_evidence"]["model_version"]="other"
         self.assertEqual(len(self.items([hit(.5),h])),2)
+
+    def test_two_sources_retain_fifteen_points_in_two_cards(self):
+        first=[hit(t) for t in [.5,10.5,20.5,30.5,40.5,60.5,70.5]]
+        second=[hit(i*10+.5,video_external_id=SECOND_SOURCE,external_id="second-"+str(i)) for i in range(8)]
+        for row in second:
+            row["appearance_evidence"]["processing_run_id"]=SECOND_RUN
+            row["appearance_evidence"]["id"]=row["external_id"]
+        incoming=first+second
+        before=copy.deepcopy(incoming)
+        items=self.items(incoming)
+        self.assertEqual(len(items),2)
+        by_source={i["video_external_id"]:i for i in items}
+        self.assertEqual(len(by_source[PILOT_SOURCE]["source_moments"]),7)
+        self.assertEqual(len(by_source[SECOND_SOURCE]["source_moments"]),8)
+        for source,card in by_source.items():
+            self.assertTrue(all(m["video_external_id"]==source for m in card["source_moments"]))
+            self.assertIn(source,card["play_url"])
+        self.assertEqual(incoming,before)
+
+    def test_source_and_run_must_match_the_reviewed_pair(self):
+        for source,run in [(SECOND_SOURCE,PILOT_RUN),(PILOT_SOURCE,SECOND_RUN),
+                           ("vid-65a960554926d31a",SECOND_RUN),(SECOND_SOURCE,"new-unreviewed-run")]:
+            row=hit(.5,video_external_id=source)
+            row["appearance_evidence"]["processing_run_id"]=run
+            self.assertNotIn("source_moments",self.items([row])[0])
 
     def test_retrieval_dedupe_preserves_pilot_evidence_even_same_slot(self):
         hits=[VideoHit(**hit(.5)),VideoHit(**hit(1.0))]
