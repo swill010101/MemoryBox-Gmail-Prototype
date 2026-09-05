@@ -1,0 +1,45 @@
+{
+  "kind": "synthetic_4087_words_177_moments_per_source",
+  "queries": [
+    {
+      "query": "words",
+      "old_ms": 5017.62,
+      "new_ms": 843.32,
+      "same_rows": true,
+      "rows": 4087,
+      "function_scans": [
+        {
+          "Alias": "x",
+          "Actual Rows": 177,
+          "Actual Loops": 1
+        },
+        {
+          "Alias": "words",
+          "Actual Rows": 4087,
+          "Actual Loops": 1
+        }
+      ]
+    },
+    {
+      "query": "moments",
+      "old_ms": 4012.58,
+      "new_ms": 593.3,
+      "same_rows": true,
+      "rows": 171,
+      "function_scans": [
+        {
+          "Alias": "x",
+          "Actual Rows": 177,
+          "Actual Loops": 1
+        },
+        {
+          "Alias": "words",
+          "Actual Rows": 4087,
+          "Actual Loops": 1
+        }
+      ]
+    }
+  ],
+  "passed": true,
+  "limits": "Synthetic PostgreSQL 17; FlightSim PostgreSQL 16 remeasurement required. Timings are observations, not a fixed acceptance threshold."
+}

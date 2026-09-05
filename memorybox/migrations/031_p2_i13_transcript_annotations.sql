@@ -56,18 +56,33 @@ SELECT v.id AS version_id,v.provider_key,v.source_id,w.ordinality AS word_index,
  (w.word->>'t_end')::float8 AS t_end,w.word->>'token' AS machine_token,
  CASE WHEN a.correction IS NULL THEN w.word->>'token'
  WHEN a.word_ids[1]=(w.word->>'id')::uuid THEN a.correction ELSE '' END AS token,
- CASE WHEN a.id IS NOT NULL THEN a.person_id ELSE CASE WHEN live.id IS NOT NULL THEN live.person_id ELSE (m.moment->>'person_id')::uuid END END AS person_id,
+ CASE WHEN a.id IS NOT NULL THEN a.person_id ELSE CASE WHEN live.id IS NOT NULL THEN live.person_id ELSE (w.moment->>'person_id')::uuid END END AS person_id,
  CASE WHEN a.id IS NOT NULL THEN CASE WHEN a.speaker_state='person' THEN 'owner_confirmed' ELSE a.speaker_state END
- ELSE COALESCE(live.speaker_state,m.moment->>'speaker_state','anonymous') END AS speaker_state,
- a.id AS annotation_id,COALESCE(a.id,(m.moment->>'id')::uuid,(w.word->>'id')::uuid) AS group_id,
- m.moment AS machine_moment,COALESCE(live.status,m.moment->>'status','accepted') AS status
+ ELSE COALESCE(live.speaker_state,w.moment->>'speaker_state','anonymous') END AS speaker_state,
+ a.id AS annotation_id,COALESCE(a.id,(w.moment->>'id')::uuid,(w.word->>'id')::uuid) AS group_id,
+ w.moment AS machine_moment,COALESCE(live.status,w.moment->>'status','accepted') AS status
 FROM i13_current_transcripts v
-CROSS JOIN LATERAL jsonb_array_elements(v.machine->'words') WITH ORDINALITY w(word,ordinality)
-LEFT JOIN LATERAL (SELECT x AS moment FROM jsonb_array_elements(v.machine->'moments') x
- WHERE (x->>'t_start')::float8 <= (w.word->>'t_start')::float8
- AND (x->>'t_end')::float8 >= (w.word->>'t_end')::float8
- ORDER BY (x->>'t_end')::float8-(x->>'t_start')::float8,x->>'id' LIMIT 1) m ON true
-LEFT JOIN speech_spoken_moments live ON live.id=(m.moment->>'id')::uuid
+-- Materialize typed moment bounds once per source, not once per word.
+-- Keep this CTE inside the correlated source subquery so filtered reads do
+-- not expand unrelated transcript snapshots.
+CROSS JOIN LATERAL (
+ WITH moments AS MATERIALIZED (
+   SELECT x AS moment,(x->>'t_start')::float8 AS start_sec,
+     (x->>'t_end')::float8 AS end_sec,
+     (x->>'t_end')::float8-(x->>'t_start')::float8 AS duration_sec,
+     x->>'id' AS moment_key
+   FROM jsonb_array_elements(v.machine->'moments') x
+ )
+ SELECT words.word,words.ordinality,m.moment
+ FROM jsonb_array_elements(v.machine->'words') WITH ORDINALITY words(word,ordinality)
+ LEFT JOIN LATERAL (
+   SELECT moment FROM moments
+   WHERE start_sec <= (words.word->>'t_start')::float8
+     AND end_sec >= (words.word->>'t_end')::float8
+   ORDER BY duration_sec,moment_key LIMIT 1
+ ) m ON true
+) w
+LEFT JOIN speech_spoken_moments live ON live.id=(w.moment->>'id')::uuid
 LEFT JOIN i13_active_annotations a ON a.version_id=v.id AND (w.word->>'id')::uuid=ANY(a.word_ids);
 CREATE VIEW i13_effective_moments AS
 SELECT group_id AS id,provider_key AS video_provider_key,source_id AS video_external_id,

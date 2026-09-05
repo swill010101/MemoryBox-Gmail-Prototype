@@ -208,3 +208,8 @@ The next prepared slice is [annotation-only persistence](ANNOTATION-IMPLEMENTATI
 ## Annotation slice implemented; founder deployment review pending
 
 See [ANNOTATION-IMPLEMENTATION-REPORT.md](ANNOTATION-IMPLEMENTATION-REPORT.md). Tom approved implementation; 81 tests and synthetic browser proof pass. Migration 031 is authored and tested only against disposable PostgreSQL 17, not applied to FlightSim. The new launcher requires 031; do not start this release against the existing 030 runtime. Next preparation is exact-corpus read-only coverage and migration preflight, then PostgreSQL 16 clone rehearsal/performance review. Existing accepted locked code can remain running. No bounded run or archive unlock is authorized.
+
+
+## Annotation query performance correction
+
+FlightSim restore integrity and rollback passed, but repeated JSON expansion delayed reads. The unapplied 031 query has been optimized and synthetic old/new equality verified. Run rehearse-annotation-queries.ps1 on the named restore clone before deployment review. Keep the current live release running; see ANNOTATION-IMPLEMENTATION-REPORT.md for evidence and boundaries.

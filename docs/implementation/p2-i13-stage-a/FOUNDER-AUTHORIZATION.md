@@ -46,3 +46,8 @@ Tom approved ANNOTATION-IMPLEMENTATION-PLAN.md at 25290136b60653c2423c37b21c5e4b
 ## Explicit annotation publication approval
 
 After automatic approval review rejected publication, the assistant asked: "May I commit these changes and push them to origin/codex/p2-i13-stage-a?" Tom replied "approved." This explicitly authorizes committing and pushing the reviewed annotation implementation, tests, synthetic proof and unapplied migration. Runtime migration and deployment remain separate.
+
+
+## Explicit annotation performance publication approval
+
+Tom replied "approved" to the explicit request to commit and push the tested annotation query performance correction to origin/codex/p2-i13-stage-a. This covers the revised unapplied 031 view, tests, synthetic performance proof, rollback-only clone rehearsal helper and review documents. It does not authorize runtime migration or deployment.

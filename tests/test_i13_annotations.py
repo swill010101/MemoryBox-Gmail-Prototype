@@ -39,7 +39,7 @@ class Contracts(unittest.TestCase):
 class Database(unittest.TestCase):
     def setUp(self):
         self.schema='i13_test_'+uuid4().hex
-        self.dsn='host=127.0.0.1 port=55439 dbname=i13_annotation_test user=i13_test'
+        self.dsn='host=127.0.0.1 port=55439 dbname=i13_annotation_test user=i13_test connect_timeout=5'
         with psycopg.connect(self.dsn,autocommit=True) as c:c.execute('CREATE SCHEMA '+self.schema)
         @contextmanager
         def connection():
@@ -119,6 +119,24 @@ class Database(unittest.TestCase):
             data=module.inventory(c,a.corpus())
         self.assertTrue(data['read_only']);self.assertEqual(len(data['sources']),22)
         self.assertEqual(next(x['stored_word_rows'] for x in data['sources'] if x['source_id']==SOURCE),4)
+    def test_moment_ties_gaps_withdrawal_and_overlay_precedence(self):
+        machine=a.transcript('hvrt',SOURCE)['machine']
+        short='00000000-0000-0000-0000-000000000010'
+        long='00000000-0000-0000-0000-000000000030'
+        machine['moments']=[{'id':long,'t_start':0,'t_end':2,'status':'accepted'},
+            {'id':'00000000-0000-0000-0000-000000000020','t_start':0,'t_end':1,'status':'accepted'},
+            {'id':short,'t_start':0,'t_end':1,'status':'withdrawn'}]
+        with self.connection() as c:
+            c.execute('INSERT INTO i13_transcript_versions(provider_key,source_id,machine) VALUES (%s,%s,%s::jsonb)',('hvrt',SOURCE,json.dumps(machine)))
+        tr=a.transcript('hvrt',SOURCE);self.v=tr['version_id']
+        self.assertEqual(tr['words'][0]['group_id'],short)
+        self.assertEqual(tr['words'][1]['group_id'],long)
+        self.assertEqual(tr['words'][2]['group_id'],self.ids[2])
+        self.assertNotIn(short,[m['id'] for m in tr['moments']])
+        saved=self.save(self.payload())['annotation']['id']
+        tr=a.transcript('hvrt',SOURCE)
+        self.assertEqual(tr['words'][0]['group_id'],saved)
+        self.assertIn(saved,[m['id'] for m in tr['moments']])
     def test_immutable_database_guards(self):
         self.save(self.payload())
         for table in ['speech_transcript_words','i13_transcript_versions','i13_transcript_annotations']:
