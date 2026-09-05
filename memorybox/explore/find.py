@@ -1100,6 +1100,7 @@ def build_explore_find(
     session_id: str | None = None,
     orchestrator: Any | None = None,
     present: str | None = None,
+    context_place_names: list[str] | None = None,
 ) -> dict[str, Any]:
     """Run Ask and return an Explore-ready payload (same shape as demo_payload)."""
     text = (ask_text or "").strip()
@@ -1125,6 +1126,11 @@ def build_explore_find(
 
         orchestrator = AskOrchestrator(store=default_context_store)
 
+    if context_place_names is not None:
+        from memorybox.ask.context_commands import override_places
+
+        edited = override_places(orchestrator.store, session_id, context_place_names)
+        session_id = edited.session_id
     result_obj = orchestrator.ask(text, session_id=session_id)
     result = result_obj.to_dict() if hasattr(result_obj, "to_dict") else dict(result_obj)
     if result.get("answer_kind") == "context_cleared":

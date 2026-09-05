@@ -32,27 +32,37 @@ async def run(endpoint):
         code=(ROOT/"memorybox/explore/static/explore.js").read_text(encoding="utf-8")
         extracted = code[code.index("  function applyPayloadToState("):code.index("  const ASK_HIST_KEY")]
         extracted += code[code.index("  function peopleList("):code.index("  function syncRailTabs(")]
+        extracted += code[code.index("  function setPlaceFilter("):code.index("  function setViewMode(")]
+        extracted += code[code.index("  async function liveFind("):code.index("  function currentAskText(")]
         start = code.index("  function applyAskCommand(")
         extracted += code[start:code.index("\n  function ", start + 10)]
         expression = """(async()=>{
  document.body.style='background:#0b1222;color:#edf3ff;font:18px system-ui;padding:32px';
  document.body.innerHTML='<h1>Ask context reset</h1><input id="mb-explore-ask" value="clear all"><pre id="result"></pre>';
- let state={domain:{chips:[{kind:'person',label:'Previous Person'}],typeFilter:'video',undatedFilter:true},gallery:{density:1,sort:'oldest',scrollTop:999}}, rawItems=[],sessionId='old',findGen=0;
+ let state={domain:{chips:[{kind:'person',label:'Previous Person'}],typeFilter:'video',undatedFilter:true},gallery:{density:1,sort:'oldest',scrollTop:999}}, rawItems=[],sessionId='old',findGen=0,contextPlaceOverride=null;
  const PERSON_MODE=false;const PERSON=null;
  const clearAskDirty=()=>{},rememberAskLocal=()=>{},hideQuickPreview=()=>{},clearSearchingChrome=()=>{},syncTimelineToEligibleDatedExtent=()=>{};
  const bumpFindGen=()=>++findGen;
  const extentOf=()=>({empty:true}),isDated=()=>false;
  const findErrorMessage=e=>String(e),renderCurator=()=>{};
  const render=()=>{document.getElementById('result').textContent=JSON.stringify(state,null,2)};
- const liveFind=async q=>{if(q!=='clear all')throw Error('wrong command');return {session_id:'fresh',context:{reset:true},items:[],chips:[],summary:'All Ask context cleared.',ask_text:''}};
+ const requests=[];
+ const personScopedAsk=q=>q,stopAskStatusPoll=()=>{};
+ window.fetch=async(url,opts)=>{requests.push(JSON.parse(opts.body));return {ok:true,json:async()=>({session_id:'fresh',context:{reset:true},items:[],chips:[],summary:'All Ask context cleared.',ask_text:''})}};
  """ + extracted + """
+ clearPlaceFilter();
+ await liveFind('at Christmas');
+ const chipClearSent=Array.isArray(requests[0].context_place_names)&&requests[0].context_place_names.length===0;
+ setPlaceFilter('Florida');
+ await liveFind('at Christmas');
+ const chipSetSent=requests[1].context_place_names.join()==='Florida';
  applyAskCommand('clear all');
  await new Promise(r=>setTimeout(r,25));
  const cleared=state.domain.typeFilter==='all'&&!state.domain.undatedFilter&&state.domain.chips.length===0&&state.modal.openId===null&&sessionId==='fresh'&&rawItems.length===0;
  state.domain.chips=[{kind:'person',label:'Query Person'}];
  const unsupported=peopleList({title:'Query Person',type:'photo',people:[]});
  const supported=peopleList({type:'photo',people:['Evidence Person']});
- const proof={kind:'actual_ask_command_and_gallery_state_component',cleared,unsupported,supported,passed:cleared&&unsupported.length===0&&supported.join()==='Evidence Person',limits:['Synthetic server response; actual browser command and state functions','Live FlightSim retrieval still requires owner review']};
+ const proof={kind:'actual_ask_command_and_gallery_state_component',cleared,chipClearSent,chipSetSent,unsupported,supported,passed:cleared&&chipClearSent&&chipSetSent&&unsupported.length===0&&supported.join()==='Evidence Person',limits:['Synthetic server response; actual browser command and state functions','Live FlightSim retrieval still requires owner review']};
  document.getElementById('result').textContent=JSON.stringify(proof,null,2);
  return proof;
 })()"""

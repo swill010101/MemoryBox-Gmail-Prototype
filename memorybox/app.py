@@ -811,9 +811,13 @@ def explore_ask_progress(session_id: str | None = Query(None)) -> dict[str, Any]
     return get_ask_progress(session_id)
 
 
+class ExploreFindRequest(AskRequest):
+    context_place_names: list[str] | None = None
+
+
 @app.post("/explore/api/find")
 def explore_find_post(
-    body: AskRequest,
+    body: ExploreFindRequest,
     present: str | None = Query(
         None,
         description="Presentation overlay: communications|calendar (does not rewrite Ask)",
@@ -830,6 +834,7 @@ def explore_find_post(
             session_id=body.session_id,
             orchestrator=orch,
             present=present,
+            context_place_names=body.context_place_names,
         )
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"explore find failed: {exc}") from exc

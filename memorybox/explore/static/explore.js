@@ -130,6 +130,7 @@
   let peopleOptions = [];
   let liveMode = true;
   let sessionId = null;
+  let contextPlaceOverride = null;
   let bandDrag = null;
   let handleDrag = null;
   let handleDragMeta = null;
@@ -747,11 +748,15 @@
   function setPlaceFilter(label) {
     const next = label ? String(label).trim() : "";
     state.domain.placeFilter = next || null;
+    contextPlaceOverride = next ? [next] : [];
+    bumpFindGen();
     state.domain.mapRefineIds = null;
     syncTimelineToEligibleDatedExtent();
   }
 
   function clearPlaceFilter() {
+    contextPlaceOverride = [];
+    bumpFindGen();
     state.domain.placeFilter = null;
     state.domain.mapRefineIds = null;
     syncTimelineToEligibleDatedExtent();
@@ -1233,7 +1238,8 @@
       const res = await fetch("/explore/api/find" + qs, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ask: q, session_id: sessionId || null }),
+        body: JSON.stringify({ ask: q, session_id: sessionId || null,
+          context_place_names: contextPlaceOverride }),
         cache: "no-store",
         ...(ctrl ? { signal: ctrl.signal } : {}),
       });
@@ -1378,6 +1384,7 @@
   }
 
   function applyPayloadToState(payload, { keepPresentation } = {}) {
+    contextPlaceOverride = null;
     if (payload.context && payload.context.reset) {
       keepPresentation = false;
       if (window.mbShell && window.mbShell.setActivePerson) {

@@ -127,5 +127,42 @@ class CompactTimelineTests(unittest.TestCase):
         self.assertEqual([r["id"] for r in rows], ["feature"])
         self.assertTrue(client._person_lib_incomplete)
 
+class PlaceChipTests(unittest.TestCase):
+    def test_removed_place_does_not_return_on_christmas_followup(self):
+        from memorybox.ask.context_commands import override_places
+        store = InMemoryContextStore()
+        old = store.save(AskContext(session_id="alaska", person_names=("Example Person",), place_names=("Alaska",), event_labels=("trip:Alaska",), result_selection=("alaska-photo",)))
+        edited = override_places(store, old.session_id, [])
+        plan = plan_ask("at Christmas", edited)
+        self.assertEqual(plan.person_names, old.person_names)
+        self.assertFalse(plan.place_names)
+        self.assertFalse(any("Alaska" in e for e in plan.event_labels))
+        self.assertTrue(any("Christmas" in e for e in plan.event_labels))
+        self.assertFalse(edited.result_selection)
+        store.save(old)
+        self.assertFalse(store.get(edited.session_id).place_names)
+
+    def test_reenabled_chip_replaces_place_without_losing_person_or_time(self):
+        from memorybox.ask.context_commands import override_places
+        store = InMemoryContextStore()
+        old = store.save(AskContext(session_id="old", person_names=("Example Person",), place_names=("Alaska",), time_start="2018", time_end="2018", event_labels=("Christmas",)))
+        edited = override_places(store, old.session_id, ["Florida"])
+        self.assertEqual(edited.place_names, ("Florida",))
+        self.assertEqual(edited.person_names, old.person_names)
+        self.assertEqual(edited.time_start, "2018")
+        self.assertEqual(edited.event_labels, ("Christmas",))
+
+    def test_find_applies_override_before_asking(self):
+        import types
+        from test_i13_stage_a import function
+        store = InMemoryContextStore()
+        store.save(AskContext(session_id="old", person_names=("Example Person",), place_names=("Alaska",)))
+        def ask(text, session_id):
+            self.assertFalse(store.get(session_id).place_names)
+            self.assertEqual(store.get(session_id).person_names, ("Example Person",))
+            return {"answer_kind":"context_cleared", "session_id":session_id, "context":{}}
+        build = function("memorybox/explore/find.py", "build_explore_find")
+        build(ask_text="at Christmas", session_id="old", orchestrator=types.SimpleNamespace(store=store, ask=ask), context_place_names=[])
+
 if __name__ == "__main__":
     unittest.main()

@@ -1,6 +1,8 @@
 {
   "kind": "actual_ask_command_and_gallery_state_component",
   "cleared": true,
+  "chipClearSent": true,
+  "chipSetSent": true,
   "unsupported": [],
   "supported": [
     "Evidence Person"
