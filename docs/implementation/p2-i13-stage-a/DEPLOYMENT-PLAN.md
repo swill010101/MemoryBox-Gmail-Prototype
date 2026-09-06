@@ -248,3 +248,8 @@ The approved pilot now has isolated admission, runner, retirement/result provena
 ## TitaNet-Large encoder checkpoint
 
 The selected NVIDIA TitaNet-Large checkpoint now passes actual offline loading and generated-audio inference on the development desktop. Its SHA256 is enforced by admission and restoration. See [TITANET-VALIDATION.md](TITANET-VALIDATION.md). The model-specific adapter, explicit thresholds and 53 targeted passing tests replace the provisional ECAPA adapter. FlightSim installation, PostgreSQL 16 rehearsal, calibrated thresholds and any private-audio pilot remain pending; Learn stays locked.
+
+
+## Next validation: FlightSim PG16 clone
+
+The exact-release helper and [VOICE-PG16-REHEARSAL.md](VOICE-PG16-REHEARSAL.md) now prepare the consistent read-only backup, hash verification and isolated clone migration check. Eight local synthetic tests passed. FlightSim execution/result is pending; production migration 032 and private voice processing remain unauthorized until the consolidated deployment review.
