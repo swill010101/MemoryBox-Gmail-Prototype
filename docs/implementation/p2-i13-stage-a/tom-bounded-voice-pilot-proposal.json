@@ -1,0 +1,76 @@
+{
+  "status": "design_only_not_an_admission",
+  "processing_authorized": false,
+  "parent_manifest_id": "p2-i13-flightsim-22",
+  "parent_manifest_version": "0.2-membership-confirmed",
+  "target_person_id": "33509a4c-0869-458a-b0b9-35a669aace16",
+  "target_person": "Tom Will",
+  "selections": [
+    {
+      "key": "T2",
+      "role": "training",
+      "source_id": "vid-da41273dbd9ac4bb",
+      "version_id": "8bc1f1c4-c3ef-4623-92da-6f5f3b41c20f",
+      "annotation_id": "5e106e50-76ce-4fb2-8f62-0083119154cc",
+      "start": 37.12,
+      "end": 42.4,
+      "expected": "Tom Will; owner-confirmed clear training reference",
+      "provider_key": "hvrt",
+      "source_sha256": "636ee92d9588dfc31550d94f2e1ac1343fb4296c2dc62879325c412e89c0dd7b"
+    },
+    {
+      "key": "O1",
+      "role": "held_out",
+      "source_id": "vid-c57dbd21f993f6d1",
+      "version_id": "1c95cb4b-93ae-483f-9c86-f71124919d94",
+      "annotation_id": "3fa1c4e1-d8a6-423f-9c9b-1a229d550945",
+      "start": 152.24,
+      "end": 158.34,
+      "expected": "Tom Will; owner-confirmed off-camera positive hold-out",
+      "provider_key": "hvrt",
+      "source_sha256": "26f3646b4adbda7573ff19c02da3b11bafceff4ac5cd7d967d5b0053a2e10705"
+    },
+    {
+      "key": "H1-as-Tom-negative",
+      "role": "held_out",
+      "source_id": "vid-c57dbd21f993f6d1",
+      "version_id": "1c95cb4b-93ae-483f-9c86-f71124919d94",
+      "annotation_id": "f47ee4ec-6b28-442a-81b2-152fbe8f45e2",
+      "start": 325.22,
+      "end": 345.56,
+      "expected": "Eugene Will; expected Tom no_match control",
+      "provider_key": "hvrt",
+      "source_sha256": "26f3646b4adbda7573ff19c02da3b11bafceff4ac5cd7d967d5b0053a2e10705"
+    },
+    {
+      "key": "U1-clear-as-Tom-negative",
+      "role": "held_out",
+      "source_id": "vid-c57dbd21f993f6d1",
+      "version_id": "1c95cb4b-93ae-483f-9c86-f71124919d94",
+      "annotation_id": "5651a4bd-dffd-4d26-a985-16e8abaf37c2",
+      "start": 129.64,
+      "end": 138.72,
+      "expected": "Eugene Will; expected Tom no_match control",
+      "provider_key": "hvrt",
+      "source_sha256": "26f3646b4adbda7573ff19c02da3b11bafceff4ac5cd7d967d5b0053a2e10705"
+    }
+  ],
+  "budget": {
+    "source_count": 2,
+    "target_people": 1,
+    "training_spans": 1,
+    "test_spans": 3,
+    "max_audio_extractions": 4,
+    "max_embeddings": 4,
+    "max_comparisons": 3,
+    "max_attempts_per_span": 1,
+    "selected_audio_seconds": 40.8,
+    "automatic_retries": 0
+  },
+  "interpretation_limits": [
+    "The H1 and U1-clear controls were previously scored in the Eugene pilot; they are not a pristine model benchmark.",
+    "This plan tests Tom reference versus one held-out Tom passage and two known-Eugene negative controls only.",
+    "Background, overlap, and quiet/mumbled speech remain excluded pending a separately confirmed owner annotation."
+  ],
+  "runtime_writes_allowed_now": false
+}

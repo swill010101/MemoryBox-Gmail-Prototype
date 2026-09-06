@@ -28,3 +28,11 @@ Use the deployed Review/Explore workflow. Select text, assign or mark Unknown, a
 The smallest next recognition proposal is possible only if T2 and O1 are confirmed: one Tom training extraction, one held-out off-camera Tom comparison, and at most one separately confirmed N1 or Q1 evaluation span. Exact annotation/version IDs, source hashes, time bounds, model hash, thresholds, caps, and retirement behavior must be re-exported read-only and reviewed before another admission.
 
 No recognition, Learn, migration, media conversion, archive unlock, or queue drain is authorized by this plan.
+
+## Confirmed Tom evidence and second-pilot shape
+
+Tom confirmed and saved T2 as a distinct owner-review annotation: `5e106e50-76ce-4fb2-8f62-0083119154cc`, on `vid-da41273dbd9ac4bb`, 00:37.120–00:42.400, 14 timed words. Its person is Tom Will (`33509a4c-0869-458a-b0b9-35a669aace16`). O1 remains a separate Tom annotation: `3fa1c4e1-d8a6-423f-9c9b-1a229d550945`, on `vid-c57dbd21f993f6d1`, 02:32.240–02:38.340, 22 timed words.
+
+[`tom-bounded-voice-pilot-proposal.json`](tom-bounded-voice-pilot-proposal.json) is the smallest valid, design-only four-span shape: T2 trains Tom; O1 is the positive off-camera Tom hold-out; H1 and U1-clear are owner-confirmed Eugene passages used only as Tom negative controls. It selects 40.80 seconds total, preserves the fixed one-attempt/four-span limit, and creates no admission.
+
+This is target-specific evidence, not a fresh general benchmark: H1 and U1-clear were already measured in the Eugene pilot. Background voices and low/mumbled Eugene speech are intentionally excluded until Tom saves a distinct, truthful annotation for a specific interval. No recognition, model invocation, Learn action, migration, archive unlock, media conversion, or queue drain is authorized by this proposal.
