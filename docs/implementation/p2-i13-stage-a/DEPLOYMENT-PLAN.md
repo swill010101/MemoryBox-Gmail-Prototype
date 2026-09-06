@@ -1,5 +1,7 @@
 # Stage A deployment plan - Tom operates FlightSim
 
+Latest coverage checkpoint: [ANNOTATION-COVERAGE-CHECKPOINT.md](ANNOTATION-COVERAGE-CHECKPOINT.md). Tom reports all 22 sources have stored words, with one active assignment covering 20 of 35,861 words. Next is representative owner review and a bounded voice-proof plan; no requirement to annotate every word or rerun transcription is inferred. Processing remains locked.
+
 ## Current status ? annotation review accepted by Tom
 
 Tom reports "all works as designed and I now understand how multiple reviews can happen" and approves the deployed annotation review workflow. Record this as owner-reported live acceptance of code release 7bc47b5911caeb8ca256dcc260f17943d2fb777a on FlightSim, following the approved deployment plan. The accepted scope is saved-assignment discovery, reviewing multiple assignments, restored Person/text fields, exact-word highlighting and the corrected editing workflow. No independent runtime inspection was performed by the agent.
