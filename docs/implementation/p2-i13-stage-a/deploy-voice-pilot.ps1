@@ -29,7 +29,7 @@ function Invoke-DbJson([string]$Query) {
     return (($out | Where-Object { $_ -and $_.Trim() }) -join '') | ConvertFrom-Json
 }
 function Snapshot-Counts {
-    return Invoke-DbJson "SELECT json_build_object('migration',(SELECT max(version) FROM schema_migrations),'pilot_present',to_regclass('public.i13_voice_pilot_runs') IS NOT NULL,'recognition_queue',(SELECT count(*) FROM recognition_queue_items),'speech_queue',(SELECT count(*) FROM speech_queue_items),'words',(SELECT count(*) FROM speech_transcript_words),'versions',(SELECT count(*) FROM i13_transcript_versions),'annotations',(SELECT count(*) FROM i13_transcript_annotations));"
+    return Invoke-DbJson "SELECT json_build_object('migration',(SELECT max(version) FROM schema_migrations),'pilot_present',to_regclass('public.i13_voice_pilot_runs') IS NOT NULL,'voice_admissions',(SELECT count(*) FROM i13_processing_admissions WHERE plan_json->>'purpose'='voice_pilot'),'voice_runs',(SELECT count(*) FROM i13_voice_pilot_runs),'voice_attempts',(SELECT count(*) FROM i13_voice_pilot_attempts),'voice_events',(SELECT count(*) FROM i13_voice_pilot_events),'recognition_queue',(SELECT count(*) FROM recognition_queue_items),'speech_queue',(SELECT count(*) FROM speech_queue_items),'words',(SELECT count(*) FROM speech_transcript_words),'versions',(SELECT count(*) FROM i13_transcript_versions),'annotations',(SELECT count(*) FROM i13_transcript_annotations));"
 }
 
 Push-Location $release
@@ -107,7 +107,9 @@ try {
     Require-LastExit 'Synthetic-only model smoke failed.'
 
     $before = Snapshot-Counts
-    if ($before.migration -ne '031' -or $before.pilot_present) { throw 'Live schema is not the reviewed migration-031 state.' }
+    $applyMigration = $before.migration -eq '031' -and -not $before.pilot_present
+    $resumeAfterMigration = $before.migration -eq '032' -and $before.pilot_present -and $before.voice_admissions -eq 0 -and $before.voice_runs -eq 0 -and $before.voice_attempts -eq 0 -and $before.voice_events -eq 0
+    if (-not ($applyMigration -or $resumeAfterMigration)) { throw 'Live schema is neither the reviewed pre-032 state nor an empty post-032 recovery state.' }
     $token = [guid]::NewGuid().ToString('N')
     $backupDir = Join-Path $backupRoot "i13-final-pre032-$token"
     $remoteDir = "/tmp/mb-i13-final-pre032-$token"
@@ -127,14 +129,16 @@ try {
     if ($backupHash -ne $containerHash) { throw 'Fresh backup hash mismatch.' }
     [pscustomobject]@{ backup_file=$backupFile; bytes=(Get-Item -LiteralPath $backupFile).Length; sha256=$backupHash; container_hash_matches=$true } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $backupDir 'backup-proof.json') -Encoding UTF8
 
-    $migration = Get-Content -LiteralPath (Join-Path $release 'memorybox\migrations\032_p2_i13_voice_pilot.sql') -Raw
-    $migrationSql = "BEGIN; SET LOCAL lock_timeout='5s'; SET LOCAL statement_timeout='120s'; DO `$`$ BEGIN IF (SELECT max(version) FROM schema_migrations) <> '031' OR to_regclass('public.i13_voice_pilot_runs') IS NOT NULL THEN RAISE EXCEPTION 'unexpected live schema'; END IF; END `$`$;`n" + $migration + "`nINSERT INTO schema_migrations(version,filename) VALUES('032','032_p2_i13_voice_pilot.sql'); COMMIT;`n"
-    $migrationFile = Join-Path $backupDir 'apply-032.sql'
-    Set-Content -LiteralPath $migrationFile -Value $migrationSql -Encoding UTF8
-    Get-Content -LiteralPath $migrationFile -Raw | docker exec -i $container psql -X -q -U memorybox -d memorybox -v ON_ERROR_STOP=1
-    Require-LastExit 'Migration 032 failed; do not retry automatically.'
+    if ($applyMigration) {
+        $migration = Get-Content -LiteralPath (Join-Path $release 'memorybox\migrations\032_p2_i13_voice_pilot.sql') -Raw
+        $migrationSql = "BEGIN; SET LOCAL lock_timeout='5s'; SET LOCAL statement_timeout='120s'; DO `$`$ BEGIN IF (SELECT max(version) FROM schema_migrations) <> '031' OR to_regclass('public.i13_voice_pilot_runs') IS NOT NULL THEN RAISE EXCEPTION 'unexpected live schema'; END IF; END `$`$;`n" + $migration + "`nINSERT INTO schema_migrations(version,filename) VALUES('032','032_p2_i13_voice_pilot.sql'); COMMIT;`n"
+        $migrationFile = Join-Path $backupDir 'apply-032.sql'
+        Set-Content -LiteralPath $migrationFile -Value $migrationSql -Encoding UTF8
+        Get-Content -LiteralPath $migrationFile -Raw | docker exec -i $container psql -X -q -U memorybox -d memorybox -v ON_ERROR_STOP=1
+        Require-LastExit 'Migration 032 failed; do not retry automatically.'
+    }
     $afterMigration = Snapshot-Counts
-    if ($afterMigration.migration -ne '032' -or -not $afterMigration.pilot_present) { throw 'Migration verification failed.' }
+    if ($afterMigration.migration -ne '032' -or -not $afterMigration.pilot_present -or $afterMigration.voice_admissions -ne 0 -or $afterMigration.voice_runs -ne 0 -or $afterMigration.voice_attempts -ne 0 -or $afterMigration.voice_events -ne 0) { throw 'Migration/recovery verification failed.' }
     foreach ($field in 'recognition_queue','speech_queue','words','versions','annotations') {
         if ($before.$field -ne $afterMigration.$field) { throw "Unexpected legacy count change: $field" }
     }
