@@ -1109,6 +1109,63 @@ def people_edit_ui(person_id: str) -> HTMLResponse:
     )
 
 
+@app.get("/review/voice-pilot-results")
+def review_voice_pilot_results() -> dict[str, Any]:
+    """Return completed bounded voice-pilot evidence without starting work."""
+    from memorybox.db import connection
+
+    try:
+        with connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT r.admission_id::text, r.created_at, r.stale, r.payload,
+                       a.state, a.plan_json->'thresholds' AS thresholds,
+                       a.plan_json->'spans' AS spans
+                FROM i13_voice_pilot_results r
+                JOIN i13_processing_admissions a ON a.id = r.admission_id
+                ORDER BY r.created_at DESC
+                """
+            ).fetchall()
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="voice pilot evidence unavailable",
+        ) from exc
+
+    runs: list[dict[str, Any]] = []
+    for row in rows:
+        spans = {span.get("key"): span for span in (row["spans"] or [])}
+        outcomes = []
+        for outcome in (row["payload"].get("results") or []):
+            span = spans.get(outcome.get("key"), {})
+            outcomes.append(
+                {
+                    "key": outcome.get("key"),
+                    "source_id": span.get("source_id"),
+                    "start_sec": span.get("start"),
+                    "end_sec": span.get("end"),
+                    "expected_match": outcome.get("expected_match"),
+                    "score": outcome.get("score"),
+                    "decision": outcome.get("decision"),
+                }
+            )
+        runs.append(
+            {
+                "admission_id": row["admission_id"],
+                "created_at": row["created_at"],
+                "state": row["state"],
+                "stale": row["stale"],
+                "thresholds": row["thresholds"],
+                "outcomes": outcomes,
+            }
+        )
+    return {
+        "ok": True,
+        "runs": runs,
+        "read_only": True,
+        "processing_started": False,
+    }
+
 @app.get("/review/ui")
 def review_ui() -> HTMLResponse:
     return _html_ui(REVIEW_STATIC, surface="review", missing="Review UI missing")

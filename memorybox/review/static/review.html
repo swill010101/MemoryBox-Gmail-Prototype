@@ -85,6 +85,10 @@
     }
     code { font-size: 0.8rem; }
     pre { white-space: pre-wrap; word-break: break-word; font-size: 0.8rem; }
+    .voice-pilot-list { display: grid; gap: 0.55rem; margin-top: 0.65rem; }
+    .voice-pilot-run { border-top: 1px solid var(--line); padding-top: 0.65rem; }
+    .voice-pilot-outcome { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin: 0.35rem 0; }
+    .voice-pilot-outcome button { margin: 0; padding: 0.28rem 0.55rem; }
   </style>
 </head>
 <body>
@@ -95,6 +99,13 @@
       <a href="/ask/ui">Ask</a> · <a href="/library/ui" id="libraryNav">Library</a> · <a href="/people/ui">People</a> · <a href="/journal/ui">Journal</a> · <a href="/historian-capture/ui">Historian Capture</a>
       <span id="libraryReturnWrap" hidden> · <a id="libraryReturn" href="/library/ui">← Back to Library place</a></span>
     </p>
+
+    <section aria-labelledby="voicePilotHeading">
+      <h2 id="voicePilotHeading" style="font-size:1rem;margin:0 0 0.5rem">Voice pilot results</h2>
+      <p class="muted">Read-only bounded evidence. Loading or opening a result does not start processing.</p>
+      <button class="secondary" id="refreshVoicePilotResults" type="button">Refresh results</button>
+      <div id="voicePilotResults" class="muted">Loading completed pilot results…</div>
+    </section>
 
     <section>
       <h2 style="font-size:1rem;margin:0 0 0.5rem">1. Video</h2>
@@ -171,6 +182,76 @@
       return data;
     }
 
+    function formatPilotTime(value) {
+      const seconds = Number(value);
+      if (!Number.isFinite(seconds) || seconds < 0) return "time unavailable";
+      const minutes = Math.floor(seconds / 60);
+      return minutes + ":" + (seconds - minutes * 60).toFixed(1).padStart(4, "0");
+    }
+
+    function appendPilotText(parent, value) {
+      const span = document.createElement("span");
+      span.textContent = value;
+      parent.appendChild(span);
+    }
+
+    function openPilotSource(sourceId, startSec) {
+      if (!sourceId) return;
+      const url = new URL("/review/ui", location.origin);
+      url.searchParams.set("video", sourceId);
+      if (Number.isFinite(Number(startSec))) url.searchParams.set("t", String(startSec));
+      location.assign(url.pathname + url.search);
+    }
+
+    function renderVoicePilotResults(data) {
+      const root = document.getElementById("voicePilotResults");
+      root.replaceChildren();
+      const runs = data.runs || [];
+      if (!runs.length) {
+        root.textContent = "No completed bounded voice-pilot results are available.";
+        return;
+      }
+      const list = document.createElement("div");
+      list.className = "voice-pilot-list";
+      runs.forEach((run) => {
+        const card = document.createElement("div");
+        card.className = "voice-pilot-run";
+        const summary = document.createElement("div");
+        summary.className = "muted";
+        const state = run.stale ? "stale" : (run.state || "completed");
+        summary.textContent = "Pilot " + String(run.admission_id || "").slice(0, 8) + " · " + state + " · " + (run.created_at || "date unavailable");
+        card.appendChild(summary);
+        (run.outcomes || []).forEach((outcome) => {
+          const row = document.createElement("div");
+          row.className = "voice-pilot-outcome";
+          const score = Number(outcome.score);
+          appendPilotText(row, (outcome.key || "span") + ": " + (outcome.decision || "no decision") + (Number.isFinite(score) ? " (score " + score.toFixed(3) + ")" : ""));
+          appendPilotText(row, "· " + formatPilotTime(outcome.start_sec) + "–" + formatPilotTime(outcome.end_sec));
+          if (outcome.source_id) {
+            const open = document.createElement("button");
+            open.type = "button";
+            open.className = "secondary";
+            open.textContent = "Open source";
+            open.addEventListener("click", () => openPilotSource(outcome.source_id, outcome.start_sec));
+            row.appendChild(open);
+          }
+          card.appendChild(row);
+        });
+        list.appendChild(card);
+      });
+      root.appendChild(list);
+    }
+
+    async function loadVoicePilotResults() {
+      const root = document.getElementById("voicePilotResults");
+      root.textContent = "Loading completed pilot results…";
+      try {
+        renderVoicePilotResults(await j("/review/voice-pilot-results"));
+      } catch (err) {
+        root.textContent = "Voice-pilot results are unavailable.";
+        show(err);
+      }
+    }
     function syncOverlaySize() {
       const vr = player.getBoundingClientRect();
       const wrap = document.getElementById("videoWrap").getBoundingClientRect();
@@ -497,6 +578,7 @@
       refreshTeachEnabled();
     }
 
+    document.getElementById("refreshVoicePilotResults").onclick = () => loadVoicePilotResults();
     document.getElementById("refreshVideos").onclick = () => loadVideos().catch(show);
     document.getElementById("videoSel").onchange = () => {
       try { onVideoChange(); } catch (e) { show(e); }
@@ -760,6 +842,7 @@
       }
     })();
 
+    loadVoicePilotResults();
     loadVideos().catch(show);
   </script>
 </body>
