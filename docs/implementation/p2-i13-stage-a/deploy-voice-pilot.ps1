@@ -9,7 +9,7 @@ $ErrorActionPreference = 'Stop'
 $expectedSha = $ExpectedReleaseSha.ToLowerInvariant()
 $modelSha = 'e838520693f269e7984f55bc8eb3c2d60ccf246bf4b896d4be9bcabe3e4b0fe3'
 $modelBytes = 101621760
-$modelUrl = 'https://api.ngc.nvidia.com/v2/models/nvidia/nemo/titanet_large/versions/v1/files?redirect=true&path=titanet-l.nemo'
+$modelUrl = 'https://api.ngc.nvidia.com/v2/models/nvidia/nemo/titanet_large/versions/v1/files/titanet-l.nemo?redirect=true'
 $release = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
 $model = Join-Path $release 'model\titanet-l.nemo'
 $venv = Join-Path $release '.titanet-venv'
