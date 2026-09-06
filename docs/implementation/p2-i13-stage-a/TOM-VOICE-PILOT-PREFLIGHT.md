@@ -1,6 +1,6 @@
 # Tom voice-pilot read-only preflight
 
-This script prepares and validates the exact second pilot without creating an admission, invoking the model, extracting private audio, or writing to the production database. It verifies the detached release, local TitaNet artifact, and current active annotations before calling the existing plan builder in a read-only transaction. The default mode writes the generated plan only to a temporary file and removes it after preview.
+This script prepares and validates the exact second pilot without creating an admission, invoking the model, extracting private audio, or writing to the production database. It verifies the detached release, local TitaNet artifact, and current active annotations before calling the existing plan builder in a read-only transaction. The default mode writes the generated plan only to a temporary file and removes it after preview. A new code release can reuse the verified model and Python environment from the successful pilot release through `-ToolRelease`; it does not reinstall packages or download a model.
 
 ## Inputs fixed by the reviewed proposal
 
@@ -16,7 +16,7 @@ H1 and U1-clear were scored in the first Eugene pilot. They are therefore Tom-sp
 From a configured FlightSim PowerShell shell, after creating a clean detached release at the stated commit:
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File 'C:\MemoryBox-releases\<tom-release>\docs\implementation\p2-i13-stage-a\prepare-tom-voice-pilot.ps1' -ExpectedReleaseSha '<commit>'
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File 'C:\MemoryBox-releases\<tom-release>\docs\implementation\p2-i13-stage-a\prepare-tom-voice-pilot.ps1' -ExpectedReleaseSha '<commit>' -ToolRelease 'C:\MemoryBox-releases\<successful-titanet-release>'
 ```
 
 Expected output has `mode: check_only`, exactly four work items, `private_audio_processed: false`, `database_writes: false`, and `admission_created: false`.

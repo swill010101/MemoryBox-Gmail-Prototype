@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory=$true)][string]$ExpectedReleaseSha,
+    [string]$ToolRelease,
     [switch]$WritePlan
 )
 
@@ -9,8 +10,9 @@ $modelSha = 'e838520693f269e7984f55bc8eb3c2d60ccf246bf4b896d4be9bcabe3e4b0fe3'
 $modelBytes = 101621760
 $release = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
 $selection = Join-Path $PSScriptRoot 'tom-bounded-voice-pilot-proposal.json'
-$model = Join-Path $release 'model\titanet-l.nemo'
-$python = Join-Path $release '.titanet-venv\Scripts\python.exe'
+if ($ToolRelease) { $toolRoot = (Resolve-Path -LiteralPath $ToolRelease).Path } else { $toolRoot = $release }
+$model = Join-Path $toolRoot 'model\titanet-l.nemo'
+$python = Join-Path $toolRoot '.titanet-venv\Scripts\python.exe'
 $writtenPlan = Join-Path $release 'i13-reviewed-tom-voice-pilot-plan.json'
 $tempPlan = $null
 
@@ -66,6 +68,7 @@ try {
         database_writes = $false
         admission_created = $false
         plan_file = if ($WritePlan) { $writtenPlan } else { $null }
+        tool_release = $toolRoot
     } | ConvertTo-Json
 }
 finally {
