@@ -1,4 +1,4 @@
-﻿# FlightSim bounded voice-pilot production readiness
+# FlightSim bounded voice-pilot production readiness
 
 ## Decision required
 
@@ -8,9 +8,9 @@ The guarded script is [deploy-voice-pilot.ps1](deploy-voice-pilot.ps1). Without 
 
 ## Exact release and target
 
-- Release commit: `eb1b69f30eb5a6fa97a4accefe8bf99130aa81e3` on `codex/p2-i13-stage-a`.
+- Release commit: `d587199c8c0d1fb599ebe4b0322e3a03b07b452e` on `codex/p2-i13-stage-a`.
 - Target: FlightSim Windows host; production database `memorybox` in Docker container `memorybox-pg`, PostgreSQL 16.14.
-- New isolated release: `C:\MemoryBox-releases\p2-i13-voice-pilot-eb1b69f`.
+- New isolated release: `C:\MemoryBox-releases\p2-i13-voice-pilot-d587199`.
 - Existing runtime checkout `C:\MemoryBox` is not modified. The current locked app and worker may remain running; this release uses a separate, one-shot CLI.
 - Media root: `P:\Photos\Home Videos`.
 
@@ -79,7 +79,7 @@ If preparation fails before migration, no database state changed. If migration o
 ## Command to execute after approval
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File 'C:\MemoryBox-releases\p2-i13-voice-pilot-eb1b69f\docs\implementation\p2-i13-stage-a\deploy-voice-pilot.ps1' -Execute -ApprovalReference 'founder-approved-voice-pilot-2026-09-06'
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File 'C:\MemoryBox-releases\p2-i13-voice-pilot-d587199\docs\implementation\p2-i13-stage-a\deploy-voice-pilot.ps1' -ExpectedReleaseSha 'd587199c8c0d1fb599ebe4b0322e3a03b07b452e' -Execute -ApprovalReference 'founder-approved-voice-pilot-2026-09-06'
 ```
 
 Before that command can work, create the detached release exactly once:
@@ -88,8 +88,8 @@ Before that command can work, create the detached release exactly once:
 & {
   $ErrorActionPreference = 'Stop'
   $root = 'C:\MemoryBox'
-  $release = 'C:\MemoryBox-releases\p2-i13-voice-pilot-eb1b69f'
-  $sha = 'eb1b69f30eb5a6fa97a4accefe8bf99130aa81e3'
+  $release = 'C:\MemoryBox-releases\p2-i13-voice-pilot-d587199'
+  $sha = 'd587199c8c0d1fb599ebe4b0322e3a03b07b452e'
   if (Test-Path -LiteralPath $release) { throw 'Release path already exists; preserve it and stop.' }
   git -C $root fetch origin codex/p2-i13-stage-a
   if ($LASTEXITCODE -ne 0) { throw 'Fetch failed.' }
