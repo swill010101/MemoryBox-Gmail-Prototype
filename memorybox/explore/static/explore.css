@@ -1,4 +1,4 @@
-/* P2-I4 Mixed-Media Find — visual hierarchy from approved mockup (anchor, not pixel-spec) */
+/* P2-I4 Mixed-Media Find â€” visual hierarchy from approved mockup (anchor, not pixel-spec) */
 :root {
   --mb-ink: #e8edf5;
   --mb-muted: #9aa3b5;
@@ -40,7 +40,7 @@ html[data-mb-surface="historian-capture"] {
   --mb-ask-band: linear-gradient(135deg, #162033 0%, #1a1e2e 55%, #1c1828 100%);
 }
 
-/* Dark canvas — same family as Person / shell so text stays readable */
+/* Dark canvas â€” same family as Person / shell so text stays readable */
 html[data-mb-surface="explore"] body.mb-shell,
 html[data-mb-surface="explore"] body {
   background: #0f141c !important;
@@ -106,7 +106,7 @@ body {
   padding: 1rem 1.25rem 2.5rem;
 }
 
-/* ——— Top: brand + family destinations ——— */
+/* â€”â€”â€” Top: brand + family destinations â€”â€”â€” */
 .mb-explore-top {
   display: flex;
   flex-wrap: wrap;
@@ -190,7 +190,7 @@ body {
   color: var(--mb-blue);
 }
 
-/* ——— Ask: prompt + field ONE horizontal row where width permits ——— */
+/* â€”â€”â€” Ask: prompt + field ONE horizontal row where width permits â€”â€”â€” */
 .mb-explore-ask-band {
   background: var(--mb-ask-band);
   border-radius: calc(var(--mb-radius) + 4px);
@@ -270,7 +270,7 @@ body {
   }
 }
 
-/* ——— Curator result ——— */
+/* â€”â€”â€” Curator result â€”â€”â€” */
 .mb-explore-curator {
   display: grid;
   grid-template-columns: auto 1fr auto;
@@ -436,7 +436,7 @@ body {
   }
 }
 
-/* ——— Toolbar ——— */
+/* â€”â€”â€” Toolbar â€”â€”â€” */
 .mb-explore-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -585,7 +585,7 @@ body {
   font-size: 0.78rem;
 }
 
-/* ——— Results: gallery or map (secondary mode) ——— */
+/* â€”â€”â€” Results: gallery or map (secondary mode) â€”â€”â€” */
 .mb-explore-results {
   margin-bottom: 0.25rem;
 }
@@ -636,7 +636,7 @@ body {
   color: var(--mb-ink);
 }
 
-/* ——— Gallery: two rows, ~12 at laptop density ——— */
+/* â€”â€”â€” Gallery: two rows, ~12 at laptop density â€”â€”â€” */
 .mb-explore-gallery {
   display: grid;
   grid-template-columns: repeat(var(--mb-cols), minmax(0, 1fr));
@@ -814,7 +814,7 @@ body {
 }
 
 .mb-card-preview {
-  /* Legacy in-card overlay retired — gallery uses #mb-quick-preview popover */
+  /* Legacy in-card overlay retired â€” gallery uses #mb-quick-preview popover */
   display: none !important;
 }
 
@@ -862,7 +862,7 @@ body {
   text-overflow: ellipsis;
 }
 
-/* ——— Unified timeline ——— */
+/* â€”â€”â€” Unified timeline â€”â€”â€” */
 .mb-explore-timeline {
   background: var(--mb-card);
   border: 1px solid var(--mb-line);
@@ -1114,7 +1114,7 @@ body {
   z-index: 2;
 }
 
-/* ——— Shared Evidence Viewer (MBUX §22.4 / CAP-P2-026) ——— */
+/* â€”â€”â€” Shared Evidence Viewer (MBUX Â§22.4 / CAP-P2-026) â€”â€”â€” */
 .mb-modal-backdrop {
   position: fixed;
   inset: 0;
@@ -1843,7 +1843,7 @@ body {
   opacity: 1;
 }
 
-/* ——— Gallery quick preview (MBUX §22.6) ——— */
+/* â€”â€”â€” Gallery quick preview (MBUX Â§22.6) â€”â€”â€” */
 .mb-quick-preview {
   position: fixed;
   z-index: 70;
@@ -2303,3 +2303,23 @@ html[data-mb-surface="explore"] .mb-explore.is-present-locked .mb-explore-timeli
   color: #edf3ff; background: #182335; border: 1px solid #40516c; border-radius: 5px; padding: .3rem;
 }
 .mb-transcript-annotations :focus-visible { outline: 2px solid #75a7ff; }
+
+/* Annotation controls stay above the independently scrolling transcript. */
+.mb-viewer-footer > .mb-transcript-annotations {
+  flex: 0 1 auto;
+  min-height: 1.5rem;
+  max-height: 60%;
+  overflow: auto;
+  margin: 0;
+}
+.mb-transcript-annotations > summary {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #020617;
+  cursor: pointer;
+  padding: .25rem 0;
+}
+
+.mb-viewer-footer > .mb-transcript-annotations[open] { flex: 0 0 60%; }
+.mb-viewer.is-video .mb-viewer-footer .mb-ev-transcript { flex-basis: 0; }

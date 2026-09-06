@@ -5589,7 +5589,7 @@
     }
   }
 
-  function bindSpeechTranscript(item) {
+  function bindSpeechTranscript(item, annotationFeedback) {
     const box = document.getElementById("mb-ev-transcript");
     if (!box) return;
     stopSpeechPoll();
@@ -5679,7 +5679,7 @@
             );
           })
           .join(" ");
-        bindTranscriptAnnotations(box, item, data);
+        bindTranscriptAnnotations(box, item, data, annotationFeedback);
         syncTranscribeButton();
         const player = document.querySelector(".mb-ev-video-player");
         const markActive = () => {
@@ -5716,6 +5716,7 @@
               "Voice span " + tStart.toFixed(1) + "s–" + tEnd.toFixed(1) + "s. Save an assignment using Annotate transcript; Learn is separate.";
         });
         box.addEventListener("keydown", (ev) => {
+          if (isViewerEditingTarget(ev.target)) return;
           const span = state.modal.speechSpan;
           if (!span) return;
           if (ev.key === "ArrowLeft") {
@@ -5745,7 +5746,20 @@
       });
   }
 
-  function bindTranscriptAnnotations(box, item, data) {
+  function isViewerEditingTarget(target) {
+    return !!target?.closest?.('input, textarea, select, button, summary, [contenteditable]:not([contenteditable="false"]), .mb-transcript-annotations');
+  }
+
+  function handleViewerKeydown(e) {
+    if (!state.modal.openId || e.defaultPrevented || isViewerEditingTarget(e.target)) return;
+    if (e.key === "Escape") closeModal();
+    if (e.key === "ArrowLeft") stepViewer(-1);
+    if (e.key === "ArrowRight") stepViewer(1);
+  }
+
+  function bindTranscriptAnnotations(box, item, data, feedback) {
+    box.parentElement.querySelector('.mb-transcript-annotations')?.remove();
+    box._annotationEvents?.abort();
     if (!data.annotation_enabled || !data.version_id) return;
     const tools = document.createElement("details");
     tools.className = "mb-transcript-annotations";
@@ -5758,18 +5772,18 @@
       <button type="button" data-annotation-save disabled>Save assignment</button>
       <button type="button" data-annotation-withdraw disabled>Withdraw assignment</button>
       <details><summary>Annotation history</summary><div data-annotation-history></div></details>`;
-    box.prepend(tools);
+    box.before(tools);
     const find = s => tools.querySelector(s), status = find("[data-annotation-status]");
     const person = find("[data-annotation-person]"), text = find("[data-annotation-text]"), corrected = find("[data-correct-text]");
     const save = find("[data-annotation-save]"), withdraw = find("[data-annotation-withdraw]");
     let selected = [], prior = null, busy = false, retry = null;
     fetch("/people?limit=500").then(r => { if (!r.ok) throw Error("Person list unavailable"); return r.json(); }).then(d => {
-      (d.people || []).forEach(p => { const o = document.createElement("option"); o.value = p.id; o.textContent = p.display_name || p.name || p.id; person.appendChild(o); tools.querySelectorAll('[data-history-person]').forEach(row => { if (row.dataset.historyPerson === p.id) row.firstChild.textContent = row.firstChild.textContent.replace(p.id, o.textContent); }); });
+      (d.people || []).forEach(p => { const o = document.createElement("option"); o.value = p.id; o.textContent = p.display_name || p.name || p.id; person.appendChild(o); if (prior?.person_id === p.id) person.value = p.id; tools.querySelectorAll('[data-history-person]').forEach(row => { if (row.dataset.historyPerson === p.id) row.firstChild.textContent = row.firstChild.textContent.replace(p.id, o.textContent); }); });
     }).catch(e => { status.textContent = e.message; });
     const history = data.history || [];
     const superseded = new Set(history.map(a => a.supersedes).filter(Boolean));
     const active = history.filter(a => !a.stale && a.action === "assign" && !superseded.has(a.id));
-    if (active.length) tools.querySelector("summary").textContent = "Annotate transcript ? " + active.length + " saved assignments";
+    if (active.length) tools.querySelector("summary").textContent = "Annotate transcript ? " + active.length + (active.length === 1 ? " saved assignment" : " saved assignments");
     const setSelection = ids => {
       selected = ids; retry = null;
       prior = active.find(a => JSON.stringify(a.word_ids) === JSON.stringify(ids)) || null;
@@ -5789,8 +5803,8 @@
       if (active.includes(a)) { const edit = document.createElement("button"); edit.type = "button"; edit.textContent = "Review assignment"; edit.onclick = () => setSelection(a.word_ids); row.appendChild(edit); }
       historyBox.appendChild(row);
     });
-    const pick = () => {
-      if (busy) return;
+    const pick = (event) => {
+      if (busy || isViewerEditingTarget(event.target)) return;
       const sel = window.getSelection();
       if (!sel || sel.isCollapsed) return;
       const chosen = Array.from(box.querySelectorAll(".mb-ev-word")).filter(el => sel.containsNode(el, true));
@@ -5800,14 +5814,23 @@
       // Include zero-length rendered tokens inside a corrected span.
       const from = Number(chosen[0].dataset.i), to = Number(chosen[chosen.length - 1].dataset.i);
       const overlay = active.find(a => a.word_ids.includes(ids[0]) && ids.every(id => a.word_ids.includes(id)));
-      setSelection(overlay ? overlay.word_ids : data.words.slice(from, to + 1).map(w => w.id));
+      const nextIds = overlay ? overlay.word_ids : data.words.slice(from, to + 1).map(w => w.id);
+      if (JSON.stringify(nextIds) !== JSON.stringify(selected)) setSelection(nextIds);
       tools.open = true;
     };
-    box.addEventListener("mouseup", pick); box.addEventListener("keyup", pick);
+    box._annotationEvents = new AbortController();
+    box.addEventListener("mouseup", pick, {signal:box._annotationEvents.signal});
+    box.addEventListener("keyup", pick, {signal:box._annotationEvents.signal});
+    if (feedback) {
+      tools.open = true;
+      const saved = active.find(a => a.id === feedback.id);
+      if (saved) setSelection(saved.word_ids);
+      status.textContent = feedback.message;
+    }
     corrected.onchange = () => { text.disabled = !corrected.checked; };
     const submit = async action => {
       if (busy || !selected.length) return;
-      if (!person.value) { status.textContent = "Choose a Person or unknown state."; return; }
+      if (!person.value) { status.textContent = "Choose a Person or unknown state."; tools.scrollTop = 0; return; }
       const stateValue = ["unknown", "no_match"].includes(person.value) ? person.value : "person";
       const body = {provider_key:data.provider_key, source_id:item.video_external_id || item.external_id,
         version_id:data.version_id, expected_head:data.expected_head, word_ids:selected,
@@ -5819,11 +5842,12 @@
       body.request_id = retry.id; busy = true; save.disabled = withdraw.disabled = true;
       try {
         const r = await fetch("/annotations/transcript", {method:"POST", headers:{"Content-Type":"application/json", "X-MB-Annotation":"1"}, body:JSON.stringify(body)});
-        const d = await r.json(); if (!r.ok) throw Error(typeof d.detail === "string" ? d.detail : "Assignment rejected; reopen transcript and review selection.");
+        const d = await r.json(); if (!r.ok || d.ok === false) throw Error(typeof d.detail === "string" ? d.detail : "Assignment rejected; reopen transcript and review selection.");
         if (!box.isConnected) return;
-        status.textContent = "Assignment saved. Original transcript preserved.";
-        bindSpeechTranscript(item);
-      } catch (e) { status.textContent = e.message; save.disabled = false; withdraw.disabled = !prior; }
+        const message = action === "withdraw" ? "Assignment withdrawn. History preserved." : "Assignment saved. Original transcript preserved.";
+        status.textContent = message;
+        bindSpeechTranscript(item, {id:d.annotation?.id, message});
+      } catch (e) { status.textContent = e.message; tools.scrollTop = 0; save.disabled = false; withdraw.disabled = !prior; }
       finally { busy = false; }
     };
     save.onclick = () => submit("assign"); withdraw.onclick = () => submit("withdraw");
@@ -7032,12 +7056,7 @@
         renderRailPanel(item);
       });
     });
-    document.addEventListener("keydown", (e) => {
-      if (!state.modal.openId) return;
-      if (e.key === "Escape") closeModal();
-      if (e.key === "ArrowLeft") stepViewer(-1);
-      if (e.key === "ArrowRight") stepViewer(1);
-    });
+    document.addEventListener("keydown", handleViewerKeydown);
     const gallery = document.getElementById("mb-explore-gallery");
     gallery.addEventListener("scroll", () => {
       state.gallery.scrollTop = gallery.scrollTop;

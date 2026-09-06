@@ -2,12 +2,23 @@
   "kind": "actual_annotation_form_and_selection_synthetic_browser",
   "checks": {
     "emptyRejected": true,
+    "personRetained": true,
+    "editingDoesNotNavigate": true,
+    "confirmationPersists": true,
+    "assignmentRetained": true,
+    "savedHistory": true,
+    "openAfterSave": true,
+    "reopenedHistory": true,
+    "headingVisibleAtTranscriptBottom": true,
+    "errorVisible": true,
+    "rejectedSaveRetainsPerson": true,
+    "transcriptFits": true,
+    "saveReachable": true,
     "selectedExactWords": true,
     "correction": true,
     "annotationOnly": true,
     "ownerHeader": true,
-    "refreshed": true,
-    "saveReachable": true
+    "viewerNavigationStillWorks": true
   },
   "passed": true,
   "limits": [

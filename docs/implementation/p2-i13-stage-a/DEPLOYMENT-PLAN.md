@@ -213,3 +213,7 @@ See [ANNOTATION-IMPLEMENTATION-REPORT.md](ANNOTATION-IMPLEMENTATION-REPORT.md). 
 ## Annotation query performance correction
 
 FlightSim restore integrity and rollback passed, but repeated JSON expansion delayed reads. The unapplied 031 query has been optimized and synthetic old/new equality verified. Run rehearse-annotation-queries.ps1 on the named restore clone before deployment review. Keep the current live release running; see ANNOTATION-IMPLEMENTATION-REPORT.md for evidence and boundaries.
+
+## 2026-09-06: live 031 and annotation UI follow-up
+
+Tom reported successful live commit of 031 at 2026-09-06 10:13:23.839021 UTC: 1,736 snapshots, 140,441 archived words and zero mismatches. Locked startup proceeded. Live annotation workflow acceptance remains open after hidden controls, cleared Person selection and typing-triggered video navigation were reported. See ANNOTATION-IMPLEMENTATION-REPORT.md for the bounded UI correction and synthetic verification. Deploy the corrected UI in a new detached release; no migration rerun or processing is needed. Confirm saved assignment/history and text editing on FlightSim before calling the annotation workflow accepted.

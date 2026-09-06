@@ -40,21 +40,34 @@ async def run(endpoint):
             functions+=code[code.index("  function setViewerMediaType("):code.index("  function renderViewer(")]
         else:
             functions+="function setViewerMediaType(item) {}"
-        functions+=code[code.index("  function bindTranscriptAnnotations("):code.index("  function appearanceViewBounds(")]
+        functions+=code[code.index("  function bindSpeechTranscript("):code.index("  function appearanceViewBounds(")]
         setup="""(()=>{
  document.body.innerHTML="""+json.dumps(markup)+""";
  document.body.style='margin:0;background:#0b1222;font:16px system-ui';
  const style=document.createElement('style');style.textContent="""+json.dumps(css)+""";document.head.appendChild(style);
  const escapeHtml=s=>String(s).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;'),escapeAttr=escapeHtml;
  const immichVideoSrc=()=>'',faceBoxHtml=()=>'',bindTranscribeThisTape=()=>{};
- const bindSpeechTranscript=()=>{window.refreshed=(window.refreshed||0)+1;};
+ const state={modal:{openId:'synthetic',transcriptOn:true}};
+ const stopSpeechPoll=()=>{},syncTranscribeButton=()=>{},syncLearnSubmitEnabled=()=>{},knownPeopleOptions=()=>[],setSpeechStatus=()=>{};
+ const paintTranscriptEmpty=(box,item,message)=>{box.textContent=message;};
+ const closeModal=()=>{window.navigated++;},stepViewer=()=>{window.navigated++;};
+ window.navigated=0;window.reads=0;window.failSave=false;
+ window.historyRows=[];
+ window.dataForTest=()=>({annotation_enabled:true,version_id:'00000000-0000-0000-0000-000000000020',provider_key:'hvrt',expected_head:historyRows.at(-1)?.id||null,
+ words:Array.from({length:300},(_,i)=>({id:'word-'+i,machine_token:'Original',token:'Original',t_start:i,t_end:i+.5})),history:historyRows});
  window.annotationCalls=[];
  window.fetch=async(url,options)=>{
    if(url==='/people?limit=500')return {ok:true,json:async()=>({people:[{id:'00000000-0000-0000-0000-000000000001',display_name:'Synthetic Person'}]})};
-   window.annotationCalls.push({url,options});return {ok:true,json:async()=>({ok:true})};
+   if(url.startsWith('/speech/transcript?')) {window.reads++;return {ok:true,json:async()=>dataForTest()};}
+   window.annotationCalls.push({url,options});
+   if(window.failSave)return {ok:false,json:async()=>({detail:'Synthetic save rejected'})};
+   const a={...JSON.parse(options.body),id:'annotation-'+annotationCalls.length,created_at:'synthetic',stale:false};
+   historyRows.push(a);return {ok:true,json:async()=>({ok:true,annotation:a})};
  };
  if(!crypto.randomUUID)crypto.randomUUID=()=> '00000000-0000-0000-0000-000000000099';
  """+functions+"""
+ window.bindSpeechTranscript=bindSpeechTranscript;
+ document.addEventListener("keydown",handleViewerKeydown);
  window.buildProofModal=(withMoments)=>{
  const item={id:'synthetic',type:'video',video_external_id:'synthetic',start_sec:.5,end_sec:1,t:.5};
  if(withMoments)item.source_moments=[{start_sec:.5},{start_sec:10.5}];
@@ -71,7 +84,7 @@ async def run(endpoint):
  box.innerHTML=Array.from({length:120},(_,i)=>'<span>Transcript line '+(i+1)+': sample speech remains readable and selectable.</span><br>').join('')+'<button id="transcript-end">Last transcript line</button>';
  const ids=['00000000-0000-0000-0000-000000000011','00000000-0000-0000-0000-000000000012'];
  box.innerHTML='<span class="mb-ev-word" data-i="0">Original</span> <span class="mb-ev-word" data-i="1">words</span><br>'+box.innerHTML;
- bindTranscriptAnnotations(box,item,{annotation_enabled:true,version_id:'00000000-0000-0000-0000-000000000020',provider_key:'hvrt',expected_head:null,words:ids.map(id=>({id,machine_token:'original'})),history:[]});
+ window.testItem=item;bindSpeechTranscript(item);
  };
  window.buildProofModal(true);
  return true;
@@ -79,24 +92,48 @@ async def run(endpoint):
         r=await call("Runtime.evaluate",{"expression":setup,"returnByValue":True})
         if "exceptionDetails" in r:raise RuntimeError(r["exceptionDetails"])
         r=await call("Runtime.evaluate",{"expression":"""(async()=>{
- await new Promise(r=>setTimeout(r,40));
- const box=document.getElementById('mb-ev-transcript'),els=box.querySelectorAll('.mb-ev-word');
- const range=document.createRange();range.setStart(els[0].firstChild,0);range.setEnd(els[1].firstChild,5);
- const selection=getSelection();selection.removeAllRanges();selection.addRange(range);
- box.dispatchEvent(new MouseEvent('mouseup',{bubbles:true}));
- const tools=box.querySelector('.mb-transcript-annotations'),button=tools.querySelector('[data-annotation-save]');
- button.click();await new Promise(r=>setTimeout(r,10));
- const emptyRejected=annotationCalls.length===0;
- tools.querySelector('[data-annotation-person]').value='00000000-0000-0000-0000-000000000001';
+ const wait=()=>new Promise(r=>setTimeout(r,80));await wait();
+ const box=document.getElementById('mb-ev-transcript');
+ const pick=()=>{const els=box.querySelectorAll('.mb-ev-word'),range=document.createRange();range.setStart(els[0].firstChild,0);range.setEnd(els[1].firstChild,8);getSelection().removeAllRanges();getSelection().addRange(range);box.dispatchEvent(new MouseEvent('mouseup',{bubbles:true}));};
+ pick();
+ let tools=document.querySelector('.mb-transcript-annotations'),button=tools.querySelector('[data-annotation-save]');
+ button.click();await wait();const emptyRejected=annotationCalls.length===0;
+ const person=tools.querySelector('[data-annotation-person]');person.value='00000000-0000-0000-0000-000000000001';
+ person.dispatchEvent(new MouseEvent('mouseup',{bubbles:true}));
+ person.dispatchEvent(new KeyboardEvent('keyup',{key:'ArrowDown',bubbles:true}));
+ const personRetained=person.value.endsWith('0001');
  const check=tools.querySelector('[data-correct-text]');check.checked=true;check.dispatchEvent(new Event('change'));
- tools.querySelector('textarea').value='Corrected words';button.click();await new Promise(r=>setTimeout(r,30));
+ const text=tools.querySelector('textarea');text.focus();text.value='Corrected words';
+ for(const el of [text,person,tools.querySelector('[data-annotation-reason]')]) {
+ for(const key of ['ArrowLeft','ArrowRight','Escape'])el.dispatchEvent(new KeyboardEvent('keydown',{key,bubbles:true,cancelable:true}));
+ }
+ const editingDoesNotNavigate=navigated===0;
+ button.dispatchEvent(new MouseEvent('mouseup',{bubbles:true}));button.click();await wait();
+ tools=document.querySelector('.mb-transcript-annotations');
  const request=annotationCalls[0],payload=request&&JSON.parse(request.options.body);
- button.scrollIntoView({block:"nearest"});
- const br=button.getBoundingClientRect(),tr=box.getBoundingClientRect();
- return {emptyRejected,selectedExactWords:payload?.word_ids.length===2,correction:payload?.correction==='Corrected words',
-   annotationOnly:annotationCalls.length===1&&request.url==='/annotations/transcript',
-   ownerHeader:request?.options.headers['X-MB-Annotation']==='1',refreshed:window.refreshed===1,
-   saveReachable:br.top>=tr.top&&br.bottom<=tr.bottom&&document.elementFromPoint(br.left+3,br.top+3)===button};
+ const confirmationPersists=tools.querySelector('[data-annotation-status]').textContent.includes('Assignment saved');
+ const assignmentRetained=tools.querySelector('[data-annotation-person]').value.endsWith('0001');
+ const savedHistory=tools.querySelector('[data-annotation-history]').textContent.includes('assign');
+ const openAfterSave=tools.open;
+ // Reopen through the actual transcript fetch/render path.
+ bindSpeechTranscript(testItem);await wait();tools=document.querySelector('.mb-transcript-annotations');
+ const reopenedHistory=tools.querySelector('summary').textContent.includes('1 saved assignment')&&tools.querySelector('[data-annotation-history]').textContent.includes('assign');
+ box.scrollTop=box.scrollHeight;
+ const header=tools.querySelector('summary'),hr=header.getBoundingClientRect();
+ const headingVisibleAtTranscriptBottom=document.elementFromPoint(hr.left+5,hr.top+5)===header;
+ tools.open=true;tools.querySelector('[data-annotation-history] button').click();await wait();
+ window.failSave=true;tools.querySelector('[data-annotation-save]').click();await wait();
+ const errorVisible=tools.querySelector('[data-annotation-status]').textContent==='Synthetic save rejected';
+ const rejectedSaveRetainsPerson=tools.querySelector('[data-annotation-person]').value.endsWith('0001');
+ const footer=box.parentElement.getBoundingClientRect();
+ const transcriptFits=box.getBoundingClientRect().height>40&&footer.bottom<=innerHeight;
+ const save=tools.querySelector('[data-annotation-save]');save.scrollIntoView({block:'nearest'});
+ const br=save.getBoundingClientRect();
+ const saveReachable=document.elementFromPoint(br.left+3,br.top+3)===save;
+ document.body.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}));
+ return {emptyRejected,personRetained,editingDoesNotNavigate,confirmationPersists,assignmentRetained,savedHistory,openAfterSave,reopenedHistory,headingVisibleAtTranscriptBottom,errorVisible,rejectedSaveRetainsPerson,transcriptFits,saveReachable,
+ selectedExactWords:payload?.word_ids.length===2,correction:payload?.correction==='Corrected words',
+ annotationOnly:annotationCalls.every(r=>r.url==='/annotations/transcript'),ownerHeader:request?.options.headers['X-MB-Annotation']==='1',viewerNavigationStillWorks:navigated===1};
 })()""","awaitPromise":True,"returnByValue":True})
         if "exceptionDetails" in r:raise RuntimeError(r["exceptionDetails"])
         checks=r['result']['value']
