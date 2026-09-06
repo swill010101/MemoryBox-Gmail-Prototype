@@ -76,7 +76,20 @@ try {
     if (-not (Test-Path -LiteralPath $model)) {
         $download = "$model.partial-$([guid]::NewGuid().ToString('N'))"
         try {
-            Invoke-WebRequest -UseBasicParsing -Uri $modelUrl -OutFile $download
+            Add-Type -AssemblyName System.Net.Http
+            $handler = New-Object System.Net.Http.HttpClientHandler
+            $handler.AllowAutoRedirect = $false
+            $client = New-Object System.Net.Http.HttpClient($handler)
+            try {
+                $response = $client.GetAsync($modelUrl).Result
+                $redirect = $response.Headers.Location
+                if ([int]$response.StatusCode -ne 302 -or -not $redirect -or -not $redirect.IsAbsoluteUri -or $redirect.Scheme -ne 'https' -or $redirect.Host -ne 'xfiles.ngc.nvidia.com') { throw 'TitaNet artifact redirect validation failed.' }
+                Invoke-WebRequest -UseBasicParsing -Uri $redirect.AbsoluteUri -OutFile $download
+            }
+            finally {
+                if ($response) { $response.Dispose() }
+                $client.Dispose(); $handler.Dispose()
+            }
             if ((Get-Item -LiteralPath $download).Length -ne $modelBytes) { throw 'TitaNet model byte count mismatch.' }
             if ((Get-FileHash -LiteralPath $download -Algorithm SHA256).Hash.ToLowerInvariant() -ne $modelSha) { throw 'TitaNet model hash mismatch.' }
             Move-Item -LiteralPath $download -Destination $model
