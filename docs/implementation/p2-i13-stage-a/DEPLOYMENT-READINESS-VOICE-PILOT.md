@@ -8,9 +8,9 @@ The guarded script is [deploy-voice-pilot.ps1](deploy-voice-pilot.ps1). Without 
 
 ## Exact release and target
 
-- Release commit: `d587199c8c0d1fb599ebe4b0322e3a03b07b452e` on `codex/p2-i13-stage-a`.
+- Release commit: `356e10d800ca9ecfbba7e3e81b9369337ce0495a` on `codex/p2-i13-stage-a`.
 - Target: FlightSim Windows host; production database `memorybox` in Docker container `memorybox-pg`, PostgreSQL 16.14.
-- New isolated release: `C:\MemoryBox-releases\p2-i13-voice-pilot-d587199`.
+- New isolated release: `C:\MemoryBox-releases\p2-i13-voice-pilot-356e10d`.
 - Existing runtime checkout `C:\MemoryBox` is not modified. The current locked app and worker may remain running; this release uses a separate, one-shot CLI.
 - Media root: `P:\Photos\Home Videos`.
 
@@ -33,7 +33,7 @@ A new, current backup is still mandatory immediately before the live schema chan
 ## Model and frozen scoring policy
 
 - Model: NVIDIA NeMo TitaNet-Large v1 (`titanet-l.nemo`), 101,621,760 bytes.
-- Official download endpoint: `https://api.ngc.nvidia.com/v2/models/nvidia/nemo/titanet_large/versions/v1/files/titanet-l.nemo`.
+- Official download endpoint: `https://api.ngc.nvidia.com/v2/models/nvidia/nemo/titanet_large/versions/v1/files?redirect=true&path=titanet-l.nemo`.
 - Required SHA-256: `e838520693f269e7984f55bc8eb3c2d60ccf246bf4b896d4be9bcabe3e4b0fe3`.
 - Isolated environment: a new Python 3.12 virtual environment inside the new release. Direct pins are in `titanet-requirements.in`.
 - Model smoke test uses generated audio only. It must produce a finite, repeatable 192-element embedding before any private-audio work.
@@ -45,10 +45,10 @@ The model package install and the model download have not yet been tested on Fli
 
 | Key | Role | Source | Range | Expected result |
 | --- | --- | --- | --- | --- |
-| T1 | sole training reference | `vid-da41273dbd9ac4bb` | 02:18.720–02:24.660 | Eugene Will reference only |
-| H1 | held out | `vid-c57dbd21f993f6d1` | 05:25.220–05:45.560 | Eugene Will |
-| O1 | held out negative | `vid-c57dbd21f993f6d1` | 02:32.240–02:38.340 | Tom Will off camera; must not be a Eugene match |
-| U1-clear | held out | `vid-c57dbd21f993f6d1` | 02:09.640–02:18.720 | Eugene Will |
+| T1 | sole training reference | `vid-da41273dbd9ac4bb` | 02:18.720â€“02:24.660 | Eugene Will reference only |
+| H1 | held out | `vid-c57dbd21f993f6d1` | 05:25.220â€“05:45.560 | Eugene Will |
+| O1 | held out negative | `vid-c57dbd21f993f6d1` | 02:32.240â€“02:38.340 | Tom Will off camera; must not be a Eugene match |
+| U1-clear | held out | `vid-c57dbd21f993f6d1` | 02:09.640â€“02:18.720 | Eugene Will |
 
 Limits are enforced in code and in the reviewed plan: two source files, four extractions, four embeddings, three comparisons, one attempt per span, no automatic retry, 41.46 seconds of selected audio, 120 seconds per extraction, 120 seconds per embedding, and 20 minutes overall. Source and model SHA-256 values must match the reviewed plan before and after extraction. Temporary WAV files are deleted by the runner; originals and derived media are not written.
 
@@ -64,7 +64,7 @@ It does not alter machine transcripts, owner overlays, legacy recognition/speech
 
 ## Deployment sequence and smoke tests
 
-After approval, Tom runs one command from a configured FlightSim PowerShell session. The script first verifies the commit and a clean release directory, installs the isolated dependencies, downloads and hash-checks the model, runs generated-audio smoke, and then creates and verifies a fresh custom-format backup. It refuses any live state other than migration `031` with absent pilot tables.
+After approval, Tom runs one command from a configured FlightSim PowerShell session. The script first verifies the commit and a clean release directory, installs the isolated dependencies, downloads the redirected model artifact into a temporary file, requires its exact byte count and SHA-256, preserves any invalid response as a rejected file, runs generated-audio smoke, and then creates and verifies a fresh custom-format backup. It refuses any live state other than migration `031` with absent pilot tables.
 
 It applies **only** migration 032 inside a transaction and writes the `032` ledger row. It then verifies the ledger and all four pilot tables. It creates the reviewed plan from the pinned selection, registers and starts one bounded admission, runs the CLI, records the result, and stops the admission. The final read-only report verifies there is one run, four attempts, and the expected event records. It also reports legacy queue counts and transcript/annotation counts before and after; they must be equal.
 
@@ -72,14 +72,14 @@ The acceptance result is a report of all three held-out scores and decisions. H1
 
 ## Availability and rollback
 
-No application or worker replacement is required, so no planned user-interface outage is expected. The SQL migration requests a five-second lock timeout. Reserve a 30–45 minute maintenance window because the one-time Python package installation/download may take time and the backup transfers roughly 433 MB; existing services can remain locked and available while that occurs. The private run itself is capped at 20 minutes.
+No application or worker replacement is required, so no planned user-interface outage is expected. The SQL migration requests a five-second lock timeout. Reserve a 30â€“45 minute maintenance window because the one-time Python package installation/download may take time and the backup transfers roughly 433 MB; existing services can remain locked and available while that occurs. The private run itself is capped at 20 minutes.
 
 If preparation fails before migration, no database state changed. If migration or run fails, the script stops the new admission where possible, preserves all additive pilot evidence and failure output, and leaves the existing app/worker locks intact. Do not rerun automatically, drop pilot tables, delete records, restore the database, or alter the original checkout. Normal operational rollback is to stop using this detached release and retain the existing locked release. A full database restore is an exceptional recovery action because it would remove later legitimate writes; it requires a separate founder decision.
 
 ## Command to execute after approval
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File 'C:\MemoryBox-releases\p2-i13-voice-pilot-d587199\docs\implementation\p2-i13-stage-a\deploy-voice-pilot.ps1' -ExpectedReleaseSha 'd587199c8c0d1fb599ebe4b0322e3a03b07b452e' -Execute -ApprovalReference 'founder-approved-voice-pilot-2026-09-06'
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File 'C:\MemoryBox-releases\p2-i13-voice-pilot-356e10d\docs\implementation\p2-i13-stage-a\deploy-voice-pilot.ps1' -ExpectedReleaseSha '356e10d800ca9ecfbba7e3e81b9369337ce0495a' -Execute -ApprovalReference 'founder-approved-voice-pilot-2026-09-06'
 ```
 
 Before that command can work, create the detached release exactly once:
@@ -88,8 +88,8 @@ Before that command can work, create the detached release exactly once:
 & {
   $ErrorActionPreference = 'Stop'
   $root = 'C:\MemoryBox'
-  $release = 'C:\MemoryBox-releases\p2-i13-voice-pilot-d587199'
-  $sha = 'd587199c8c0d1fb599ebe4b0322e3a03b07b452e'
+  $release = 'C:\MemoryBox-releases\p2-i13-voice-pilot-356e10d'
+  $sha = '356e10d800ca9ecfbba7e3e81b9369337ce0495a'
   if (Test-Path -LiteralPath $release) { throw 'Release path already exists; preserve it and stop.' }
   git -C $root fetch origin codex/p2-i13-stage-a
   if ($LASTEXITCODE -ne 0) { throw 'Fetch failed.' }
@@ -105,3 +105,7 @@ The detached-release creation changes Git metadata only; it does not clean, move
 ## Approval request
 
 Approve this entire FlightSim production deployment: the exact commit and detached release, fresh verified backup, one additive migration 032, isolated TitaNet-Large install/download and generated-audio smoke, the four-span private bounded run, and the stated verification/rollback procedure.
+
+## Download correction recorded
+
+The earlier release d587199 stopped before database backup, schema migration, admission creation, or private-media processing because the bare NGC URL saved a 73-byte request receipt. Release 356e10d uses NVIDIA's redirected guest-download form and rejects a non-101,621,760-byte payload before model loading. The prior response is preserved in the earlier isolated release; do not reuse that release.
