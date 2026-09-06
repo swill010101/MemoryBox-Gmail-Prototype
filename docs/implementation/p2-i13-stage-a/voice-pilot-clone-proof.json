@@ -1,0 +1,12 @@
+{
+  "kind": "synthetic_pg17_dump_restore_clone",
+  "runtime_access": false,
+  "clone": "i13_pilot_clone_ba0b168441e8416db1d5907813f70de0",
+  "migration_applied_on_clone": true,
+  "annotations_unchanged": true,
+  "empty_new_runs": true,
+  "rollback_removes_new_table": true,
+  "commit_creates_new_table": true,
+  "server_version": "17.10",
+  "passed": true
+}

@@ -25,6 +25,9 @@ def digest(plan: dict) -> str:
 
 def preview(plan: dict) -> dict:
     """Validate phase-specific membership/truth and calculate the whole authorized workload, no I/O."""
+    if plan.get("purpose") == "voice_pilot":
+        from .voice_pilot import validate
+        return validate(plan)
     try:
         kind = plan["scope_kind"]
         if kind not in {"bounded", "archive"}: raise ValueError()
@@ -94,6 +97,7 @@ class Admission:
 
     def check(self, lane: str, videos: list[dict], person_ids: list[str]) -> None:
         preview(self.plan)
+        if self.plan.get("purpose") == "voice_pilot": raise ScopeDenied("pilot_requires_exact_span_runner")
         if digest(self.plan) != self.plan_sha256: raise ScopeDenied("scope_plan_changed")
         if self.state != "started" or not self.start_ref: raise ScopeDenied("processing_not_started")
         if self.plan["scope_kind"] == "archive" and not (self.acceptance_ref and self.unlock_ref): raise ScopeDenied("archive_locked")

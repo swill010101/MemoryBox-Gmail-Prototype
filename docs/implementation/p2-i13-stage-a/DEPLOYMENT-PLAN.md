@@ -238,3 +238,8 @@ Tom reported successful live commit of 031 at 2026-09-06 10:13:23.839021 UTC: 1,
 ## Consolidated production approval boundary
 
 Tom authorizes autonomous development, applicable clone rehearsals, commit and push to codex/p2-i13-stage-a. Use one consolidated production readiness report and one deployment approval; further approval is needed only for material plan, target or risk changes. See DEPLOYMENT-READINESS-ANNOTATION-REVIEW.md for exact code commit 7bc47b5911caeb8ca256dcc260f17943d2fb777a, FlightSim target, backup gate, no-migration decision, commands, smoke checks, downtime and rollback. Production execution awaits that consolidated approval.
+
+
+## Bounded voice pilot development checkpoint
+
+The approved pilot now has isolated admission, runner, retirement/result provenance and authored migration 032. See [BOUNDED-VOICE-PILOT-IMPLEMENTATION.md](BOUNDED-VOICE-PILOT-IMPLEMENTATION.md) for 63 passing tests, local synthetic PostgreSQL 17 clone proof and explicit remaining encoder/PG16 readiness gaps. No FlightSim pilot, migration 032, Learn unlock or private-media recognition has run. Production deployment is not ready for approval yet.
