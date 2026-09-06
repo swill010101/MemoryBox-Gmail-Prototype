@@ -1,4 +1,4 @@
-﻿# Bounded voice pilot implementation and readiness
+# Bounded voice pilot implementation and readiness
 
 Status: development implementation tested; **NOT READY for FlightSim execution**.
 
@@ -20,7 +20,7 @@ Migration 032 adds only pilot tables, immutable-event triggers and a stale-resul
 
 1. **Encoder compatibility:** the current adapter requires a reviewed local TorchScript ECAPA artifact with a 192-dimensional output and `forward(waveform[B,T], relative_lengths[B])`. This is a new adapter contract, not verified compatibility with the existing SpeechBrain checkpoint. No artifact, revision, hash, synthetic-audio model smoke test or actual model load has been verified. Discover the existing artifact first; adapt or export locally under development authorization as appropriate, then freeze the exact tested model. Do not download or silently substitute a model.
 2. **Target rehearsal:** FlightSim runs PostgreSQL 16.14. Recheck migration numbering/schema and rehearse 032 against an isolated PG16 restore of a fresh verified backup. The historical pre031 backup is not current pilot backup proof.
-3. **Publication:** earlier automatic approval review rejected publishing private-media-derived ancestor artifacts. This remains unresolved; no alternate branch or selective publication has been used to bypass it.
+3. **Publication resolved:** Tom explicitly approved the metadata payload and GitHub destination. The four pending commits through `84140ac76a97f85b1c3b68a75a8e6c55cf52d491` were pushed and the remote SHA verified.
 4. Source hashing checks the deadline between reads; an operating-system stalled file read can exceed the nominal overall budget. Extraction and embedding subprocess waits have enforced timeouts. A production hard-deadline supervisor remains to be validated if an absolute wall-clock bound is required.
 5. Hash matching catches identical files, not edited duplicates or historical model exposure. Three probes cannot establish general accuracy. Uncertain/overlapping speech and positive off-camera Tom recognition remain outside this pilot.
 
@@ -42,3 +42,6 @@ Rollback: stop the exact pilot admission and terminate its dedicated runner if n
 ## Read-only prerequisite command
 
 Once this file is available on FlightSim, run `python -B docs/implementation/p2-i13-stage-a/check-voice-prerequisites.py`. It reports package versions and candidate cache existence without importing MB, loading a model, opening the database or reading media. Supply the exact local voice-model location and revision as the remaining target fact; do not send model weights, private audio or credentials.
+
+
+Model discovery follow-up: existing `speech/embeddings.py` uses `%TEMP%/mb-spkrec-ecapa-voxceleb` and SpeechBrain `spkrec-ecapa-voxceleb`, not the pilot TorchScript format. The read-only helper now checks that exact cache and up to 20 Hugging Face snapshot directories for known checkpoint filenames. It was executed successfully on the desktop; FlightSim results are still required. No model was loaded.
