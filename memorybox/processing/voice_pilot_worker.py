@@ -12,7 +12,8 @@ def main():
     socket.create_connection = no_network
     import torch
     torch.set_num_threads(1)
-    model = torch.jit.load(sys.argv[1], map_location="cpu").eval()
+    from .titanet_adapter import load_model, encode
+    model = load_model(sys.argv[1])
     print(json.dumps({"ready":True}), flush=True)
     for line in sys.stdin:
         request=json.loads(line)
@@ -21,9 +22,7 @@ def main():
                 if f.getnchannels()!=1 or f.getsampwidth()!=2 or f.getframerate()!=16000: raise ValueError('pcm_format')
                 raw=f.readframes(f.getnframes())
             signal=torch.frombuffer(bytearray(raw),dtype=torch.int16).to(torch.float32)/32768.
-            with torch.inference_mode():
-                # Reviewed artifact contract: forward(waveform[B,T], relative_lengths[B]).
-                result=model(signal.unsqueeze(0),torch.ones(1)).detach().cpu().flatten().tolist()
+            result=encode(model,signal)
             print(json.dumps({'vector':result},allow_nan=False),flush=True)
         except Exception as exc:
             print(json.dumps({'error_type':type(exc).__name__}),flush=True)

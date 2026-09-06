@@ -1,0 +1,21 @@
+{
+  "model": "NVIDIA TitaNet-Large",
+  "revision": "NGC v1",
+  "sha256": "e838520693f269e7984f55bc8eb3c2d60ccf246bf4b896d4be9bcabe3e4b0fe3",
+  "artifact_bytes": 101621760,
+  "development_python": "3.13",
+  "nemo_toolkit": "2.7.0",
+  "torch": "2.8.0",
+  "torchaudio": "2.8.0",
+  "platform": "Windows desktop CPU",
+  "pip_check": "passed",
+  "synthetic_only": true,
+  "dimensions": 192,
+  "finite": true,
+  "max_repeat_delta": 0.0,
+  "model_loaded_once": true,
+  "private_media_processed": false,
+  "recognition_accuracy_verified": false,
+  "production_changed": false,
+  "unit_and_synthetic_database_tests": 53
+}

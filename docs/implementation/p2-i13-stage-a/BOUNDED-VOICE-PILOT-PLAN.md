@@ -39,3 +39,8 @@ A successful Eugene-only pilot would demonstrate real-audio matching and an off-
 ## Current boundary
 
 This plan is complete; implementation gaps above remain open. No pilot code, migration, runtime model import, recognition, Learn, audio upload, cleanup or original-file change was performed in this preparation. The editor usability issue remains explicitly deferred. Private-derived checklist/plan publication remains pending the earlier requested specific permission; keep this preparation local until that is resolved. General feature-branch authorization otherwise remains in force.
+
+
+## Approved model decision
+
+Tom selected NVIDIA TitaNet-Large. Replace the provisional TorchScript ECAPA contract with local NeMo checkpoint restoration. Development installation and synthetic/public-audio validation are authorized; FlightSim migration, model installation and private-media processing remain subject to consolidated production readiness. No ECAPA comparison or expanded corpus run is implied. The four selected spans and one-attempt limits remain unchanged. Freeze model-specific thresholds explicitly before a private run; the old ECAPA defaults are not calibrated for TitaNet.

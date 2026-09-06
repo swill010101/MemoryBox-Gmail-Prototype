@@ -1,0 +1,5 @@
+﻿# Development candidate pins; not a validated deployment lock until smoke testing passes.
+nemo_toolkit[asr]==2.7.0
+torch==2.8.0
+torchaudio==2.8.0
+psycopg[binary]==3.3.4

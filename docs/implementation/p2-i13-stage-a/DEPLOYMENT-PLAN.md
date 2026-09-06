@@ -243,3 +243,8 @@ Tom authorizes autonomous development, applicable clone rehearsals, commit and p
 ## Bounded voice pilot development checkpoint
 
 The approved pilot now has isolated admission, runner, retirement/result provenance and authored migration 032. See [BOUNDED-VOICE-PILOT-IMPLEMENTATION.md](BOUNDED-VOICE-PILOT-IMPLEMENTATION.md) for 63 passing tests, local synthetic PostgreSQL 17 clone proof and explicit remaining encoder/PG16 readiness gaps. No FlightSim pilot, migration 032, Learn unlock or private-media recognition has run. Production deployment is not ready for approval yet.
+
+
+## TitaNet-Large encoder checkpoint
+
+The selected NVIDIA TitaNet-Large checkpoint now passes actual offline loading and generated-audio inference on the development desktop. Its SHA256 is enforced by admission and restoration. See [TITANET-VALIDATION.md](TITANET-VALIDATION.md). The model-specific adapter, explicit thresholds and 53 targeted passing tests replace the provisional ECAPA adapter. FlightSim installation, PostgreSQL 16 rehearsal, calibrated thresholds and any private-audio pilot remain pending; Learn stays locked.

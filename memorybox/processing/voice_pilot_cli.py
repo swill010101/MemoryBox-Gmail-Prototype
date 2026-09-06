@@ -8,7 +8,7 @@ from memorybox.speech.annotations import corpus
 from .scope import digest, ScopeDenied
 from .voice_pilot import validate, LIMITS
 
-def prepare(selection, model, revision):
+def prepare(selection, model, revision, match_threshold, uncertain_threshold):
     from .voice_pilot_runner import sha
     parent=corpus(); spans=[]
     with connection() as c:
@@ -22,13 +22,13 @@ def prepare(selection, model, revision):
             spans[-1].update(person_id=str(row['person_id']),word_ids=[str(w) for w in row['word_ids']])
     plan={'purpose':'voice_pilot','scope_kind':'bounded','lanes':['voice'],
       'manifest':parent,'parent_manifest_sha256':digest(parent),'person_ids':[selection['target_person_id']],
-      'spans':spans,'thresholds':{'match':.55,'uncertain':.40},
-      'model':{'format':'torchscript_ecapa_192','sha256':sha(Path(model),time.monotonic()+1200),'revision':revision},**LIMITS}
+      'spans':spans,'thresholds':{'match':match_threshold,'uncertain':uncertain_threshold},
+      'model':{'format':'nemo_titanet_large_192','sha256':sha(Path(model),time.monotonic()+1200),'revision':revision},**LIMITS}
     validate(plan);return plan
 
 def main(argv=None):
     p=argparse.ArgumentParser(description=__doc__); sub=p.add_subparsers(dest='action',required=True)
-    prep=sub.add_parser('prepare');prep.add_argument('--selection',required=True);prep.add_argument('--model',required=True);prep.add_argument('--revision',required=True);prep.add_argument('--output',required=True)
+    prep=sub.add_parser('prepare');prep.add_argument('--selection',required=True);prep.add_argument('--model',required=True);prep.add_argument('--revision',required=True);prep.add_argument('--output',required=True);prep.add_argument('--match-threshold',required=True,type=float);prep.add_argument('--uncertain-threshold',required=True,type=float)
     for verb in ('check','run'):
         q=sub.add_parser(verb)
         for flag in ('id','expected-plan-sha','media-root','model','ffmpeg'):q.add_argument('--'+flag,required=True)
@@ -36,7 +36,7 @@ def main(argv=None):
     a=p.parse_args(argv)
     try:
         if a.action=='prepare':
-            plan=prepare(json.loads(Path(a.selection).read_text(encoding='utf-8')),a.model,a.revision)
+            plan=prepare(json.loads(Path(a.selection).read_text(encoding='utf-8')),a.model,a.revision,a.match_threshold,a.uncertain_threshold)
             with Path(a.output).open('x',encoding='utf-8') as f:json.dump(plan,f,indent=2,allow_nan=False)
             result=validate(plan)
         elif a.action=='retire':

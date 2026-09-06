@@ -5,6 +5,7 @@ from uuid import UUID
 from .scope import ScopeDenied, digest
 
 PURPOSE = "voice_pilot"
+TITANET_SHA256 = "e838520693f269e7984f55bc8eb3c2d60ccf246bf4b896d4be9bcabe3e4b0fe3"
 LIMITS = {"max_work_items": 4, "max_attempts_per_item": 1,
           "extract_timeout_sec": 120, "embedding_timeout_sec": 120,
           "overall_timeout_sec": 1200}
@@ -50,7 +51,7 @@ def validate(plan):
                 if a["source_sha256"] == b["source_sha256"] and max(a["start"], b["start"]) < min(a["end"], b["end"]):
                     raise ScopeDenied("pilot_training_test_or_span_overlap")
         model = plan["model"]
-        if model["format"] != "torchscript_ecapa_192" or len(model["sha256"]) != 64 or any(x not in "0123456789abcdef" for x in model["sha256"]): raise ValueError()
+        if model["format"] != "nemo_titanet_large_192" or model["sha256"] != TITANET_SHA256: raise ValueError()
         if not isinstance(model["revision"], str) or not model["revision"].strip(): raise ValueError()
         low, high = plan["thresholds"]["uncertain"], plan["thresholds"]["match"]
         if not number(low) or not number(high) or not -1 <= low < high <= 1: raise ValueError()
