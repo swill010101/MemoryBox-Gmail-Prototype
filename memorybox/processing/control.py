@@ -62,3 +62,6 @@ def main(argv=None):
         print(json.dumps(result,indent=2));return 0
     except (ScopeDenied,ValueError,OSError) as exc:
         print(json.dumps({"ok":False,"error":str(exc)}));return 2
+
+if __name__ == '__main__':
+    raise SystemExit(main())

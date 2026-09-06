@@ -3,6 +3,8 @@ from copy import deepcopy
 from contextlib import contextmanager
 import json
 import os
+import subprocess
+import sys
 from pathlib import Path
 import tempfile
 import time
@@ -168,3 +170,11 @@ class Database(unittest.TestCase):
                 with self.assertRaises(psycopg.errors.LockNotAvailable):other.execute("UPDATE i13_processing_admissions SET state='stopped' WHERE id=%s",(self.identifier,))
         with self.connection()as c:c.execute("UPDATE i13_processing_admissions SET state='stopped' WHERE id=%s",(self.identifier,))
         with self.assertRaises(scope.ScopeDenied):store.load(self.identifier)
+class ControlModuleCli(unittest.TestCase):
+    def test_module_entry_point_emits_help(self):
+        result = subprocess.run(
+            [sys.executable, '-B', '-m', 'memorybox.processing.control', '--help'],
+            cwd=ROOT, text=True, capture_output=True, check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('Operator-only release control', result.stdout)
