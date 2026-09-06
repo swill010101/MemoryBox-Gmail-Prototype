@@ -1,5 +1,16 @@
 # Stage A deployment plan - Tom operates FlightSim
 
+## Current status ? annotation review accepted by Tom
+
+Tom reports "all works as designed and I now understand how multiple reviews can happen" and approves the deployed annotation review workflow. Record this as owner-reported live acceptance of code release 7bc47b5911caeb8ca256dcc260f17943d2fb777a on FlightSim, following the approved deployment plan. The accepted scope is saved-assignment discovery, reviewing multiple assignments, restored Person/text fields, exact-word highlighting and the corrected editing workflow. No independent runtime inspection was performed by the agent.
+
+Migration 031 was already applied and was not part of this UI release. The complete deployment was approved before Tom's acceptance. The fresh backup output and exact startup/process evidence for this release have not been supplied in the conversation; do not infer those artifacts or independent queue-count verification from UI acceptance. The earlier supplied pre031 backup and migration results remain the recorded evidence.
+
+Next: owner annotation and read-only coverage review for the exact 22-source manifest, distinguishing reviewed assignments from unreviewed evidence. Full face/voice recognition acceptance, off-camera speaker recognition, exemplar retirement/reprocessing proof and any separately bounded processing remain outstanding. Learn/drains/archive processing remain locked. This acceptance does not authorize an evidence or recognition run. No new deployment is needed for this documentation update.
+
+Historical deployment notes below are superseded by the current status above where they differ.
+
+
 This is a step-by-step proposal, not deployment authorization. The agent performed no deployment, runtime migration, recognition, transcription, cleanup, quarantine, deletion, or corpus/archive processing. Review this commit first. **Do not run `startmb.ps1`, `startmb.cmd`, a legacy prove command, migration, Learn, or an archive pass as a shortcut through the gates below.** Existing startup scripts may migrate and start drains.
 
 ## Current position - founder reports, 2026-09-05

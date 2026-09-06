@@ -105,3 +105,12 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File 'C:\MemoryBox-releases\p
 ```
 
 If the prior release is not the expected rollback target, backup verification fails, another service owns the ports, or a new runtime/schema change is required, stop and report the material change. Do not kill unknown processes or improvise a database restore.
+
+
+## Current status ? annotation review accepted by Tom
+
+Tom reports "all works as designed and I now understand how multiple reviews can happen" and approves the deployed annotation review workflow. Record this as owner-reported live acceptance of code release 7bc47b5911caeb8ca256dcc260f17943d2fb777a on FlightSim, following the approved deployment plan. The accepted scope is saved-assignment discovery, reviewing multiple assignments, restored Person/text fields, exact-word highlighting and the corrected editing workflow. No independent runtime inspection was performed by the agent.
+
+Migration 031 was already applied and was not part of this UI release. The complete deployment was approved before Tom's acceptance. The fresh backup output and exact startup/process evidence for this release have not been supplied in the conversation; do not infer those artifacts or independent queue-count verification from UI acceptance. The earlier supplied pre031 backup and migration results remain the recorded evidence.
+
+Next: owner annotation and read-only coverage review for the exact 22-source manifest, distinguishing reviewed assignments from unreviewed evidence. Full face/voice recognition acceptance, off-camera speaker recognition, exemplar retirement/reprocessing proof and any separately bounded processing remain outstanding. Learn/drains/archive processing remain locked. This acceptance does not authorize an evidence or recognition run. No new deployment is needed for this documentation update.
