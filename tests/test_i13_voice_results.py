@@ -81,5 +81,11 @@ class VoicePilotResultsTests(unittest.TestCase):
         self.assertIn('loadVoicePilotResults();', html)
 
 
+    def test_review_uses_existing_browser_copies_without_conversion(self):
+        html = app.REVIEW_STATIC.read_text(encoding="utf-8")
+        self.assertIn('new URL("/explore/ui", location.origin)', html)
+        self.assertIn('Checking for an existing H.264 browser copy', html)
+        self.assertNotIn('browser-proxy", {\n        method: "POST"', html)
+
 if __name__ == "__main__":
     unittest.main()

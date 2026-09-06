@@ -117,10 +117,10 @@
         <canvas id="overlay"></canvas>
       </div>
       <p id="videoNote" class="muted">Originals are read-only. Pause on a face, then create a candidate and rubber-band the face.</p>
-      <button class="secondary" id="browserProxyBtn" type="button">Make browser-playable (H.264)</button>
+      <button class="secondary" id="browserProxyBtn" type="button">Use browser-playable copy</button>
       <p id="codecNote" class="warn" hidden>
         Video frame not decoding in this browser (audio-only / blank picture is often HEVC/H.265).
-        Click <strong>Make browser-playable (H.264)</strong> — same fix as the HVRT POC (ffmpeg derived copy; originals untouched).
+        Click <strong>Use browser-playable copy</strong> to check for an existing H.264 copy. Processing remains locked; originals are untouched.
       </p>
     </section>
 
@@ -197,7 +197,7 @@
 
     function openPilotSource(sourceId, startSec) {
       if (!sourceId) return;
-      const url = new URL("/review/ui", location.origin);
+      const url = new URL("/explore/ui", location.origin);
       url.searchParams.set("video", sourceId);
       if (Number.isFinite(Number(startSec))) url.searchParams.set("t", String(startSec));
       location.assign(url.pathname + url.search);
@@ -474,57 +474,41 @@
         document.getElementById("videoNote").textContent =
           "Playing H.264 browser copy (source may be HEVC). Originals untouched.";
       } else {
-        browserProxyBtn.textContent = "Make browser-playable (H.264)";
+        browserProxyBtn.textContent = "Use browser-playable copy";
       }
       browserProxyBtn.disabled = false;
       browserProxyBtn.hidden = false;
     }
 
-    async function ensureBrowserProxy({ auto = false, seekTo = null } = {}) {
+    async function ensureBrowserProxy({ seekTo = null } = {}) {
       const id = document.getElementById("videoSel").value;
-      if (!id) return;
+      if (!id) return false;
       browserProxyBtn.hidden = false;
       browserProxyBtn.disabled = true;
-      document.getElementById("videoNote").textContent = auto
-        ? "Chrome has no video frames (often HEVC). Building H.264 browser copy with ffmpeg…"
-        : "Building H.264 browser copy with ffmpeg…";
-      const start = await j("/review/videos/" + encodeURIComponent(id) + "/browser-proxy", {
-        method: "POST",
-      });
-      show(start);
-      if (start.status === "ready") {
-        readyProxyIds.add(id);
-        playVideo(id, { proxy: true, keepTime: false, seekTo });
-        return;
-      }
-      if (proxyTimer) clearInterval(proxyTimer);
-      proxyTimer = setInterval(async () => {
-        try {
-          const st = await j("/review/videos/" + encodeURIComponent(id) + "/browser-proxy");
-          browserProxyBtn.textContent =
-            st.status === "running" || st.status === "queued"
-              ? `Converting… ${Math.round(st.progress_pct || 0)}%`
-              : "Make browser-playable (H.264)";
-          document.getElementById("videoNote").textContent = st.message || "";
-          if (st.status === "ready") {
-            clearInterval(proxyTimer); proxyTimer = null;
-            readyProxyIds.add(id);
-            playVideo(id, { proxy: true, keepTime: false, seekTo });
-            show(st);
-          } else if (st.status === "error") {
-            clearInterval(proxyTimer); proxyTimer = null;
-            browserProxyBtn.disabled = false;
-            codecNote.hidden = false;
-            show(st);
-          }
-        } catch (err) {
-          clearInterval(proxyTimer); proxyTimer = null;
-          browserProxyBtn.disabled = false;
-          show(err);
+      document.getElementById("videoNote").textContent =
+        "Checking for an existing H.264 browser copy…";
+      try {
+        const state = await j("/review/videos/" + encodeURIComponent(id) + "/browser-proxy");
+        show(state);
+        if (state.status === "ready") {
+          readyProxyIds.add(id);
+          playVideo(id, { proxy: true, keepTime: false, seekTo });
+          return true;
         }
-      }, 1500);
+        document.getElementById("videoNote").textContent =
+          "No browser-playable copy is available. Processing remains locked; the original is preserved.";
+        codecNote.hidden = false;
+        return false;
+      } catch (err) {
+        document.getElementById("videoNote").textContent =
+          "Browser-playable copy status is unavailable. Processing remains locked.";
+        show(err);
+        return false;
+      } finally {
+        browserProxyBtn.disabled = false;
+        if (!readyProxyIds.has(id)) browserProxyBtn.textContent = "Check browser-playable copy";
+      }
     }
-
     async function onVideoChange({ seekTo = null, preferFace = null } = {}) {
       const id = document.getElementById("videoSel").value;
       exitBoxMode("Originals are read-only. Pause on a face, then create a candidate and rubber-band the face.");
@@ -532,16 +516,12 @@
       usingBrowserProxy = false;
       if (proxyTimer) { clearInterval(proxyTimer); proxyTimer = null; }
       if (!id) { player.removeAttribute("src"); return; }
-      if (readyProxyIds.has(id)) playVideo(id, { proxy: true, keepTime: false, seekTo });
-      else {
+      if (readyProxyIds.has(id) || await ensureBrowserProxy({ seekTo })) {
+        if (readyProxyIds.has(id) && !usingBrowserProxy) {
+          playVideo(id, { proxy: true, keepTime: false, seekTo });
+        }
+      } else {
         playVideo(id, { proxy: false, keepTime: false, seekTo });
-        setTimeout(() => {
-          const cur = document.getElementById("videoSel").value;
-          if (cur === id && !(player.videoWidth && player.videoHeight)) {
-            codecNote.hidden = false;
-            ensureBrowserProxy({ auto: true, seekTo }).catch(show);
-          }
-        }, 1400);
       }
       await loadFaces({ preferFace });
     }
@@ -583,7 +563,7 @@
     document.getElementById("videoSel").onchange = () => {
       try { onVideoChange(); } catch (e) { show(e); }
     };
-    browserProxyBtn.onclick = () => ensureBrowserProxy({ auto: false }).catch(show);
+    browserProxyBtn.onclick = () => ensureBrowserProxy().catch(show);
     document.getElementById("faceSel").onchange = () => {
       lastFaceId = document.getElementById("faceSel").value;
       refreshTeachEnabled();
