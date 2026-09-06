@@ -8,7 +8,8 @@ param(
 $ErrorActionPreference = 'Stop'
 $expectedSha = $ExpectedReleaseSha.ToLowerInvariant()
 $modelSha = 'e838520693f269e7984f55bc8eb3c2d60ccf246bf4b896d4be9bcabe3e4b0fe3'
-$modelUrl = 'https://api.ngc.nvidia.com/v2/models/nvidia/nemo/titanet_large/versions/v1/files/titanet-l.nemo'
+$modelBytes = 101621760
+$modelUrl = 'https://api.ngc.nvidia.com/v2/models/nvidia/nemo/titanet_large/versions/v1/files?redirect=true&path=titanet-l.nemo'
 $release = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
 $model = Join-Path $release 'model\titanet-l.nemo'
 $venv = Join-Path $release '.titanet-venv'
@@ -64,10 +65,31 @@ try {
     & $python -m pip install --disable-pip-version-check -r (Join-Path $PSScriptRoot 'titanet-requirements.in')
     Require-LastExit 'Pinned TitaNet dependency installation failed.'
     New-Item -ItemType Directory -Path (Split-Path -Parent $model) -Force | Out-Null
-    if (-not (Test-Path -LiteralPath $model)) {
-        Invoke-WebRequest -UseBasicParsing -Uri $modelUrl -OutFile $model
+    if (Test-Path -LiteralPath $model) {
+        $existingHash = (Get-FileHash -LiteralPath $model -Algorithm SHA256).Hash.ToLowerInvariant()
+        if ((Get-Item -LiteralPath $model).Length -ne $modelBytes -or $existingHash -ne $modelSha) {
+            $rejected = "$model.rejected-$([guid]::NewGuid().ToString('N'))"
+            Move-Item -LiteralPath $model -Destination $rejected
+            Write-Output "Preserved invalid model response: $rejected"
+        }
     }
-    if ((Get-FileHash -LiteralPath $model -Algorithm SHA256).Hash.ToLowerInvariant() -ne $modelSha) { throw 'TitaNet model hash mismatch.' }
+    if (-not (Test-Path -LiteralPath $model)) {
+        $download = "$model.partial-$([guid]::NewGuid().ToString('N'))"
+        try {
+            Invoke-WebRequest -UseBasicParsing -Uri $modelUrl -OutFile $download
+            if ((Get-Item -LiteralPath $download).Length -ne $modelBytes) { throw 'TitaNet model byte count mismatch.' }
+            if ((Get-FileHash -LiteralPath $download -Algorithm SHA256).Hash.ToLowerInvariant() -ne $modelSha) { throw 'TitaNet model hash mismatch.' }
+            Move-Item -LiteralPath $download -Destination $model
+        }
+        catch {
+            if (Test-Path -LiteralPath $download) {
+                $rejected = "$download.rejected"
+                Move-Item -LiteralPath $download -Destination $rejected
+                Write-Output "Preserved failed model download: $rejected"
+            }
+            throw
+        }
+    }
     & $python -B -m memorybox.processing.titanet_smoke --model $model --sha256 $modelSha
     Require-LastExit 'Synthetic-only model smoke failed.'
 
