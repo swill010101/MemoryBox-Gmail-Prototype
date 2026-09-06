@@ -263,3 +263,7 @@ The exact-release helper and [VOICE-PG16-REHEARSAL.md](VOICE-PG16-REHEARSAL.md) 
 ## 2026-09-06: PG16 clone and frozen TitaNet thresholds
 
 FlightSim PostgreSQL 16.14 clone rehearsal for migration 032 passed using a fresh verified backup. Production remains at 031; no pilot tables or rows exist there. The TitaNet-Large private pilot uses frozen public-calibration thresholds of 0.30 uncertain / 0.45 match. See [VOICE-PG16-REHEARSAL.md](VOICE-PG16-REHEARSAL.md) and [TITANET-THRESHOLD-CALIBRATION.md](TITANET-THRESHOLD-CALIBRATION.md). The only remaining pre-approval requirement is FlightSim’s isolated encoder installation and generated-audio smoke evidence. Do not process private pilot audio yet.
+
+## Tom voice-pilot readiness
+
+The completed read-only Tom-pilot preflight is recorded in [DEPLOYMENT-READINESS-TOM-VOICE-PILOT.md](DEPLOYMENT-READINESS-TOM-VOICE-PILOT.md). It is a separate, exact four-span run and requires the one consolidated production approval stated there. No migration is planned because 032 is already deployed.
