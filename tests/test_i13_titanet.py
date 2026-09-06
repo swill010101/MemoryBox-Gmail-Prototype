@@ -1,4 +1,4 @@
-﻿import unittest
+import unittest
 from unittest.mock import MagicMock, patch, mock_open
 from memorybox.processing.titanet_adapter import load_model, encode
 from memorybox.processing.voice_pilot import validate
@@ -7,7 +7,9 @@ from test_i13_voice_pilot import fixture
 class TitaNetTests(unittest.TestCase):
     def test_only_new_checkpoint_contract_admitted(self):
         p=fixture();validate(p)
-        p['model']['format']='torchscript_ecapa_192'
+        p['thresholds']={'match':.55,'uncertain':.4}
+        with self.assertRaises(ValueError):validate(p)
+        p=fixture();p['model']['format']='torchscript_ecapa_192'
         with self.assertRaises(ValueError):validate(p)
     def test_restore_local_checkpoint_not_download(self):
         torch=MagicMock();api=MagicMock();model=api.EncDecSpeakerLabelModel.restore_from.return_value

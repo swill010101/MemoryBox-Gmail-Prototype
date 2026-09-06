@@ -21,7 +21,7 @@ def fixture():
     for i in range(4):
         s=sources[0 if i==0 else 1]
         spans.append({'key':str(i),'role':'training' if i==0 else 'held_out','source_id':s['video_external_id'],'source_sha256':s['source_sha256'],'provider_key':'synthetic','annotation_id':str(uuid4()),'version_id':str(uuid4()),'person_id':person if i!=2 else str(uuid4()),'word_ids':[str(uuid4())],'start':float(i),'end':float(i)+.5})
-    return {'purpose':'voice_pilot','scope_kind':'bounded','lanes':['voice'],'person_ids':[person],'manifest':manifest,'parent_manifest_sha256':scope.digest(manifest),'spans':spans,'model':{'format':'nemo_titanet_large_192','sha256':v.TITANET_SHA256,'revision':'synthetic-only'},'thresholds':{'match':.55,'uncertain':.4},**v.LIMITS}
+    return {'purpose':'voice_pilot','scope_kind':'bounded','lanes':['voice'],'person_ids':[person],'manifest':manifest,'parent_manifest_sha256':scope.digest(manifest),'spans':spans,'model':{'format':'nemo_titanet_large_192','sha256':v.TITANET_SHA256,'revision':'synthetic-only'},'thresholds':{'match':.45,'uncertain':.3},**v.LIMITS}
 
 class Pure(unittest.TestCase):
     def test_preview_and_legacy_entry_rejected(self):

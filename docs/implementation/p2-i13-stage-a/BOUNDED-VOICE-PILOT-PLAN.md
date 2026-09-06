@@ -44,3 +44,7 @@ This plan is complete; implementation gaps above remain open. No pilot code, mig
 ## Approved model decision
 
 Tom selected NVIDIA TitaNet-Large. Replace the provisional TorchScript ECAPA contract with local NeMo checkpoint restoration. Development installation and synthetic/public-audio validation are authorized; FlightSim migration, model installation and private-media processing remain subject to consolidated production readiness. No ECAPA comparison or expanded corpus run is implied. The four selected spans and one-attempt limits remain unchanged. Freeze model-specific thresholds explicitly before a private run; the old ECAPA defaults are not calibrated for TitaNet.
+
+## Frozen TitaNet threshold policy
+
+The pilot policy is now frozen from separate public LibriSpeech dev-clean calibration: `no_match < 0.30`, `uncertain >= 0.30 and < 0.45`, `match >= 0.45`. The calibration used 24 public clips from eight speakers, 24 same-speaker and 252 different-speaker comparisons. It yielded zero public false matches; one same-speaker and six different-speaker pairs were intentionally uncertain. See [TITANET-THRESHOLD-CALIBRATION.md](TITANET-THRESHOLD-CALIBRATION.md). The policy is an abstention-first safety boundary, not a claim that the private family-video outcomes will have this rate. Do not tune it after the three held-out private probes.

@@ -45,3 +45,9 @@ Once this file is available on FlightSim, run `python -B docs/implementation/p2-
 
 
 Model discovery follow-up: existing `speech/embeddings.py` uses `%TEMP%/mb-spkrec-ecapa-voxceleb` and SpeechBrain `spkrec-ecapa-voxceleb`, not the pilot TorchScript format. The read-only helper now checks that exact cache and up to 20 Hugging Face snapshot directories for known checkpoint filenames. It was executed successfully on the desktop; FlightSim results are still required. No model was loaded.
+
+## FlightSim PostgreSQL 16 rehearsal and TitaNet threshold checkpoint
+
+FlightSim clone `mb_i13_pre032_restore_b4d1c80b487e4d1383af6b80ed67be65` passed migration 032 rollback and commit rehearsal in 29.81 seconds. It came from the verified 433,074,031-byte backup at `C:\MemoryBox-backups\i13-pre032-b4d1c80b487e4d1383af6b80ed67be65\memorybox.dump` with SHA256 `31c3fb1c78cb4e2dd28876a13acfd6c0b85a62804a7d23c30c9a4e4d9e27ad4e`. Existing protected-table fingerprints were unchanged and live `memorybox` remained at 031 with no pilot tables.
+
+TitaNet thresholds are frozen at 0.30 uncertain / 0.45 match using separate public LibriSpeech evidence. See [TITANET-THRESHOLD-CALIBRATION.md](TITANET-THRESHOLD-CALIBRATION.md). FlightSim still has no isolated TitaNet environment or checkpoint. Installing it, applying 032 to live `memorybox`, registering/starting the admission and extracting the four private spans remain part of the one consolidated production approval.

@@ -3,9 +3,11 @@ from __future__ import annotations
 import math
 from uuid import UUID
 from .scope import ScopeDenied, digest
+from .titanet_calibration import MATCH, UNCERTAIN
 
 PURPOSE = "voice_pilot"
 TITANET_SHA256 = "e838520693f269e7984f55bc8eb3c2d60ccf246bf4b896d4be9bcabe3e4b0fe3"
+TITANET_THRESHOLDS = {"uncertain": UNCERTAIN, "match": MATCH}
 LIMITS = {"max_work_items": 4, "max_attempts_per_item": 1,
           "extract_timeout_sec": 120, "embedding_timeout_sec": 120,
           "overall_timeout_sec": 1200}
@@ -54,7 +56,7 @@ def validate(plan):
         if model["format"] != "nemo_titanet_large_192" or model["sha256"] != TITANET_SHA256: raise ValueError()
         if not isinstance(model["revision"], str) or not model["revision"].strip(): raise ValueError()
         low, high = plan["thresholds"]["uncertain"], plan["thresholds"]["match"]
-        if not number(low) or not number(high) or not -1 <= low < high <= 1: raise ValueError()
+        if not number(low) or not number(high) or plan["thresholds"] != TITANET_THRESHOLDS: raise ValueError()
         return {"purpose": PURPOSE, "source_count": len({(s['provider_key'],s['source_id']) for s in spans}),
                 "person_count": 1, "work_items": 4, "max_attempts": 4,
                 "audio_seconds": round(sum(s['end']-s['start'] for s in spans), 6), "plan_sha256": digest(plan)}

@@ -1,0 +1,21 @@
+{
+  "model": "NVIDIA TitaNet-Large",
+  "model_sha256": "e838520693f269e7984f55bc8eb3c2d60ccf246bf4b896d4be9bcabe3e4b0fe3",
+  "dataset": "LibriSpeech dev-clean",
+  "dataset_license": "CC BY 4.0",
+  "archive_sha256": "76f87d090650617fca0cac8f88b9416e0ebf80350acb97b343a85fa903728ab3",
+  "selection": "first three FLAC files from each of the first eight lexicographic speaker directories",
+  "speakers": 8,
+  "files": 24,
+  "audio_seconds": 143.0200625,
+  "same_speaker_pairs": 24,
+  "different_speaker_pairs": 252,
+  "same_score_range": [0.37699787064810564, 0.8924078464301953],
+  "different_score_range": [-0.27822294951154647, 0.324842650937573],
+  "thresholds": {"uncertain": 0.30, "match": 0.45},
+  "public_same_by_decision": {"match": 23, "uncertain": 1, "no_match": 0},
+  "public_different_by_decision": {"match": 0, "uncertain": 6, "no_match": 246},
+  "private_media_processed": false,
+  "recognition_accuracy_verified": false,
+  "limits": "Clean read public speech differs materially from family-video audio. This freezes an abstention-first pilot policy; it is not a family-video accuracy claim."
+}
