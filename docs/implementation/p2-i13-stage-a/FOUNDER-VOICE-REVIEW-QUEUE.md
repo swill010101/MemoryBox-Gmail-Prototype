@@ -32,3 +32,16 @@ Return the four results by T1/H1/O1/U1 (and contingency IDs only if used): confi
 No new processing is authorized by this checklist. Future implementation must consume a pinned selection manifest and enforce held-out exclusion. The existing voice recognition path inspected here depends on an injected turn-vector hook and does not compute a real-audio probe when that hook is absent. Existing Learn also writes an exemplar, updates turn attribution, recognizes and enqueues follow-on work. Those are separate implementation gaps to resolve before the bounded audio pilot, not actions for the founder review.
 
 See founder-review-queue-evidence.json for scalar local measurements and all 22 source profiles. Numeric audio level/silence estimates are not human intelligibility, speaker diarization, overlap detection or calibrated SNR.
+
+## Founder review returned and persistence checked
+
+Tom reports T1 revised/corrected, H1 assigned to Eugene Will and corrected, O1 assigned to off-camera Tom Will, and U1's clear words assigned to Eugene Will with correction around mumbling. After the H1 save was repeated, a read-only REPEATABLE READ query confirmed four active assignments with corrections:
+
+- T1: vid-da41273dbd9ac4bb, 138.72?144.66 seconds, 20 words.
+- H1 owner-selected span: vid-c57dbd21f993f6d1, 325.22?345.56 seconds, 42 words. This is 05:25.220?05:45.560, different from the proposed 335.94?352.08 window; use the saved owner-selected boundaries for future planning rather than silently relabeling the original window as fully reviewed.
+- O1: vid-c57dbd21f993f6d1, 152.24?158.34 seconds, 22 words.
+- U1 clear portion: vid-c57dbd21f993f6d1, 129.64?138.72 seconds, 15 words. The unclear remainder is not thereby labeled or confirmed overlapping.
+
+One active assignment belongs to the first source, three to the second, 99 reviewed words in these four assignments. Earlier revisions remain history. Off-camera identity is owner-reported, not independently model-verified. Review of this small queue is returned; actual recognition, holdout enforcement and broader scenario acceptance remain pending. The actual H1 span remains separate from T1 and the other held-out spans.
+
+Tom reports the correction text box is difficult to work in and explicitly defers that UI issue until later. Do not expand this step into a modal/editor redesign. No screenshot contents were inferred from that report. No runtime writes or processing were performed in this verification. Publication of private-derived checklist metadata remains pending the previously requested explicit permission; this update is retained locally.
