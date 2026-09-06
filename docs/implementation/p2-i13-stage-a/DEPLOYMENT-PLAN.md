@@ -1,5 +1,7 @@
 # Stage A deployment plan - Tom operates FlightSim
 
+Next development preparation: [bounded voice-pilot plan](BOUNDED-VOICE-PILOT-PLAN.md). Four saved spans pin one Eugene training reference and three tests; execution is blocked on real-audio probe and explicit span-admission implementation. No processing approval or broader I13 acceptance is inferred.
+
 Next founder action: [four-interval voice review queue](FOUNDER-VOICE-REVIEW-QUEUE.md), selected from local-only screening of the exact 22 sources. The primary queue is 42.48 seconds across two playable sources, with exact contingency intervals. Confirm identities and off-camera/uncertain cases in MB; Learn remains locked. No deployment is required.
 
 Latest coverage checkpoint: [ANNOTATION-COVERAGE-CHECKPOINT.md](ANNOTATION-COVERAGE-CHECKPOINT.md). Tom reports all 22 sources have stored words, with one active assignment covering 20 of 35,861 words. Next is representative owner review and a bounded voice-proof plan; no requirement to annotate every word or rerun transcription is inferred. Processing remains locked.

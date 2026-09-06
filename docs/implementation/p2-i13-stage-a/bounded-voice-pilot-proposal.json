@@ -1,0 +1,70 @@
+{
+  "status": "design_only_not_an_admission",
+  "processing_authorized": false,
+  "parent_manifest_id": "p2-i13-flightsim-22",
+  "parent_manifest_version": "0.2-membership-confirmed",
+  "target_person_id": "b67708d8-0262-404d-a230-2cc99900cea4",
+  "selections": [
+    {
+      "key": "T1",
+      "role": "training",
+      "source_id": "vid-da41273dbd9ac4bb",
+      "version_id": "8bc1f1c4-c3ef-4623-92da-6f5f3b41c20f",
+      "annotation_id": "d5a3d050-76d6-446e-91d4-ff89986856cb",
+      "start": 138.72,
+      "end": 144.66,
+      "expected": "Eugene Will",
+      "provider_key": "hvrt",
+      "source_sha256": "636ee92d9588dfc31550d94f2e1ac1343fb4296c2dc62879325c412e89c0dd7b"
+    },
+    {
+      "key": "H1",
+      "role": "held_out",
+      "source_id": "vid-c57dbd21f993f6d1",
+      "version_id": "1c95cb4b-93ae-483f-9c86-f71124919d94",
+      "annotation_id": "f47ee4ec-6b28-442a-81b2-152fbe8f45e2",
+      "start": 325.22,
+      "end": 345.56,
+      "expected": "Eugene Will",
+      "provider_key": "hvrt",
+      "source_sha256": "26f3646b4adbda7573ff19c02da3b11bafceff4ac5cd7d967d5b0053a2e10705"
+    },
+    {
+      "key": "O1",
+      "role": "held_out",
+      "source_id": "vid-c57dbd21f993f6d1",
+      "version_id": "1c95cb4b-93ae-483f-9c86-f71124919d94",
+      "annotation_id": "3fa1c4e1-d8a6-423f-9c9b-1a229d550945",
+      "start": 152.24,
+      "end": 158.34,
+      "expected": "not Eugene; owner-confirmed off-camera Tom Will",
+      "provider_key": "hvrt",
+      "source_sha256": "26f3646b4adbda7573ff19c02da3b11bafceff4ac5cd7d967d5b0053a2e10705"
+    },
+    {
+      "key": "U1-clear",
+      "role": "held_out",
+      "source_id": "vid-c57dbd21f993f6d1",
+      "version_id": "1c95cb4b-93ae-483f-9c86-f71124919d94",
+      "annotation_id": "5651a4bd-dffd-4d26-a985-16e8abaf37c2",
+      "start": 129.64,
+      "end": 138.72,
+      "expected": "Eugene Will; clear selected portion only",
+      "provider_key": "hvrt",
+      "source_sha256": "26f3646b4adbda7573ff19c02da3b11bafceff4ac5cd7d967d5b0053a2e10705"
+    }
+  ],
+  "budget": {
+    "source_count": 2,
+    "target_people": 1,
+    "training_spans": 1,
+    "test_spans": 3,
+    "max_audio_extractions": 4,
+    "max_embeddings": 4,
+    "max_comparisons": 3,
+    "max_attempts_per_span": 1,
+    "selected_audio_seconds": 41.46,
+    "automatic_retries": 0
+  },
+  "runtime_writes_allowed_now": false
+}
