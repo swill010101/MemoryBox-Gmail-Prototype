@@ -1,11 +1,12 @@
 [CmdletBinding()]
 param(
     [switch]$Execute,
+    [Parameter(Mandatory=$true)][string]$ExpectedReleaseSha,
     [string]$ApprovalReference
 )
 
 $ErrorActionPreference = 'Stop'
-$expectedSha = 'eb1b69f30eb5a6fa97a4accefe8bf99130aa81e3'
+$expectedSha = $ExpectedReleaseSha.ToLowerInvariant()
 $modelSha = 'e838520693f269e7984f55bc8eb3c2d60ccf246bf4b896d4be9bcabe3e4b0fe3'
 $modelUrl = 'https://api.ngc.nvidia.com/v2/models/nvidia/nemo/titanet_large/versions/v1/files/titanet-l.nemo'
 $release = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
@@ -35,12 +36,12 @@ try {
     if ((git rev-parse HEAD) -ne $expectedSha) { throw 'Release SHA mismatch.' }
     if (git status --porcelain) { throw 'Release is not clean; preserve it and stop.' }
     if (-not (Test-Path -LiteralPath $selection)) { throw 'Reviewed pilot selection is missing.' }
-    if (-not (Test-Path -LiteralPath $mediaRoot)) { throw 'Configured media root is unavailable.' }
     if (-not $Execute) {
         [pscustomobject]@{ ok=$true; mode='check_only'; release_sha=$expectedSha; migration='032_p2_i13_voice_pilot.sql'; private_audio_processed=$false; instructions='Review the production-readiness report, then rerun with -Execute and a specific approval reference.' } | ConvertTo-Json
         exit 0
     }
     if (-not $ApprovalReference.Trim()) { throw 'ApprovalReference is required with -Execute.' }
+    if (-not (Test-Path -LiteralPath $mediaRoot)) { throw 'Configured media root is unavailable.' }
     if (-not $env:MEMORYBOX_DATABASE_URL) { throw 'MEMORYBOX_DATABASE_URL is absent; use the configured FlightSim shell.' }
     docker inspect $container | Out-Null
     Require-LastExit 'memorybox-pg container is unavailable.'
@@ -49,11 +50,16 @@ try {
     if (-not $ffmpegCmd) { throw 'ffmpeg is unavailable.' }
 
     if (-not (Test-Path -LiteralPath $python)) {
-        $basePython = Get-Command python.exe -ErrorAction SilentlyContinue
-        if (-not $basePython) { $basePython = Get-Command python -ErrorAction SilentlyContinue }
-        if (-not $basePython) { throw 'Python is unavailable.' }
-        & $basePython.Source -m venv $venv
-        Require-LastExit 'Virtual environment creation failed.'
+        $pyLauncher = Get-Command py.exe -ErrorAction SilentlyContinue
+        if ($pyLauncher) {
+            & $pyLauncher.Source -3.12 -m venv $venv
+        }
+        else {
+            $python312 = 'C:\Users\tomwi\AppData\Local\Programs\Python\Python312\python.exe'
+            if (-not (Test-Path -LiteralPath $python312)) { throw 'Python 3.12 is unavailable.' }
+            & $python312 -m venv $venv
+        }
+        Require-LastExit 'Python 3.12 virtual environment creation failed.'
     }
     & $python -m pip install --disable-pip-version-check -r (Join-Path $PSScriptRoot 'titanet-requirements.in')
     Require-LastExit 'Pinned TitaNet dependency installation failed.'
