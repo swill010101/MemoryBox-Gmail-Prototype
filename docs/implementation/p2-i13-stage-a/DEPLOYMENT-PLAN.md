@@ -1,5 +1,9 @@
 # Stage A deployment plan - Tom operates FlightSim
 
+## Current status - voice-result playback accepted by Tom
+
+Tom reports the FlightSim deployment of `d3785b93311920a3409961054368796ed7fa66b3` worked as designed: the read-only pilot-results panel opened the existing rich video viewer modal and reused an existing browser-playable copy. This confirms result-time navigation and no-conversion playback for the reviewed source. The release does not apply a migration, start a drain, unlock Learn, run recognition, transcribe media, or create derived media. This is owner-reported live acceptance; backup output and independent process inspection are not recorded here.
+
 Next development preparation: [bounded voice-pilot plan](BOUNDED-VOICE-PILOT-PLAN.md). Four saved spans pin one Eugene training reference and three tests; execution is blocked on real-audio probe and explicit span-admission implementation. No processing approval or broader I13 acceptance is inferred.
 
 Next founder action: [four-interval voice review queue](FOUNDER-VOICE-REVIEW-QUEUE.md), selected from local-only screening of the exact 22 sources. The primary queue is 42.48 seconds across two playable sources, with exact contingency intervals. Confirm identities and off-camera/uncertain cases in MB; Learn remains locked. No deployment is required.
