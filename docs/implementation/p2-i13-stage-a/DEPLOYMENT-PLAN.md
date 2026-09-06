@@ -217,3 +217,7 @@ FlightSim restore integrity and rollback passed, but repeated JSON expansion del
 ## 2026-09-06: live 031 and annotation UI follow-up
 
 Tom reported successful live commit of 031 at 2026-09-06 10:13:23.839021 UTC: 1,736 snapshots, 140,441 archived words and zero mismatches. Locked startup proceeded. Live annotation workflow acceptance remains open after hidden controls, cleared Person selection and typing-triggered video navigation were reported. See ANNOTATION-IMPLEMENTATION-REPORT.md for the bounded UI correction and synthetic verification. Deploy the corrected UI in a new detached release; no migration rerun or processing is needed. Confirm saved assignment/history and text editing on FlightSim before calling the annotation workflow accepted.
+
+## Consolidated production approval boundary
+
+Tom authorizes autonomous development, applicable clone rehearsals, commit and push to codex/p2-i13-stage-a. Use one consolidated production readiness report and one deployment approval; further approval is needed only for material plan, target or risk changes. See DEPLOYMENT-READINESS-ANNOTATION-REVIEW.md for exact code commit 7bc47b5911caeb8ca256dcc260f17943d2fb777a, FlightSim target, backup gate, no-migration decision, commands, smoke checks, downtime and rollback. Production execution awaits that consolidated approval.
