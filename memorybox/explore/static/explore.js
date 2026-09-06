@@ -5765,13 +5765,14 @@
     tools.className = "mb-transcript-annotations";
     tools.innerHTML = `<summary>Annotate transcript</summary>
       <p data-annotation-status role="status">Highlight words, then choose a Person or mark unknown.</p>
+      <details open data-annotation-list><summary>Saved assignments and history</summary><div data-annotation-history></div></details>
       <label>Speaker <select data-annotation-person><option value="">Choose a Person?</option><option value="unknown">Unknown speaker</option><option value="no_match">No matching MB Person</option></select></label>
       <label><input type="checkbox" data-correct-text> Correct selected text</label>
       <textarea data-annotation-text aria-label="Corrected text" rows="2" maxlength="8000" disabled></textarea>
       <label>Reason <input data-annotation-reason maxlength="1000" value="Owner review"></label>
       <button type="button" data-annotation-save disabled>Save assignment</button>
       <button type="button" data-annotation-withdraw disabled>Withdraw assignment</button>
-      <details><summary>Annotation history</summary><div data-annotation-history></div></details>`;
+      `;
     box.before(tools);
     const find = s => tools.querySelector(s), status = find("[data-annotation-status]");
     const person = find("[data-annotation-person]"), text = find("[data-annotation-text]"), corrected = find("[data-correct-text]");
@@ -5783,7 +5784,7 @@
     const history = data.history || [];
     const superseded = new Set(history.map(a => a.supersedes).filter(Boolean));
     const active = history.filter(a => !a.stale && a.action === "assign" && !superseded.has(a.id));
-    if (active.length) tools.querySelector("summary").textContent = "Annotate transcript ? " + active.length + (active.length === 1 ? " saved assignment" : " saved assignments");
+    if (active.length) tools.querySelector("summary").textContent = "Annotate transcript - " + active.length + (active.length === 1 ? " saved assignment" : " saved assignments");
     const setSelection = ids => {
       selected = ids; retry = null;
       prior = active.find(a => JSON.stringify(a.word_ids) === JSON.stringify(ids)) || null;
@@ -5792,15 +5793,38 @@
       else { person.value = ""; corrected.checked = false; }
       text.disabled = !corrected.checked;
       text.value = prior && prior.correction !== null ? prior.correction : data.words.filter(w => ids.includes(w.id)).map(w => w.machine_token).join(" ");
+      box.querySelectorAll('.mb-ev-word').forEach(el => {
+        el.classList.toggle('is-annotation-selected', ids.includes(data.words[Number(el.dataset.i)]?.id));
+      });
       status.textContent = selected.length + " words selected" + (prior ? "; revising saved assignment." : ".");
     };
     const historyBox = find("[data-annotation-history]");
-    history.forEach(a => {
+    if (!history.length) historyBox.textContent = "No saved assignments yet.";
+    const timeLabel = value => {
+      const seconds = Math.max(0, Number(value) || 0);
+      return Math.floor(seconds / 60) + ":" + (seconds % 60).toFixed(1).padStart(4, "0");
+    };
+    [...active, ...history.filter(a => !active.includes(a))].forEach(a => {
       const row = document.createElement("p");
       row.dataset.historyPerson = a.person_id || "";
-      row.textContent = `${a.created_at} ? ${a.action} ? ${a.person_id || a.speaker_state} ? ${a.reason}${a.stale ? " ? Earlier transcript version" : ""}`;
-      if (a.correction !== null) row.appendChild(document.createTextNode(" ? Text: " + a.correction));
-      if (active.includes(a)) { const edit = document.createElement("button"); edit.type = "button"; edit.textContent = "Review assignment"; edit.onclick = () => setSelection(a.word_ids); row.appendChild(edit); }
+      const label = a.person_id || (a.speaker_state === "no_match" ? "No matching MB Person" : "Unknown speaker");
+      const stateLabel = active.includes(a) ? "Saved assignment" : a.action === "withdraw" ? "Withdrawn" : "Earlier assignment";
+      row.textContent = `${label} | ${timeLabel(a.t_start)} - ${timeLabel(a.t_end)} | ${stateLabel}`;
+      const excerpt = document.createElement("span");
+      excerpt.className = "mb-annotation-excerpt";
+      const original = a.stale ? "Earlier transcript version" : data.words.filter(w => a.word_ids.includes(w.id)).map(w => w.machine_token).join(" ");
+      const displayed = a.correction !== null ? a.correction : original;
+      excerpt.textContent = displayed.length > 240 ? displayed.slice(0, 240) + "..." : displayed;
+      row.appendChild(excerpt);
+      row.title = `${a.created_at} | ${a.reason}`;
+      if (active.includes(a)) { const edit = document.createElement("button"); edit.type = "button"; edit.textContent = "Review assignment"; edit.onclick = () => {
+        if (busy) return;
+        setSelection(a.word_ids);
+        const first = box.querySelector('.is-annotation-selected');
+        if (first) box.scrollTop += first.getBoundingClientRect().top - box.getBoundingClientRect().top - 8;
+        find('[data-annotation-list]').open = false;
+        tools.scrollTop = 0;
+      }; row.insertBefore(edit, excerpt); }
       historyBox.appendChild(row);
     });
     const pick = (event) => {

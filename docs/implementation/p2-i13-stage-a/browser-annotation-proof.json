@@ -9,6 +9,8 @@
     "savedHistory": true,
     "openAfterSave": true,
     "reopenedHistory": true,
+    "visibleAssignmentDetails": true,
+    "reviewRestoresExactWords": true,
     "headingVisibleAtTranscriptBottom": true,
     "errorVisible": true,
     "rejectedSaveRetainsPerson": true,

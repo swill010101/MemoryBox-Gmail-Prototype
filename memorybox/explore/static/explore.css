@@ -2323,3 +2323,12 @@ html[data-mb-surface="explore"] .mb-explore.is-present-locked .mb-explore-timeli
 
 .mb-viewer-footer > .mb-transcript-annotations[open] { flex: 0 0 60%; }
 .mb-viewer.is-video .mb-viewer-footer .mb-ev-transcript { flex-basis: 0; }
+
+.mb-annotation-excerpt { display: block; margin: .3rem 0; color: #dce8ff; }
+.mb-transcript-annotations button { cursor: pointer; text-decoration: underline; }
+.mb-transcript-annotations button:disabled { cursor: default; }
+.mb-ev-word.is-annotation-selected { background: #264d82; outline: 1px solid #9bc4ff; }
+
+.mb-transcript-annotations [data-annotation-status],
+.mb-transcript-annotations [data-annotation-history] p { margin: .35rem 0; }
+.mb-transcript-annotations [data-annotation-history] button { margin-left: .4rem; }

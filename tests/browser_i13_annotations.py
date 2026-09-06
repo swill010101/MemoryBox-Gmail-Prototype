@@ -61,7 +61,7 @@ async def run(endpoint):
    if(url.startsWith('/speech/transcript?')) {window.reads++;return {ok:true,json:async()=>dataForTest()};}
    window.annotationCalls.push({url,options});
    if(window.failSave)return {ok:false,json:async()=>({detail:'Synthetic save rejected'})};
-   const a={...JSON.parse(options.body),id:'annotation-'+annotationCalls.length,created_at:'synthetic',stale:false};
+   const a={...JSON.parse(options.body),id:'annotation-'+annotationCalls.length,t_start:143,t_end:144,created_at:'synthetic',stale:false};
    historyRows.push(a);return {ok:true,json:async()=>({ok:true,annotation:a})};
  };
  if(!crypto.randomUUID)crypto.randomUUID=()=> '00000000-0000-0000-0000-000000000099';
@@ -118,10 +118,13 @@ async def run(endpoint):
  // Reopen through the actual transcript fetch/render path.
  bindSpeechTranscript(testItem);await wait();tools=document.querySelector('.mb-transcript-annotations');
  const reopenedHistory=tools.querySelector('summary').textContent.includes('1 saved assignment')&&tools.querySelector('[data-annotation-history]').textContent.includes('assign');
+ const savedList=tools.querySelector('[data-annotation-history]');
+ const visibleAssignmentDetails=tools.querySelector('[data-annotation-list]').open && savedList.textContent.includes('Synthetic Person') && savedList.textContent.includes('2:23.0') && savedList.textContent.includes('Corrected words');
  box.scrollTop=box.scrollHeight;
  const header=tools.querySelector('summary'),hr=header.getBoundingClientRect();
  const headingVisibleAtTranscriptBottom=document.elementFromPoint(hr.left+5,hr.top+5)===header;
  tools.open=true;tools.querySelector('[data-annotation-history] button').click();await wait();
+ const reviewRestoresExactWords=box.querySelectorAll('.is-annotation-selected').length===2 && tools.querySelector('[data-annotation-person]').value.endsWith('0001') && tools.querySelector('textarea').value==='Corrected words';
  window.failSave=true;tools.querySelector('[data-annotation-save]').click();await wait();
  const errorVisible=tools.querySelector('[data-annotation-status]').textContent==='Synthetic save rejected';
  const rejectedSaveRetainsPerson=tools.querySelector('[data-annotation-person]').value.endsWith('0001');
@@ -131,17 +134,19 @@ async def run(endpoint):
  const br=save.getBoundingClientRect();
  const saveReachable=document.elementFromPoint(br.left+3,br.top+3)===save;
  document.body.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}));
- return {emptyRejected,personRetained,editingDoesNotNavigate,confirmationPersists,assignmentRetained,savedHistory,openAfterSave,reopenedHistory,headingVisibleAtTranscriptBottom,errorVisible,rejectedSaveRetainsPerson,transcriptFits,saveReachable,
+ return {emptyRejected,personRetained,editingDoesNotNavigate,confirmationPersists,assignmentRetained,savedHistory,openAfterSave,reopenedHistory,visibleAssignmentDetails,reviewRestoresExactWords,headingVisibleAtTranscriptBottom,errorVisible,rejectedSaveRetainsPerson,transcriptFits,saveReachable,
  selectedExactWords:payload?.word_ids.length===2,correction:payload?.correction==='Corrected words',
  annotationOnly:annotationCalls.every(r=>r.url==='/annotations/transcript'),ownerHeader:request?.options.headers['X-MB-Annotation']==='1',viewerNavigationStillWorks:navigated===1};
 })()""","awaitPromise":True,"returnByValue":True})
         if "exceptionDetails" in r:raise RuntimeError(r["exceptionDetails"])
         checks=r['result']['value']
         proof={'kind':'actual_annotation_form_and_selection_synthetic_browser','checks':checks,'passed':all(checks.values()),'limits':['Synthetic API responses; persistence tested separately on disposable PostgreSQL','No runtime services or family media']}
-        shot=await call('Page.captureScreenshot',{'format':'png'})
+        await call('Runtime.evaluate',{'expression':"(async()=>{bindSpeechTranscript(testItem);await new Promise(r=>setTimeout(r,80));document.querySelector('.mb-transcript-annotations').open=true;})()",'awaitPromise':True})
+        shot=await call('Page.captureScreenshot' ,{'format':'png'})
         (OUT/'browser-annotation-proof.png').write_bytes(base64.b64decode(shot['data']))
         (OUT/'browser-annotation-proof.json').write_text(json.dumps(proof,indent=2)+'\n',encoding='utf-8')
         print(json.dumps(proof,indent=2))
+        await ws.send(json.dumps({'id':seq+1,'method':'Browser.close'}))
         if not proof['passed']:raise RuntimeError('Annotation browser proof failed')
 
 def main():
@@ -160,6 +165,8 @@ def main():
             endpoint=next(t['webSocketDebuggerUrl'] for t in tabs if t['type']=='page')
             asyncio.run(run(endpoint))
         finally:
-            proc.terminate();proc.wait(timeout=10)
+            try: proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                proc.terminate();proc.wait(timeout=10)
 
 if __name__=='__main__':main()
