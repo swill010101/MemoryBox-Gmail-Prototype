@@ -267,3 +267,7 @@ FlightSim PostgreSQL 16.14 clone rehearsal for migration 032 passed using a fres
 ## Tom voice-pilot readiness
 
 The completed read-only Tom-pilot preflight is recorded in [DEPLOYMENT-READINESS-TOM-VOICE-PILOT.md](DEPLOYMENT-READINESS-TOM-VOICE-PILOT.md). It is a separate, exact four-span run and requires the one consolidated production approval stated there. No migration is planned because 032 is already deployed.
+
+## Tom bounded voice pilot completed
+
+Tom approved and completed the four-span Tom pilot at admission 9e0a2605-8bfc-4ec7-aa6e-501f9bca7cea. The deployed read-only results endpoint confirmed it is stopped and current. O1 was a Tom match at 0.487; H1 and U1-clear were correct Eugene no_match controls at 0.122 and 0.066. The fresh backup, unchanged legacy-count check, and no-retry result are recorded in [DEPLOYMENT-READINESS-TOM-VOICE-PILOT.md](DEPLOYMENT-READINESS-TOM-VOICE-PILOT.md). This does not close the remaining poor-audio, overlap, lifecycle, face/voice, or generalized-accuracy acceptance gaps.

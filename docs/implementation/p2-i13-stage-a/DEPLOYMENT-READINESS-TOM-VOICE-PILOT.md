@@ -63,6 +63,12 @@ No app or worker restart is needed; no planned user-interface downtime is expect
 
 If preparation fails before registration, no production database write occurred. After registration, the script stops the admission in `finally`, preserves any additive evidence and failure record, and never retries. Normal rollback is to stop using the detached release and leave the existing services running. Do not delete pilot records, rerun automatically, restore the database, or alter original media. A full database restore is an exceptional recovery requiring a separate founder decision.
 
-## Approval request
+## Approval record
 
-Approve the exact FlightSim deployment above: commit `fbc682d0e60a8b27e17d3c433ff40e1ac34490f3`, new detached release, fresh hash-verified backup, one four-span Tom pilot run using the already verified tool release, stated smoke checks, no expected downtime, and the stated rollback procedure.
+Tom approved the exact FlightSim deployment above before it ran: commit `fbc682d0e60a8b27e17d3c433ff40e1ac34490f3`, new detached release, fresh hash-verified backup, one four-span Tom pilot run using the already verified tool release, stated smoke checks, no expected downtime, and the stated rollback procedure.
+
+## Completed deployment record
+
+The approved deployment completed with release `fbc682d0e60a8b27e17d3c433ff40e1ac34490f3`. Fresh backup `C:\MemoryBox-backups\i13-final-pre-tom-547048044ed64ccb8b71b42baf16a6e9\memorybox.dump` was copied at 433 MB and verified SHA-256 `8bf0912c631984e9902562105f5076947ab794218e5fc704c3301b8b4e77c9d0`. No migration ran.
+
+Admission `9e0a2605-8bfc-4ec7-aa6e-501f9bca7cea` stopped after one run. O1 matched Tom at `0.4874674861`; H1-as-Tom-negative and U1-clear-as-Tom-negative were `no_match` at `0.1216411184` and `0.0656342374`. The deployed `/review/voice-pilot-results` endpoint confirmed this admission is stopped and `stale: false`; it reported `read_only: true` and `processing_started: false`. Legacy counts were unchanged and automatic retry was false.
