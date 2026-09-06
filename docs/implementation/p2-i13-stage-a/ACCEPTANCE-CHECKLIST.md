@@ -17,6 +17,11 @@ This checklist makes existing requirements explicit; it does not replace the acc
 - [ ] Preserve immutable machine transcripts and additive audited owner overlays. Verify corrections and retirement stop future exemplar use, preserve history, stale dependent suggestions and bound any separately authorized reprocessing.
 - [ ] Prove scope/cardinality limits, queue/retry/worker gates and locked archive behavior throughout. Founder acceptance, archive unlock and archive start remain separate decisions.
 
+## Completed bounded pilot evidence
+
+- [x] One bounded real-audio pilot recorded two Eugene Will matches (H1 `0.633`, U1-clear `0.570`) against T1 and rejected off-camera Tom Will as Eugene (O1 `0.105`).
+- [x] Results are additive, read-only review evidence with source/time, model-threshold, admission and stopped-state provenance; no legacy queue or transcript-overlay writes occurred.
+- [ ] This does not prove positive Tom recognition, overlap/poor-audio handling, no-match handling beyond the Eugene negative control, retirement behavior, or generalized accuracy.
 ## Current evidence
 
 Stage A correction: 26 offline tests pass on the dev machine; FlightSim passed the earlier 22-test commit. Source membership of the exact 22 videos is confirmed. Corrected preview is transcription-only (22 items, zero Person targets), so it cannot satisfy the voice recognition checks above. No voice recognition run, migration, or runtime processing was performed for this update. Full annotation-only overlays and the remaining voice lifecycle proof are pending later implementation/authorization.

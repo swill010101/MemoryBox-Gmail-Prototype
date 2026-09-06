@@ -1,5 +1,7 @@
 # Stage A deployment plan - Tom operates FlightSim
 
+Next founder action: review the [post-pilot voice gap plan](POST-PILOT-VOICE-GAP-PLAN.md). It identifies the smallest set of already-shortlisted intervals needed to prepare a distinct Tom training/held-out proof and a real uncertain/no-match case. Learn and all processing remain locked.
+
 ## Current status - voice-result playback accepted by Tom
 
 Tom reports the FlightSim deployment of `d3785b93311920a3409961054368796ed7fa66b3` worked as designed: the read-only pilot-results panel opened the existing rich video viewer modal and reused an existing browser-playable copy. This confirms result-time navigation and no-conversion playback for the reviewed source. The release does not apply a migration, start a drain, unlock Learn, run recognition, transcribe media, or create derived media. This is owner-reported live acceptance; backup output and independent process inspection are not recorded here.
