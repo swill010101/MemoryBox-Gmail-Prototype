@@ -10,7 +10,7 @@ This is evidence for source-audio matching and a negative off-camera control. It
 
 1. Positive recognition of Tom Will is now established only for the second pilot's exact T2 reference and O1 held-out passage; generalized accuracy remains unproven.
 2. The selected clear U1 portion was not overlapping or poor-audio acceptance evidence. The unselected remainder remains unreviewed.
-3. A confirmed no-match or background-audio case has not been measured.
+3. A confirmed background/no-match case is now measured by N1; it was correctly rejected as Tom. This is narrow evidence for the exact TV-announcer span, not a general background-audio claim.
 4. Exemplar retirement, stale-result marking, and bounded affected reprocessing are implemented controls but have not been exercised against a separately approved voice reference.
 5. Face/voice corroboration and the broader I13 scenario matrix remain separate acceptance work.
 
@@ -42,3 +42,10 @@ This is target-specific evidence, not a fresh general benchmark: H1 and U1-clear
 FlightSim admission `9e0a2605-8bfc-4ec7-aa6e-501f9bca7cea` completed on 2026-09-06 and is stopped, current, and visible through the deployed read-only results endpoint. T2 trained Tom Will against O1, an off-camera held-out Tom passage, which scored `match` at 0.4874674861. The two owner-confirmed Eugene controls were correctly `no_match`: H1 at 0.1216411184 and U1-clear at 0.0656342374.
 
 A fresh 433 MB backup was hash-verified before registration at `C:\MemoryBox-backups\i13-final-pre-tom-547048044ed64ccb8b71b42baf16a6e9\memorybox.dump` (SHA-256 `8bf0912c631984e9902562105f5076947ab794218e5fc704c3301b8b4e77c9d0`). The guarded deployment reported unchanged legacy counts and no automatic retry.
+## Completed N1 Unknown no-match pilot
+
+FlightSim admission `46cb1d21-b464-4bc4-bf7c-7d0de0202ca6` completed once and stopped on 2026-09-07. It used Tom T2 as the reference, O1 as the Tom positive hold-out, H1 as the known-Eugene no-match control, and N1 as owner-confirmed Unknown TV-announcer evidence. Outcomes were O1 `match` at `0.4874674861`, H1 `no_match` at `0.1216411184`, and N1 `no_match` at `0.1115755753`. The N1 decision agrees with Tom?s saved `unknown` annotation and does not create or infer a Person.
+
+The run used release `29e3f6fb6944adfcece404cb6c89ebb4180f6fe1` and reviewed plan `a9d2a32115db543c13381592bfed189c38c1ba5fb94f303e99f8df62986cf25d`. It created the fresh verified backup `C:\MemoryBox-backups\i13-final-pre-n1-unknown-f3b23c9c1a7645f69932bc9099c744a8\memorybox.dump` with SHA-256 `a89ce78d77cf0ac683b2b8ec143c264def1f2845f9677a77c5830401ee349162`; its E: copy remains a separate storage action until Tom supplies the copy/hash result. Legacy counts were unchanged and automatic retry was false.
+
+The next remaining voice acceptance item is lifecycle proof: retire one separately selected reference, verify its dependent result becomes stale, and prepare a distinct bounded reprocessing proposal. This does not authorize changing the T2/O1/H1/N1 evidence or starting any reprocessing.
