@@ -98,6 +98,11 @@ def main() -> int:
 if __name__ == '__main__':
     try:
         raise SystemExit(main())
+    except RuntimeError as exc:
+        # RuntimeError messages in this module are fixed validation labels, never connection details.
+        print(json.dumps({'ok': False, 'error_type': 'validation_failed', 'code': str(exc),
+                          'message': 'Preflight failed; no media or database writes occurred.'}))
+        raise SystemExit(2)
     except Exception as exc:
         print(json.dumps({'ok': False, 'error_type': type(exc).__name__,
                           'message': 'Preflight failed; no media or database writes occurred.'}))
