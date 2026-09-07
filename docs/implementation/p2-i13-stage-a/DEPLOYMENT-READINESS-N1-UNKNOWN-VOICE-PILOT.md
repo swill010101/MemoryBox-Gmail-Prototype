@@ -33,7 +33,7 @@ Limits are fixed: four extracts, four embeddings, three comparisons, one attempt
 
 ## Backup and writes
 
-Immediately before registration, the guarded command creates a custom-format `pg_dump`, verifies it with `pg_restore --list`, copies it to `C:\MemoryBox-backups\i13-final-pre-n1-unknown-<token>\memorybox.dump`, and compares container and local SHA-256 values. Failure at any backup stage stops before registration.
+Immediately before registration, the guarded command creates a custom-format `pg_dump`, verifies it with `pg_restore --list`, copies it to `E:\MemoryBox-backups\i13-final-pre-n1-unknown-<token>\memorybox.dump`, and compares container and local SHA-256 values. Failure at any backup stage stops before registration.
 
 The only production writes are one plan-bearing I13 admission with register/start/stop audit events, one immutable pilot-run row, four attempt rows, and reference/result events. It does not change annotations, transcripts, legacy speech/recognition queues, originals, browser proxies, Historian Capture, services, or drains.
 

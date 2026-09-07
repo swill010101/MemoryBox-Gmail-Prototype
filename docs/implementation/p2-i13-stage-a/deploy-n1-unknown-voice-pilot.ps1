@@ -15,7 +15,7 @@ $toolRoot = (Resolve-Path -LiteralPath $ToolRelease).Path
 $model = Join-Path $toolRoot 'model\titanet-l.nemo'
 $python = Join-Path $toolRoot '.titanet-venv\Scripts\python.exe'
 $plan = Join-Path $release 'i13-reviewed-n1-unknown-voice-pilot-plan.json'
-$backupRoot = 'C:\MemoryBox-backups'
+$backupRoot = 'E:\MemoryBox-backups'
 $container = 'memorybox-pg'
 $mediaRoot = 'P:\Photos\Home Videos'
 
