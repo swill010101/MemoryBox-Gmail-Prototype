@@ -27,6 +27,10 @@ def load_selection(path: Path = PROPOSAL) -> dict:
     return proposal
 
 
+def same_timestamp(actual: object, expected: object) -> bool:
+    return abs(float(actual) - float(expected)) <= 0.000001
+
+
 def validate_rows(proposal: dict, rows: list[dict]) -> dict:
     by_id = {row['annotation_id']: row for row in rows}
     expected = {span['annotation_id']: span for span in proposal['selections']}
@@ -37,7 +41,7 @@ def validate_rows(proposal: dict, rows: list[dict]) -> dict:
         for key in ('version_id', 'source_id', 'provider_key'):
             if row[key] != span[key]:
                 raise RuntimeError('Selected annotation identity changed.')
-        if float(row['t_start']) != float(span['start']) or float(row['t_end']) != float(span['end']):
+        if not same_timestamp(row['t_start'], span['start']) or not same_timestamp(row['t_end'], span['end']):
             raise RuntimeError('Selected annotation timing changed.')
         if not row['active'] or row['retired']:
             raise RuntimeError('Selected annotation is not active evidence.')

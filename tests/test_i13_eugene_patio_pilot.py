@@ -1,4 +1,4 @@
-﻿import json
+import json
 import runpy
 from pathlib import Path
 import unittest
@@ -34,6 +34,10 @@ class EugenePatioPilotProposal(unittest.TestCase):
         self.assertEqual(result['audio_seconds'], 49.66)
         self.assertTrue(result['patio_annotations_fresh'])
 
+    def test_postgres_float_representation_of_first_patio_time_is_accepted(self):
+        proposal, rows = self.rows()
+        rows[0]['t_start'] = 15.939999999999998
+        self.assertTrue(validate_rows(proposal, rows)['patio_annotations_fresh'])
     def test_patio_rows_must_remain_fresh_active_eugene(self):
         proposal, rows = self.rows()
         rows[0]['pilot_uses'] = [{'admission_id': 'old'}]
