@@ -1,0 +1,78 @@
+{
+  "status": "design_only_not_an_admission",
+  "processing_authorized": false,
+  "purpose": "voice_pilot_unknown_held_out_extension",
+  "target_person_id": "33509a4c-0869-458a-b0b9-35a669aace16",
+  "target_person": "Tom Will",
+  "selections": [
+    {
+      "key": "T2",
+      "role": "training",
+      "source_id": "vid-da41273dbd9ac4bb",
+      "version_id": "8bc1f1c4-c3ef-4623-92da-6f5f3b41c20f",
+      "annotation_id": "5e106e50-76ce-4fb2-8f62-0083119154cc",
+      "start": 37.12,
+      "end": 42.4,
+      "provider_key": "hvrt",
+      "source_sha256": "636ee92d9588dfc31550d94f2e1ac1343fb4296c2dc62879325c412e89c0dd7b",
+      "expected_match": true,
+      "expected": "Tom Will; owner-confirmed training reference"
+    },
+    {
+      "key": "O1",
+      "role": "held_out",
+      "source_id": "vid-c57dbd21f993f6d1",
+      "version_id": "1c95cb4b-93ae-483f-9c86-f71124919d94",
+      "annotation_id": "3fa1c4e1-d8a6-423f-9c9b-1a229d550945",
+      "start": 152.24,
+      "end": 158.34,
+      "provider_key": "hvrt",
+      "source_sha256": "26f3646b4adbda7573ff19c02da3b11bafceff4ac5cd7d967d5b0053a2e10705",
+      "expected_match": true,
+      "expected": "Tom Will; owner-confirmed held-out positive"
+    },
+    {
+      "key": "H1-as-Tom-negative",
+      "role": "held_out",
+      "source_id": "vid-c57dbd21f993f6d1",
+      "version_id": "1c95cb4b-93ae-483f-9c86-f71124919d94",
+      "annotation_id": "f47ee4ec-6b28-442a-81b2-152fbe8f45e2",
+      "start": 325.22,
+      "end": 345.56,
+      "provider_key": "hvrt",
+      "source_sha256": "26f3646b4adbda7573ff19c02da3b11bafceff4ac5cd7d967d5b0053a2e10705",
+      "expected_match": false,
+      "expected": "Eugene Will; known-person no-match control"
+    },
+    {
+      "key": "N1-TV-announcer-unknown",
+      "role": "held_out",
+      "source_id": "vid-c015e0fe07414fcc",
+      "version_id": "8f879c74-ceb9-4f2c-b464-4f494ca66c25",
+      "annotation_id": "74cc9646-82db-4899-960d-f795f691c524",
+      "start": 0.0,
+      "end": 6.74,
+      "provider_key": "hvrt",
+      "source_sha256": "09e6dfb523724448888586183d9e265f3181f241ab37fa9d6d800ac1b6cf92b3",
+      "expected_match": false,
+      "expected": "Unknown TV announcer; owner-confirmed no-match acceptance evidence"
+    }
+  ],
+  "budget": {
+    "source_count": 3,
+    "training_spans": 1,
+    "held_out_spans": 3,
+    "selected_audio_seconds": 38.46,
+    "max_audio_extractions": 4,
+    "max_embeddings": 4,
+    "max_comparisons": 3,
+    "automatic_retries": 0
+  },
+  "invariants": [
+    "N1 has null person_id and speaker_state unknown; it is held-out only.",
+    "No Unknown span can become training evidence.",
+    "No person is created or inferred from N1.",
+    "Q1 remains excluded because no exact truthful annotation was saved.",
+    "Execution requires a fresh read-only preflight, exact annotation/source recheck, backup, and a separate admission."
+  ]
+}

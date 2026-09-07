@@ -115,7 +115,7 @@ def run(identifier, expected_sha, media_root, model, ffmpeg):
                 vectors.append(encoder.embed(wav,remaining(deadline,plan['embedding_timeout_sec'])))
                 provenance['audio'].append({'key':span['key'],**quality})
             results=[{'key':s['key'],'annotation_id':s['annotation_id'],
-               'expected_match':s['person_id']==plan['person_ids'][0],
+               'expected_match':s.get('expected_match',s.get('person_id')==plan['person_ids'][0]),
                **score(vectors[0],v,plan['thresholds'])} for s,v in zip(plan['spans'][1:],vectors[1:])]
             # Detect changed source/model content before durable publication.
             preflight(plan,media_root,model,ffmpeg,deadline)

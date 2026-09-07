@@ -17,7 +17,11 @@ def check_annotations(c, plan):
     for s in plan['spans']:
         row=c.execute("""SELECT a.*,v.machine,v.provider_key,v.source_id FROM i13_active_annotations a
           JOIN i13_current_transcripts v ON v.id=a.version_id WHERE a.id=%s::uuid""",(s['annotation_id'],)).fetchone()
-        if not row or str(row['version_id'])!=s['version_id'] or str(row['person_id'])!=s['person_id'] or row['provider_key']!=s['provider_key'] or row['source_id']!=s['source_id'] or [str(x) for x in row['word_ids']]!=s['word_ids']:
+        if not row: raise ScopeDenied('pilot_annotation_changed')
+        row_person_id=str(row['person_id']) if row['person_id'] else None
+        if str(row['version_id'])!=s['version_id'] or row_person_id!=s.get('person_id') or row['provider_key']!=s['provider_key'] or row['source_id']!=s['source_id'] or [str(x) for x in row['word_ids']]!=s['word_ids']:
+            raise ScopeDenied('pilot_annotation_changed')
+        if 'speaker_state' in s and row['speaker_state']!=s['speaker_state']:
             raise ScopeDenied('pilot_annotation_changed')
         if validate_span(row['machine'],s['word_ids'])!=(s['start'],s['end']): raise ScopeDenied('pilot_span_changed')
         if c.execute('SELECT 1 FROM i13_voice_pilot_retirements WHERE annotation_id=%s::uuid',(s['annotation_id'],)).fetchone():

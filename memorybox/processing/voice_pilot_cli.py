@@ -19,7 +19,10 @@ def prepare(selection, model, revision, match_threshold, uncertain_threshold):
             if not row or str(row['version_id'])!=requested['version_id'] or row['source_id']!=requested['source_id'] or row['t_start']!=requested['start'] or row['t_end']!=requested['end']:
                 raise ScopeDenied('selected_annotation_changed')
             spans.append({k:requested[k] for k in ('key','role','source_id','version_id','annotation_id','start','end','provider_key','source_sha256')})
-            spans[-1].update(person_id=str(row['person_id']),word_ids=[str(w) for w in row['word_ids']])
+            spans[-1].update(person_id=str(row['person_id']) if row['person_id'] else None,
+                             speaker_state=row['speaker_state'], word_ids=[str(w) for w in row['word_ids']])
+            if 'expected_match' in requested:
+                spans[-1]['expected_match']=requested['expected_match']
     plan={'purpose':'voice_pilot','scope_kind':'bounded','lanes':['voice'],
       'manifest':parent,'parent_manifest_sha256':digest(parent),'person_ids':[selection['target_person_id']],
       'spans':spans,'thresholds':{'match':match_threshold,'uncertain':uncertain_threshold},

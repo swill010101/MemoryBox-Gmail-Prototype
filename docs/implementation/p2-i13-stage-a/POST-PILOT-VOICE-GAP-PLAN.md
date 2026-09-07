@@ -22,10 +22,10 @@ Use the deployed Review/Explore workflow. Select text, assign or mark Unknown, a
 |---|---|---|---|
 | T2 completed | `20111105_1530.MP4` / `vid-da41273dbd9ac4bb`, 00:37.120-00:42.400 | Tom confirmed the saved assignment. | Used as the Tom training reference in the completed second pilot. |
 | O1 completed | `20111105_1532.MP4` / `vid-c57dbd21f993f6d1`, 02:32.240-02:38.340 | Tom's existing off-camera assignment was used unchanged. | Held-out Tom result: match, 0.487. |
-| N1 candidate | `second meals on wheels.mp4` / `vid-c015e0fe07414fcc`, 00:00.000-00:20.000 | Is this non-family/background speech or another known speaker? Is it single-speaker enough to label? | If it is not Tom or Eugene, save Unknown/no-match truth. Otherwise record the actual Person; do not invent a no-match case. |
+| N1 owner truth saved | `second meals on wheels.mp4` / `vid-c015e0fe07414fcc`, 00:00.000-00:06.740 | Tom identified the speech as a TV announcer and saved Unknown: annotation `74cc9646-82db-4899-960d-f795f691c524`, transcript version `8f879c74-ceb9-4f2c-b464-4f494ca66c25`, 31 timed words, no `person_id`. | Candidate held-out no-match evidence only. It must never train, create, or imply a family Person. |
 | Q1 listening conclusion | `20111105_1532.MP4` / `vid-c57dbd21f993f6d1`, 02:18.720-02:23.180 | Tom heard TV/background audio and Eugene speaking together. This was listening only; no annotation was saved. | Excluded from training, hold-out, and recognition evidence until exact truthful sub-spans are saved. |
 
-The T2/O1 second pilot is complete. Any next recognition proposal must use separately confirmed N1 or Q1 truth, fresh exact annotation/version IDs and source hashes, explicit bounds, the frozen model/threshold policy, and a new readiness review before another admission.
+The T2/O1 second pilot is complete. N1 now has exact saved Unknown truth: TV announcer, annotation `74cc9646-82db-4899-960d-f795f691c524`, version `8f879c74-ceb9-4f2c-b464-4f494ca66c25`, 00:00.000-00:06.740, 31 timed words, and no person ID. The next proposal may use it only as explicit held-out no-match acceptance evidence after its source hash and current annotation are rechecked. Q1 remains excluded. A new readiness review is required before any admission.
 
 No recognition, Learn, migration, media conversion, archive unlock, or queue drain is authorized by this plan.
 

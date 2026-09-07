@@ -38,7 +38,17 @@ def validate(plan):
         if len({s["key"] for s in spans}) != 4 or len({s["annotation_id"] for s in spans}) != 4: raise ValueError()
         for s in spans:
             if not s["key"] or len(s["key"]) > 80: raise ValueError()
-            if not all(valid_uuid(s[k]) for k in ("annotation_id", "version_id", "person_id")): raise ValueError()
+            if not all(valid_uuid(s[k]) for k in ("annotation_id", "version_id")): raise ValueError()
+            person_id=s.get("person_id")
+            if person_id is not None and not valid_uuid(person_id): raise ValueError()
+            expected_match=s.get("expected_match", person_id == plan["person_ids"][0])
+            if type(expected_match) is not bool: raise ValueError()
+            if s["role"] == "training":
+                if person_id != plan["person_ids"][0] or expected_match is not True: raise ValueError()
+            elif person_id is None:
+                # Unknown is acceptance evidence only: it can never train a named voice.
+                if expected_match is not False or s.get("speaker_state") != "unknown": raise ValueError()
+            elif expected_match != (person_id == plan["person_ids"][0]): raise ValueError()
             if not 1 <= len(s["word_ids"]) <= 500 or len(set(s["word_ids"])) != len(s["word_ids"]): raise ValueError()
             if not all(valid_uuid(w) for w in s["word_ids"]): raise ValueError()
             source = sources[(s["provider_key"], s["source_id"])]

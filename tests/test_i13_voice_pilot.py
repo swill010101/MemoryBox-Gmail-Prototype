@@ -34,6 +34,17 @@ class Pure(unittest.TestCase):
         for mutate in [lambda p:p.update(scope_kind='archive'),lambda p:p.update(lanes=['transcribe']),lambda p:p.update(max_work_items=5),lambda p:p.update(max_attempts_per_item=2),lambda p:p['spans'][1].update(role='training'),lambda p:p['spans'][1].update(source_id='foreign'),lambda p:p['spans'][0].update(end=float('nan')),lambda p:p['thresholds'].update(match=.1),lambda p:p['spans'][1].update(word_ids=[]),lambda p:p['spans'][1].update(annotation_id=p['spans'][0]['annotation_id'])]:
             p=fixture();mutate(p)
             with self.assertRaises(scope.ScopeDenied):v.validate(p)
+    def test_unknown_held_out_is_explicit_no_match_only(self):
+        p=fixture(); unknown=p['spans'][3]
+        unknown.update(person_id=None,speaker_state='unknown',expected_match=False)
+        self.assertEqual(v.validate(p)['work_items'],4)
+        q=fixture();q['spans'][3].update(person_id=None,speaker_state='unknown',expected_match=True)
+        with self.assertRaises(scope.ScopeDenied):v.validate(q)
+        q=fixture();q['spans'][3].update(person_id=None,speaker_state='person',expected_match=False)
+        with self.assertRaises(scope.ScopeDenied):v.validate(q)
+        q=fixture();q['spans'][3].update(person_id=None,speaker_state='unknown',expected_match=False,role='training')
+        with self.assertRaises(scope.ScopeDenied):v.validate(q)
+
     def test_duplicate_content_overlap_rejected(self):
         p=fixture();p['manifest']['sources'][1]['source_sha256']=p['manifest']['sources'][0]['source_sha256'];p['parent_manifest_sha256']=scope.digest(p['manifest'])
         for s in p['spans'][1:]:s['source_sha256']=p['spans'][0]['source_sha256']
@@ -57,6 +68,12 @@ class Pure(unittest.TestCase):
             encoder.return_value.embed.return_value=vec
             result=runner.run('test',scope.digest(p),'root','model','ffmpeg')
             self.assertEqual(len(result['results']),3);self.assertEqual(reserve.call_count,4);self.assertEqual(extract.call_count,4);encoder.assert_called_once();publish.assert_called_once();failed.assert_not_called()
+        p=fixture();p['spans'][3].update(person_id=None,speaker_state='unknown',expected_match=False)
+        with patch.object(store,'load',return_value=p),patch.object(store,'claim'),patch.object(store,'reserve'),patch.object(store,'publish') as publish,patch.object(store,'failed'),patch.object(runner,'preflight',return_value=({('synthetic',f'source-{i}'):Path('test') for i in (0,1)},Path('model'),Path('ffmpeg'))),patch.object(runner,'sha',return_value='a'*64),patch.object(runner,'extract',return_value={}),patch.object(runner,'Encoder') as encoder:
+            encoder.return_value.embed.return_value=vec
+            result=runner.run('test',scope.digest(p),'root','model','ffmpeg')
+            self.assertFalse(result['results'][-1]['expected_match'])
+            self.assertFalse(publish.call_args.args[2][-1]['expected_match'])
     def test_actual_audio_extraction_is_bounded(self):
         import wave, math, array
         ffmpeg=Path('C:/Program Files/Demucs-GUI_1.3.2_cuda_mkl/ffmpeg/ffmpeg.exe')
