@@ -1,0 +1,80 @@
+﻿{
+  "status": "design_only_not_an_admission",
+  "processing_authorized": false,
+  "purpose": "voice_pilot",
+  "target_person_id": "b67708d8-0262-404d-a230-2cc99900cea4",
+  "target_person": "Eugene Will",
+  "selections": [
+    {
+      "key": "T3-patio",
+      "role": "training",
+      "source_id": "vid-8163a680131fd30a",
+      "version_id": "a0c4e1a4-4fdd-49ae-9699-a9ccbc3f1a0c",
+      "annotation_id": "6b41bd21-f595-4d9c-b44f-2ea9a012d1de",
+      "start": 15.94,
+      "end": 32.04,
+      "provider_key": "hvrt",
+      "source_sha256": "ccda7f166a780c512fa9dc72b366ad20b314003aa6cc2f3869a0cf5396dc37e1",
+      "expected_match": true,
+      "expected": "Eugene Will; owner-confirmed clear Patio 003 training reference"
+    },
+    {
+      "key": "E3-patio-held-out",
+      "role": "held_out",
+      "source_id": "vid-8163a680131fd30a",
+      "version_id": "a0c4e1a4-4fdd-49ae-9699-a9ccbc3f1a0c",
+      "annotation_id": "b4e5fd32-08f9-44f3-bf0a-1fa2d8251864",
+      "start": 150.02,
+      "end": 171.54,
+      "provider_key": "hvrt",
+      "source_sha256": "ccda7f166a780c512fa9dc72b366ad20b314003aa6cc2f3869a0cf5396dc37e1",
+      "expected_match": true,
+      "expected": "Eugene Will; separate owner-confirmed Patio 003 positive hold-out"
+    },
+    {
+      "key": "T2-as-Eugene-negative",
+      "role": "held_out",
+      "source_id": "vid-da41273dbd9ac4bb",
+      "version_id": "8bc1f1c4-c3ef-4623-92da-6f5f3b41c20f",
+      "annotation_id": "5e106e50-76ce-4fb2-8f62-0083119154cc",
+      "start": 37.12,
+      "end": 42.4,
+      "provider_key": "hvrt",
+      "source_sha256": "636ee92d9588dfc31550d94f2e1ac1343fb4296c2dc62879325c412e89c0dd7b",
+      "expected_match": false,
+      "expected": "Tom Will; owner-confirmed known-person Eugene no-match control"
+    },
+    {
+      "key": "N1-TV-announcer-unknown",
+      "role": "held_out",
+      "source_id": "vid-c015e0fe07414fcc",
+      "version_id": "8f879c74-ceb9-4f2c-b464-4f494ca66c25",
+      "annotation_id": "74cc9646-82db-4899-960d-f795f691c524",
+      "start": 0.0,
+      "end": 6.74,
+      "provider_key": "hvrt",
+      "source_sha256": "09e6dfb523724448888586183d9e265f3181f241ab37fa9d6d800ac1b6cf92b3",
+      "expected_match": false,
+      "expected": "Unknown TV announcer; owner-confirmed Eugene no-match control"
+    }
+  ],
+  "budget": {
+    "source_count": 3,
+    "target_people": 1,
+    "training_spans": 1,
+    "held_out_spans": 3,
+    "max_audio_extractions": 4,
+    "max_embeddings": 4,
+    "max_comparisons": 3,
+    "max_attempts_per_span": 1,
+    "selected_audio_seconds": 49.66,
+    "automatic_retries": 0
+  },
+  "invariants": [
+    "T3-patio and E3-patio-held-out are fresh active Eugene annotations and must remain distinct.",
+    "The TV-contaminated vid-c57dbd21f993f6d1 source is excluded from Eugene evidence.",
+    "N1 remains held-out Unknown evidence only; it cannot train or create a Person.",
+    "T2 is a known-person negative control, not a fresh generalized benchmark.",
+    "Execution requires a fresh read-only preflight, exact annotation/source recheck, verified backup, and separate approval."
+  ]
+}
