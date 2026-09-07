@@ -1,4 +1,4 @@
-﻿"""Read-only preflight for the bounded Eugene Patio 003 proposal; no media or database writes."""
+"""Read-only preflight for the bounded Eugene Patio 003 proposal; no media or database writes."""
 from __future__ import annotations
 import json
 import os
@@ -8,7 +8,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-from memorybox.db import connection
 
 TARGET_PERSON_ID = 'b67708d8-0262-404d-a230-2cc99900cea4'
 PROPOSAL = ROOT / 'docs/implementation/p2-i13-stage-a/eugene-patio-bounded-voice-pilot-proposal.json'
@@ -65,6 +64,8 @@ def main() -> int:
         raise RuntimeError('Both drains must be explicitly off.')
     if os.environ.get('MEMORYBOX_I13_ADMISSION_ID'):
         raise RuntimeError('Admission must be unset for preflight.')
+    from memorybox.db import connection
+
     proposal = load_selection()
     ids = [span['annotation_id'] for span in proposal['selections']]
     query = """
