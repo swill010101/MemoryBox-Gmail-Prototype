@@ -8,6 +8,7 @@ if str(ROOT) not in sys.path: sys.path.insert(0,str(ROOT))
 from memorybox.db import connection
 
 PERSON_ID='b67708d8-0262-404d-a230-2cc99900cea4'
+SOURCE_EXCLUSIONS={'vid-c57dbd21f993f6d1':'Owner review: TV/background audio overlaps Eugene throughout the selected source.'}
 QUERY="""
 SELECT a.id::text AS annotation_id, a.version_id::text AS version_id, v.provider_key, v.source_id,
        a.t_start, a.t_end, cardinality(a.word_ids) AS words, a.reason,
@@ -29,13 +30,15 @@ ORDER BY a.t_start, a.created_at
 
 def classify(row: dict) -> dict:
     uses=row.get('pilot_uses') or []
+    source_exclusion=SOURCE_EXCLUSIONS.get(row['source_id'])
     return {
         'annotation_id':row['annotation_id'], 'version_id':row['version_id'],
         'provider_key':row['provider_key'], 'source_id':row['source_id'],
         't_start':float(row['t_start']), 't_end':float(row['t_end']), 'words':int(row['words']),
         'reason':row['reason'], 'retired':bool(row['retired']), 'prior_pilot_uses':uses,
-        # A fresh reprocessing reference must be active, unretired, and absent from every past pilot.
-        'eligible_fresh_reference':not row['retired'] and not uses,
+        'excluded_from_eugene_voice_evidence':source_exclusion,
+        # A fresh reprocessing reference must be active, unretired, unseen in every prior pilot, and owner-approved for audio quality.
+        'eligible_fresh_reference':not row['retired'] and not uses and not source_exclusion,
     }
 
 def main() -> int:
