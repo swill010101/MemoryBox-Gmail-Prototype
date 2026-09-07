@@ -1,6 +1,11 @@
 """Read-only inspection of eligible older voice-pilot references; never retires or processes media."""
 from __future__ import annotations
 import json
+import sys
+from pathlib import Path
+# Direct-script execution otherwise puts only this docs directory on sys.path.
+ROOT=Path(__file__).resolve().parents[3]
+if str(ROOT) not in sys.path: sys.path.insert(0,str(ROOT))
 from memorybox.db import connection
 
 QUERY = """
