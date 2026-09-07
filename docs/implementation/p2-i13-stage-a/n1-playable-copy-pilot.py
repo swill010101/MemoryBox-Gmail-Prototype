@@ -17,7 +17,9 @@ import time
 VID = "vid-c015e0fe07414fcc"
 SOURCE_HASH = "09e6dfb523724448888586183d9e265f3181f241ab37fa9d6d800ac1b6cf92b3"
 SOURCE_SIZE = 6249411
-DURATION = 305.4066666666667
+DURATION = 305.408
+VIDEO_DURATION = 300.368378
+AUDIO_DURATION = 305.408
 MAX_BYTES = 4 * 1024**3
 MIN_FREE = 10 * 1024**3
 WALL_SECONDS = 600
@@ -99,10 +101,11 @@ def validate_streams(data, output=False):
         raise RuntimeError("Unexpected N1 video format")
     if audio.get("codec_name") != "aac":
         raise RuntimeError("Unexpected N1 audio format")
-    for row in (data.get("format", {}), video, audio):
+    duration_rows = ((data.get("format", {}), DURATION), (video, VIDEO_DURATION), (audio, AUDIO_DURATION))
+    for row, expected_duration in duration_rows:
         duration = float(row.get("duration", "nan"))
         start = float(row.get("start_time", "nan"))
-        if not math.isfinite(duration) or abs(duration - DURATION) > 0.5:
+        if not math.isfinite(duration) or abs(duration - expected_duration) > 0.5:
             raise RuntimeError("Duration mismatch")
         if not math.isfinite(start) or abs(start) > 0.05:
             raise RuntimeError("Source-zero timeline mismatch")

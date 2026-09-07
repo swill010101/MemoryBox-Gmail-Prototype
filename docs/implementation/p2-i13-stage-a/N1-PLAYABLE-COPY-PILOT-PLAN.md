@@ -14,19 +14,21 @@ The exact N1 source is present and unchanged:
 | Source ID | `vid-c015e0fe07414fcc` |
 | SHA-256 | `09e6dfb523724448888586183d9e265f3181f241ab37fa9d6d800ac1b6cf92b3` |
 | Size | 6,249,411 bytes |
-| Duration | 305.408 seconds |
+| Container duration | 305.408 seconds |
+| Video duration | 300.368378 seconds (2,578 frames) |
+| Audio duration | 305.408 seconds (2,386 AAC frames) |
 | Stream layout | one H.264 video, 320x240, `yuvj420p`; one AAC audio stream |
 | Existing proxy | absent |
 | Derivative-volume free space | 1,210,296,193,024 bytes |
 | Tools | FFmpeg/FFprobe 9.0 |
 
-N1 already uses H.264, but it uses the older full-range `yuvj420p` pixel format and does not render in the browser viewer. The evidence supports a one-source normalization experiment to H.264 `yuv420p`; it does not prove that pixel format is the only cause or guarantee browser playback.
+N1 already uses H.264, but it uses the older full-range `yuvj420p` pixel format and does not render in the browser viewer. Its 5.040-second AAC-only tail is an existing source property; it is not treated as corruption. The evidence supports a one-source normalization experiment to H.264 `yuv420p`; it does not prove that pixel format is the only cause or guarantee browser playback.
 
 ## Exact bounded operation proposed
 
 [n1-playable-copy-pilot.py](n1-playable-copy-pilot.py) is an exact-source helper with a check-only default. If separately approved, `--execute` would perform one staging attempt only:
 
-- preserve the full 305-second source timeline with no trim, seek, concatenation, moment export, overwrite, cleanup, retry, or source write;
+- preserve the source timeline with no trim, seek, concatenation, moment export, overwrite, cleanup, retry, or source write; the 5.040-second AAC-only tail remains intact and video is not padded;
 - copy the AAC track unchanged;
 - re-encode the single video stream to H.264 `yuv420p`, keeping 320x240 dimensions and zero-origin timing;
 - use at most two encoder threads, a 600-second wall limit, 4 GiB output limit, and require at least 10 GiB free;

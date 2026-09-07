@@ -17,7 +17,7 @@ SPEC.loader.exec_module(pilot)
 def metadata(output=False):
     return {"format": {"duration": str(pilot.DURATION), "start_time": "0"}, "streams": [
         {"codec_type": "video", "codec_name": "h264", "width": 320, "height": 240,
-         "pix_fmt": "yuv420p" if output else "yuvj420p", "duration": str(pilot.DURATION), "start_time": "0"},
+         "pix_fmt": "yuv420p" if output else "yuvj420p", "duration": str(pilot.VIDEO_DURATION), "start_time": "0"},
         {"codec_type": "audio", "codec_name": "aac", "sample_rate": "24000", "channels": 1,
          "duration": str(pilot.DURATION), "start_time": "0"},
     ]}
