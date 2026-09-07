@@ -18,7 +18,7 @@ Approve one bounded private-audio run against the exact reviewed plan below. It 
 | Existing schema | Migration `032_p2_i13_voice_pilot.sql` already present; no migration is applied |
 | Media root | `P:\Photos\Home Videos` |
 
-The read-only preflight and plan write completed successfully. They verified the detached release, model artifact, active annotations, source hashes, exactly four spans, 38.46 seconds, and the plan SHA above. They processed no private audio and made no database writes.
+The read-only preflight and plan write completed successfully. The execution guard permits the one expected untracked reviewed-plan file and rejects every other release change. They verified the detached release, model artifact, active annotations, source hashes, exactly four spans, 38.46 seconds, and the plan SHA above. They processed no private audio and made no database writes.
 
 ## Exact bounded scope
 

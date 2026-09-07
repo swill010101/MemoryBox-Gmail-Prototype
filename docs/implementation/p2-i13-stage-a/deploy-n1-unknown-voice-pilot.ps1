@@ -34,7 +34,9 @@ function Snapshot-Counts {
 Push-Location $release
 try {
     if ((git rev-parse HEAD).Trim().ToLowerInvariant() -ne $ExpectedReleaseSha.ToLowerInvariant()) { throw 'Release SHA mismatch.' }
-    if (git status --porcelain) { throw 'Release is not clean; preserve it and stop.' }
+    $expectedPlanRelative = 'i13-reviewed-n1-unknown-voice-pilot-plan.json'
+    $unexpectedChanges = @(git status --porcelain | Where-Object { $_ -ne "?? $expectedPlanRelative" })
+    if ($unexpectedChanges.Count -ne 0) { throw 'Release has unexpected changes; preserve it and stop.' }
     if (-not $ApprovalReference.Trim()) { throw 'Approval reference is required.' }
     if (-not $env:MEMORYBOX_DATABASE_URL) { throw 'MEMORYBOX_DATABASE_URL is absent; use the configured FlightSim shell.' }
     if (-not (Test-Path -LiteralPath $python)) { throw 'The verified TitaNet Python environment is unavailable.' }
