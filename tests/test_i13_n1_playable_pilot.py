@@ -16,7 +16,7 @@ SPEC.loader.exec_module(pilot)
 
 def metadata(output=False):
     return {"format": {"duration": str(pilot.DURATION), "start_time": "0"}, "streams": [
-        {"codec_type": "video", "codec_name": "h264", "width": 320, "height": 240,
+        {"codec_type": "video", "codec_name": "h264", "profile": "High" if output else "Baseline", "width": 320, "height": 240,
          "pix_fmt": "yuv420p" if output else "yuvj420p", "duration": str(pilot.VIDEO_DURATION), "start_time": "0"},
         {"codec_type": "audio", "codec_name": "aac", "sample_rate": "24000", "channels": 1,
          "duration": str(pilot.DURATION), "start_time": "0"},
@@ -34,10 +34,11 @@ class N1PilotTests(unittest.TestCase):
         pilot.validate_streams(metadata(True), output=True)
 
     def test_source_full_range_and_output_video_format_are_enforced(self):
-        for source_output, change in ((False, "source-pix"), (True, "output-pix"), (False, "dimensions"), (True, "duration"), (False, "audio")):
+        for source_output, change in ((False, "source-pix"), (True, "output-pix"), (True, "profile"), (False, "dimensions"), (True, "duration"), (False, "audio")):
             data = metadata(source_output)
             if change == "source-pix": data["streams"][0]["pix_fmt"] = "yuv420p"
-            if change == "output-pix": data["streams"][0]["pix_fmt"] = "yuvj420p"
+            if change == "output-pix": data["streams"][0]["pix_fmt"] = "nv12"
+            if change == "profile": data["streams"][0]["profile"] = "Baseline"
             if change == "dimensions": data["streams"][0]["width"] = 640
             if change == "duration": data["format"]["duration"] = "2"
             if change == "audio": data["streams"][1]["codec_name"] = "mp3"

@@ -37,6 +37,11 @@ N1 already uses H.264, but it uses the older full-range `yuvj420p` pixel format 
 
 Publication is a separate later `--publish` operation. It would revalidate the stage and atomically hard-link it to only `browser_proxies/9eca7338d7a661aed03b02b9.mp4`, refusing an existing destination. It never replaces or deletes a proxy.
 
+## Staged playback evidence
+
+Tom opened the existing staged file locally in Chrome and confirmed moving video and audible audio. FFprobe reports H.264 High, 320x240, 2,578 frames, 300.333367 seconds; AAC duration and container duration remain 305.408 seconds. FFmpeg reported `yuv420p(pc)`, while FFprobe labels the full-range output `yuvj420p`. The direct browser result is the acceptance evidence for this staged file; the helper requires its distinct High profile and accepts either FFprobe pixel-format label only for output validation. This does not establish that every `yuvj420p` file is browser-playable.
+
+The first encode attempt is consumed and will not be repeated. `--validate-staged` is a recovery-only mode: it can validate this exact existing stage once, without invoking an encoder, and records `validated.json` only after full decode, packet checks and a repeat source-hash check. It requires an explicit recovery approval reference and stops before publication.
 ## Required decision gates
 
 1. Approve exactly one staging/validation attempt for helper commit and N1 source/hash above. The helper stops with `published=false`.

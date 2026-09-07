@@ -89,16 +89,22 @@ def probe(executable, path):
 
 
 def validate_streams(data, output=False):
-    """Validate the known N1 source and its normalized browser copy."""
+    """Validate the known N1 source and its Chrome-verified staged copy."""
     streams = data.get("streams", [])
     videos = [s for s in streams if s.get("codec_type") == "video"]
     audios = [s for s in streams if s.get("codec_type") == "audio"]
     if len(videos) != 1 or len(audios) != 1 or len(streams) != 2:
         raise RuntimeError("Expected exactly one video and one audio stream")
     video, audio = videos[0], audios[0]
-    expected_pix_fmt = "yuv420p" if output else "yuvj420p"
-    if (video.get("codec_name"), video.get("width"), video.get("height"), video.get("pix_fmt")) != ("h264", 320, 240, expected_pix_fmt):
+    expected_pix_fmts = {"yuv420p", "yuvj420p"} if output else {"yuvj420p"}
+    if (video.get("codec_name"), video.get("width"), video.get("height")) != ("h264", 320, 240):
         raise RuntimeError("Unexpected N1 video format")
+    if video.get("pix_fmt") not in expected_pix_fmts:
+        raise RuntimeError("Unexpected N1 video pixel format")
+    if output and video.get("profile") != "High":
+        raise RuntimeError("Unexpected N1 output profile")
+    if not output and video.get("profile") != "Baseline":
+        raise RuntimeError("Unexpected N1 source profile")
     if audio.get("codec_name") != "aac":
         raise RuntimeError("Unexpected N1 audio format")
     duration_rows = ((data.get("format", {}), DURATION), (video, VIDEO_DURATION), (audio, AUDIO_DURATION))
@@ -193,6 +199,7 @@ def main(argv=None):
     modes = parser.add_mutually_exclusive_group()
     modes.add_argument("--execute", action="store_true")
     modes.add_argument("--publish", action="store_true")
+    modes.add_argument("--validate-staged", action="store_true")
     parser.add_argument("--approval-ref")
     parser.add_argument("--expected-release")
     parser.add_argument("--visual-review-ref")
@@ -200,11 +207,11 @@ def main(argv=None):
     if os.name != "nt":
         raise RuntimeError("This pinned pilot is for FlightSim Windows only")
     require_locks(os.environ)
-    if (args.execute or args.publish) and not (args.approval_ref or "").strip():
+    if (args.execute or args.publish or args.validate_staged) and not (args.approval_ref or "").strip():
         raise RuntimeError("Explicit execution/publication approval reference required")
     if args.publish and not (args.visual_review_ref or "").strip():
         raise RuntimeError("Beginning/middle/end visual and audio review reference required")
-    if args.execute or args.publish:
+    if args.execute or args.publish or args.validate_staged:
         release = Path(__file__).resolve().parents[3]
         head = read_command(["git", "-C", str(release), "rev-parse", "HEAD"]).strip()
         dirty = read_command(["git", "-C", str(release), "status", "--porcelain"]).strip()
@@ -232,8 +239,30 @@ def main(argv=None):
              "free_bytes":free, "proposed_encode_args":command,
              "helper_sha256":sha256(Path(__file__)),
              "limits":{"wall_seconds":WALL_SECONDS,"max_output_bytes":MAX_BYTES,"attempts":1}}
-    if not args.execute and not args.publish:
+    if not args.execute and not args.publish and not args.validate_staged:
         print(json.dumps(check, indent=2))
+        return
+    if args.validate_staged:
+        if not attempt.is_dir() or (attempt / "validated.json").exists():
+            raise RuntimeError("Existing single staging attempt is missing or already validated")
+        if not staged.is_file():
+            raise RuntimeError("Existing staged output is missing")
+        output = probe(installed["ffprobe"]["path"], staged)
+        validate_streams(output, output=True)
+        deadline = time.monotonic() + WALL_SECONDS
+        decode = [installed["ffmpeg"]["path"], "-hide_banner", "-nostdin", "-v", "error", "-xerror", "-threads", "2", "-i", str(staged), "-map", "0:v:0", "-map", "0:a:0", "-threads", "2", "-f", "null", "-"]
+        run_limited(decode, attempt / "recovery-decode.log", deadline)
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise RuntimeError("Pilot wall-time limit reached")
+        packet_args = [installed["ffprobe"]["path"], "-v", "error", "-show_packets", "-show_entries", "packet=stream_index,dts_time", "-of", "csv=p=0", str(staged)]
+        packet_counts = validate_packet_times(read_command(packet_args, min(60, remaining)))
+        after = source_check(SOURCE)
+        if after != original:
+            raise RuntimeError("Original changed during staged validation")
+        report = {"source_id":VID,"source_sha256":SOURCE_HASH,"output_sha256":sha256(staged),"output_bytes":staged.stat().st_size,"output_metadata":output,"decode_args":decode,"full_decode_passed":True,"packet_counts":packet_counts,"source_unchanged":True,"recovery_validation":True,"approval_ref":args.approval_ref,"finished_at":time.time()}
+        write_new(attempt / "validated.json", report)
+        print(json.dumps({"validated":True,"published":False,"staged_path":str(staged),"report":str(attempt / "validated.json"),"recovery_validation":True,"next":"Stop. Separate publication approval is required."},indent=2))
         return
     if args.publish:
         report = json.loads((attempt / "validated.json").read_text(encoding="utf-8"))
