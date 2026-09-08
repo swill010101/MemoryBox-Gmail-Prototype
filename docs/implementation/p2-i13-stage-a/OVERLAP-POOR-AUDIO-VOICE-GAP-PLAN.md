@@ -14,17 +14,13 @@ Lifecycle reprocessing, Tom off-camera positive evidence, N1 Unknown no-match, a
 
 ## Tom-reported owner evidence (2026-09-08)
 
-Tom saved Eugene Will evidence and an off-camera Tom Will reference for the next overlap/poor-audio voice pilot. **Start pilot planning with Eugene Will** after Gate 3 completes.
+FlightSim inspector captured active annotations. Unused prior to this proposal:
 
-Capture exact IDs on FlightSim before any proposal:
+- Eugene `bbceb696…` on 1532 (09:02.82–09:12.78) — candidate overlap/poor-audio **held-out**  
+- Tom `2b013ef8…` on 1532 (15:48.30–15:55.50) — candidate off-camera **negative control**  
+- Tom `d890e55e…` on 1532 (10:20.14–10:22.04) — too short; not selected  
 
-```powershell
-cd C:\MemoryBox
-git pull --ff-only origin codex/p2-i13-stage-a
-python -B docs/implementation/p2-i13-stage-a/inspect-overlap-voice-annotations.py
-```
-
-Paste JSON output. Flag any Eugene assignment on `vid-c57dbd21f993f6d1` — that source remains excluded from Eugene training/held-out voice evidence.
+Design-only proposal: [OVERLAP-POOR-AUDIO-VOICE-PILOT-PROPOSAL.md](OVERLAP-POOR-AUDIO-VOICE-PILOT-PROPOSAL.md). **Requires founder waiver** for interval-specific use of `bbceb696` on excluded 1532 before any run.
 
 ## Candidate owner work (no pilot until saved)
 

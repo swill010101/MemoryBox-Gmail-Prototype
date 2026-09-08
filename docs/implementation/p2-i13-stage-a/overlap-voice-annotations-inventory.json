@@ -1,0 +1,41 @@
+{
+  "ok": true,
+  "read_only": true,
+  "captured_at": "2026-09-08",
+  "source": "FlightSim inspect-overlap-voice-annotations.py",
+  "eugene_active_count": 8,
+  "tom_active_count": 4,
+  "unknown_active_count": 1,
+  "fresh_unused_eugene_off_1532": [],
+  "fresh_unused_eugene_on_1532": [
+    {
+      "annotation_id": "bbceb696-f8b4-434a-820d-dcb6928cbc5e",
+      "source_id": "vid-c57dbd21f993f6d1",
+      "t_start": 542.82,
+      "t_end": 552.78,
+      "pilot_uses": []
+    }
+  ],
+  "fresh_unused_tom_off_1532": [
+    {
+      "annotation_id": "2b013ef8-92f4-4193-9ae1-cd4ed778a40c",
+      "source_id": "vid-c57dbd21f993f6d1",
+      "t_start": 948.3,
+      "t_end": 955.5,
+      "pilot_uses": []
+    },
+    {
+      "annotation_id": "d890e55e-e35b-4f9d-959a-256b74f8d0f5",
+      "source_id": "vid-c57dbd21f993f6d1",
+      "t_start": 620.14,
+      "t_end": 622.04,
+      "pilot_uses": [],
+      "note": "Very short interval; not selected for pilot"
+    }
+  ],
+  "prior_pilot_reuse_training_candidate": {
+    "annotation_id": "3eb88a19-7249-4ce6-b976-e3066daf205a",
+    "key": "R1-gs2-fresh",
+    "prior_admission": "66fb93af-92a9-4ef1-b3e6-c0f700e89276"
+  }
+}

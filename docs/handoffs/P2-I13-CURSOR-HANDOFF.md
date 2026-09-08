@@ -59,18 +59,9 @@ Keep `MEMORYBOX_RECOGNITION_DRAIN=0`, `MEMORYBOX_SPEECH_DRAIN=0`, and no `MEMORY
 
 ## Exact next action
 
-1. **Overlap voice pilot prep** — Eugene Will first. On FlightSim:
+1. **Overlap pilot waiver** — Tom confirms [OVERLAP-POOR-AUDIO-VOICE-PILOT-PROPOSAL.md](docs/implementation/p2-i13-stage-a/OVERLAP-POOR-AUDIO-VOICE-PILOT-PROPOSAL.md): approve `bbceb696` interval waiver on 1532 and `2b013ef8` as O2 off-camera control (or specify revisions).
 
-```powershell
-$python = 'C:\MemoryBox-releases\p2-i13-voice-pilot-6d56da5\.titanet-venv\Scripts\python.exe'
-cd C:\MemoryBox
-git pull --ff-only origin codex/p2-i13-stage-a
-& $python -B docs\implementation\p2-i13-stage-a\inspect-overlap-voice-annotations.py
-```
-
-Paste JSON. Agent drafts four-span overlap pilot proposal (design-only first).
-
-2. **Separate track:** Gate 4 decision; face/voice corroboration; full I13 acceptance — none automatic.
+2. **Separate track:** Gate 4 decision; face/voice corroboration; full I13 acceptance.
 
 ## Actions that must not be repeated
 

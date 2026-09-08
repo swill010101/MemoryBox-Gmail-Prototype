@@ -1,0 +1,90 @@
+{
+  "status": "design_only_not_an_admission",
+  "processing_authorized": false,
+  "purpose": "voice_pilot",
+  "pilot_kind": "overlap_poor_audio_eugene",
+  "lifecycle_note": "Bounded overlap/poor-audio acceptance for Eugene Will; not generalized accuracy or Gate 4.",
+  "target_person_id": "b67708d8-0262-404d-a230-2cc99900cea4",
+  "target_person": "Eugene Will",
+  "inspector_run_date": "2026-09-08",
+  "inventory_ref": "overlap-voice-annotations-inventory.json",
+  "selections": [
+    {
+      "key": "T-gs2-reuse",
+      "role": "training",
+      "source_id": "vid-34df63e61b949890",
+      "version_id": "aa9d7675-5f50-4685-ba25-3d462f2abf6d",
+      "annotation_id": "3eb88a19-7249-4ce6-b976-e3066daf205a",
+      "start": 26.3,
+      "end": 34.78,
+      "provider_key": "hvrt",
+      "source_sha256": "61505855a1220985482c415238bd4622278bf4eff053687dffad5e02a1b77a32",
+      "expected_match": true,
+      "expected": "Eugene Will; clear owner-confirmed training reference on grandpa sessions 2 002 (reused from lifecycle pilot R1-gs2-fresh)"
+    },
+    {
+      "key": "E2-1532-overlap-held-out",
+      "role": "held_out",
+      "source_id": "vid-c57dbd21f993f6d1",
+      "version_id": "1c95cb4b-93ae-483f-9c86-f71124919d94",
+      "annotation_id": "bbceb696-f8b4-434a-820d-dcb6928cbc5e",
+      "start": 542.82,
+      "end": 552.78,
+      "provider_key": "hvrt",
+      "source_sha256": "26f3646b4adbda7573ff19c02da3b11bafceff4ac5cd7d967d5b0053a2e10705",
+      "expected_match": true,
+      "expected": "Eugene Will; owner-confirmed overlap/poor-audio hold-out on 1532",
+      "requires_founder_waiver": "1532_overlap_interval_waiver_for_bbbceb696"
+    },
+    {
+      "key": "O2-tom-offcamera-negative",
+      "role": "held_out",
+      "source_id": "vid-c57dbd21f993f6d1",
+      "version_id": "1c95cb4b-93ae-483f-9c86-f71124919d94",
+      "annotation_id": "2b013ef8-92f4-4193-9ae1-cd4ed778a40c",
+      "start": 948.3,
+      "end": 955.5,
+      "provider_key": "hvrt",
+      "source_sha256": "26f3646b4adbda7573ff19c02da3b11bafceff4ac5cd7d967d5b0053a2e10705",
+      "expected_match": false,
+      "expected": "Tom Will off-camera; owner-confirmed Eugene no-match control (unused prior to this proposal)"
+    },
+    {
+      "key": "N1-TV-announcer-unknown",
+      "role": "held_out",
+      "source_id": "vid-c015e0fe07414fcc",
+      "version_id": "8f879c74-ceb9-4f2c-b464-4f494ca66c25",
+      "annotation_id": "74cc9646-82db-4899-960d-f795f691c524",
+      "start": 0.0,
+      "end": 6.74,
+      "provider_key": "hvrt",
+      "source_sha256": "09e6dfb523724448888586183d9e265f3181f241ab37fa9d6d800ac1b6cf92b3",
+      "expected_match": false,
+      "expected": "Unknown TV announcer; owner-confirmed Eugene no-match control"
+    }
+  ],
+  "budget": {
+    "source_count": 3,
+    "target_people": 1,
+    "training_spans": 1,
+    "held_out_spans": 3,
+    "max_audio_extractions": 4,
+    "max_embeddings": 4,
+    "max_comparisons": 3,
+    "max_attempts_per_span": 1,
+    "selected_audio_seconds": 32.38,
+    "automatic_retries": 0
+  },
+  "invariants": [
+    "T-gs2-reuse is the sole Eugene training reference; it is not a fresh reference but is off the excluded 1532 source.",
+    "E2-1532-overlap-held-out is the only unused Eugene annotation and requires an explicit founder waiver of the blanket 1532 Eugene-evidence exclusion for annotation bbceb696 only.",
+    "H1, U1-clear, O1, and retired T1 are not selected.",
+    "Q1 listening-only interval remains excluded."
+  ],
+  "interpretation_limits": [
+    "A match on E2 is narrow overlap/poor-audio evidence for this exact interval only, not approval of Eugene matching across all of 1532.",
+    "O2 tests off-camera Tom rejection under Eugene reference; it is not a Tom positive recognition pilot.",
+    "Reusing T-gs2 training does not claim a fresh benchmark; held-outs are new relative to prior Eugene pilots."
+  ],
+  "runtime_writes_allowed_now": false
+}
