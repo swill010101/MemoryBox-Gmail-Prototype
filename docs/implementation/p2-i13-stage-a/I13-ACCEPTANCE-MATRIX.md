@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-08  
 **Branch:** `codex/p2-i13-stage-a`  
-**Status:** Pending founder acceptance — I13 is **not closed** until Tom signs [CONSOLIDATED-I13-ACCEPTANCE-REVIEW.md](CONSOLIDATED-I13-ACCEPTANCE-REVIEW.md).
+**Status:** Pending founder acceptance — see [CONSOLIDATED-I13-ACCEPTANCE-REVIEW.md](CONSOLIDATED-I13-ACCEPTANCE-REVIEW.md). Open items include **interactive Learn + Admin screens** and **FR-005 live render** — not FR-005 alone.
 
 Classifications: **passed** | **waived** | **deferred** | **failed**
 
@@ -54,12 +54,12 @@ Authority: `MBPRD-P2-I13_Video_Face_Speech_Voice_Learning_v0.2.docx`, `MBBS-P2_I
 | I13-FR-002 | Archive fan-out root cause | **deferred** | Documented; archive execution rejected |
 | I13-FR-003 | Invalid-set remediation | **deferred** | No remediation authorized |
 | I13-FR-004 | Idempotency | **deferred** | Static risks documented in completeness matrix |
-| I13-FR-005 | Playback seek/clamp | **failed** | Historical binder clamp reproduced in assessment; fix tracked post-closeout unless Tom waives |
+| I13-FR-005 | Playback seek/continue | **passed (bounded code)** / **not tested (live)** | `bindAppearanceView` seeks only; unit test + [browser-playback-proof.json](browser-playback-proof.json); full FlightSim Explore render not recorded |
 | I13-FR-006 | Navigation state preservation | **deferred** | Explore modal exists; full rendered proof deferred |
 | I13-FR-007 | Transcript follow/scroll | **deferred** | Partial highlight; follow deferred |
 | I13-FR-008 | Transcript seek | **deferred** | Click seek exists; full keyboard proof deferred |
-| I13-FR-009 | Voice sample confirmation lifecycle | **deferred** | Bounded pilots prove recognition path; UI lifecycle deferred |
-| I13-FR-010 | Face sample confirmation | **deferred** | Explore flow exists; bounded face archive rejected |
+| I13-FR-009 | Voice sample confirmation lifecycle | **failed (interactive Learn)** | Bounded voice **pilots** passed; Explore voice Learn locked without acceptance_learning admission |
+| I13-FR-010 | Face sample confirmation | **failed (interactive Learn)** | Explore face Learn UI exists; gated — not live-proven on FlightSim |
 | I13-FR-011 | Combined Learn adjudication | **deferred** | Independent APIs; partial-failure UX deferred |
 | I13-FR-012 | Background work + manifest gate | **passed (bounded)** | I13 admission machinery + Gate 3 + voice pilots under scope locks |
 | I13-FR-013 | Review with per-modality provenance | **passed (bounded)** | Review UI voice pilots + corroboration; full unified adjudication deferred |
@@ -73,8 +73,8 @@ Authority: `MBPRD-P2-I13_Video_Face_Speech_Voice_Learning_v0.2.docx`, `MBBS-P2_I
 | I13-FR-021 | Fragment inventory | **deferred** | Checkpoint aggregates only |
 | I13-FR-022 | Fragment migration | **deferred** | Not authorized |
 | I13-FR-023 | Derivative deletion | **deferred** | Not authorized |
-| I13-FR-024 | Admin shell | **deferred** | Not in I13 bounded closeout |
-| I13-FR-025 | Admin destinations | **deferred** | I12 HC preserved; I13 admin pages deferred |
+| I13-FR-024 | Admin shell | **failed** | No I13 Admin top-nav destination |
+| I13-FR-025 | Admin destinations | **failed** | Learned Evidence + Jobs screens missing; partial substitutes only |
 | I13-FR-026 | Unlock separation | **passed (policy)** | No unlock/start authorized; gates enforced in code |
 
 ---
@@ -101,19 +101,34 @@ Authority: `MBPRD-P2-I13_Video_Face_Speech_Voice_Learning_v0.2.docx`, `MBBS-P2_I
 
 ---
 
+## Interactive Learn reconciliation (PRD — not voice pilots)
+
+Inspector: [inspect-interactive-learn-reconciliation.py](inspect-interactive-learn-reconciliation.py) — [INTERACTIVE-LEARN-RECONCILIATION.md](INTERACTIVE-LEARN-RECONCILIATION.md)
+
+| # | Checkpoint | Class | Evidence |
+|---|---|---|---|
+| L1 | Face box → Person → Learn | **failed** | Explore + API; Learn locked — no started acceptance_learning face admission |
+| L2 | Transcript → Person → voice Learn | **failed** | Annotations ≠ Learn; voice Learn locked |
+| L3 | Admin → Learned Evidence | **failed** | Screen not implemented |
+| L4 | Admin → Jobs | **failed** | I13 Jobs screen not implemented |
+| L5 | Correct / remove learned evidence | **not tested** | Partial APIs; no admin UI; no live proof |
+| L6 | Learn on while archive/drains locked | **failed** (Learn) / locks **passed** | Archive C/D/E rejected; Learn not enabled |
+
+---
+
 ## Acceptance gates (PRD §8)
 
 | Gate | Class | Evidence |
 |---|---|---|
 | Integrity | **passed (bounded)** | Admission digests; pilot immutability; legacy counts unchanged |
-| Playback | **failed** | FR-005 defect; separate waiver possible at founder review |
+| Playback | **passed (bounded code)** / **not tested (live)** | Code fix + synthetic browser proof; FlightSim family-video Explore not recorded |
 | Transcript | **passed (bounded)** | Annotations + effective words/moments |
 | Face | **deferred** | Archive face lane rejected; face moments exist for corroboration read path |
 | Voice | **passed (bounded)** | Six current stopped pilots; matrix waiver W |
 | Corroboration | **passed (bounded)** | Read-only report + API + tests |
 | Retrieval | **deferred** | — |
 | Legacy fragment reconciliation | **deferred** | — |
-| Jobs | **deferred** | — |
+| Jobs | **failed** | No I13 Admin Jobs UI |
 | Regression | **deferred** | Automated tests pass; rendered workflow deferred |
 | Safety | **passed (policy)** | Archive/register/unlock/start disabled |
 | Proof | **passed (bounded)** | Gate 3 + voice pilots + corroboration + this matrix |
@@ -124,10 +139,11 @@ Authority: `MBPRD-P2-I13_Video_Face_Speech_Voice_Learning_v0.2.docx`, `MBBS-P2_I
 
 | Class | Count (checklist + gates + key FR) |
 |---|---|
-| **passed** | Voice core, Gate 3, corroboration, retirement lifecycle, safety locks |
+| **passed** | Voice pilots, Gate 3, corroboration, retirement lifecycle, safety locks, FR-005 code fix |
 | **waived** | Additional voice matrix pilot (W) |
-| **deferred** | Archive C/D/E, admin UI, fragments, retrieval, most FR polish |
-| **failed** | Playback clamp (FR-005) — **open for founder waiver or post-I13 fix** |
+| **deferred** | Archive C/D/E execution, fragments, retrieval, polish |
+| **failed** | Interactive Learn 1–4, Learn enablement (L6), Admin screens |
+| **not tested** | Learn correction/removal live (L5), FR-005 FlightSim Explore render |
 
 ---
 
@@ -149,4 +165,5 @@ cd C:\MemoryBox
 # deployment env loaded (MEMORYBOX_DATABASE_URL)
 $python = 'C:\MemoryBox-releases\p2-i13-voice-pilot-6d56da5\.titanet-venv\Scripts\python.exe'
 & $python -B docs\implementation\p2-i13-stage-a\inspect-face-voice-corroboration.py
+& $python -B docs\implementation\p2-i13-stage-a\inspect-interactive-learn-reconciliation.py
 ```
