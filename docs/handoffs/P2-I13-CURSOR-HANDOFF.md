@@ -4,9 +4,9 @@
 
 - Repository: `E:\MemoryBox-dev\p2-i13-stage-a`
 - Branch: `codex/p2-i13-stage-a`
-- Pre-handoff HEAD: `e3c98134cbf8f43635c313ba343e689a9a5978cf`
-- Pre-handoff working tree: clean.
-- Remote: `origin/codex/p2-i13-stage-a`.
+- Handoff HEAD: `ef12cb3` (after Eugene reprocessing lifecycle pilot recorded)
+- Remote: `origin/codex/p2-i13-stage-a`
+- Working tree: clean unless noted below.
 
 This handoff contains source and documentation state only. Do not add database dumps, backup files or hashes, credentials, media, proxies, dependency environments, caches, generated copies, or storage-audit output to Git.
 
@@ -21,73 +21,73 @@ This handoff contains source and documentation state only. Do not add database d
 
 ## Completed work and accepted deployments
 
-- Migrations 030, 031, and 032 are already applied on FlightSim. Do not rerun them.
-- The annotation-review workflow was accepted by Tom on FlightSim at `7bc47b5911caeb8ca256dcc260f17943d2fb777a`.
-- The accepted playback/result-modal release is `d3785b93311920a3409961054368796ed7fa66b3`.
-- Bounded real-audio pilots completed and stopped: the original Eugene pilot, Tom pilot, N1 Unknown no-match pilot, and Eugene Patio pilot. Each is provenance-backed pilot evidence, not archive acceptance or a generalized accuracy claim.
-- The Eugene Patio pilot was corrected for PostgreSQL floating-point timestamp representation before its approved run. Its held-out Eugene case matched, while the Tom and Unknown controls were no-match. No automatic retry occurred.
-- T1 lifecycle retirement was already completed before the current handoff. Read-only FlightSim verification confirmed only that older Eugene admission is stale; the Tom, N1, and Eugene Patio pilot admissions remain stopped and current.
+- Migrations 030, 031, and 032 applied on FlightSim. Do not rerun them.
+- Annotation-review workflow accepted at `7bc47b5911caeb8ca256dcc260f17943d2fb777a`.
+- Playback/result-modal release accepted at `d3785b93311920a3409961054368796ed7fa66b3`.
+- Bounded voice pilots completed and stopped:
+  - Original Eugene (T1) — admission `1039c733…` now **stale** after T1 retirement
+  - Tom off-camera — `9e0a2605…` **current**
+  - N1 Unknown — `46cb1d21…` **current**
+  - Eugene Patio — `f59050d5…` **current**
+  - Eugene reprocessing lifecycle — `66fb93af…` **current** (2026-09-08)
+- T1 lifecycle retirement completed; stale cascade verified.
+- Playable copy published for `vid-34df63e61b949890` (`grandpa sessions 2 002.MP4`).
+- Two new Eugene assignments on that source enabled the lifecycle pilot.
 
-## Current FlightSim state
+## Owner voice annotations (ten reviewed)
 
-- Known pilot states from the supplied read-only query: the retired T1 pilot is `stopped` and `stale`; the Tom, N1, and Eugene Patio pilots are `stopped` and current.
-- The deployed annotation UI and results viewer have owner-reported acceptance. Independent process inspection, aggregate health evidence, and current queue counts were not supplied with this handoff.
-- Keep `MEMORYBOX_RECOGNITION_DRAIN=0`, `MEMORYBOX_SPEECH_DRAIN=0`, and no `MEMORYBOX_I13_ADMISSION_ID` outside a separately approved bounded operation.
-- No active admission, queue, or service state should be inferred beyond the supplied read-only evidence. Recheck it before any future proposal or run.
-
-## Eight owner voice annotations and roles
-
-The exact IDs, source hashes, transcript versions, and ranges remain in the versioned pilot proposals under `docs/implementation/p2-i13-stage-a/`; do not duplicate raw database exports in this handoff.
-
-| Key | Person / truth | Intended role and current status |
+| Key | Person | Status |
 |---|---|---|
-| T1 | Eugene | Original Eugene training reference; now retired and must never be reused. |
-| H1 | Eugene | Held-out Eugene evidence; later reused only as a Tom no-match control. |
-| O1 | Tom, off-camera | Held-out positive Tom evidence; confirmed by the Tom pilot. |
-| U1-clear | Eugene | Clear held-out Eugene evidence; later reused only as a Tom no-match control. |
-| T2 | Tom | Tom training reference; current and shared by the Tom/N1 pilot evidence. |
-| N1 | Unknown TV announcer | Held-out no-match evidence only; never training and never a basis to create or infer a Person. |
-| T3-patio | Eugene | Eugene Patio training reference for the completed Patio pilot. |
-| E3-patio-held-out | Eugene | Distinct held-out Eugene Patio positive evidence for the completed Patio pilot. |
+| T1 | Eugene | Retired training reference |
+| H1 | Eugene | Prior pilot held-out; Tom control |
+| O1 | Tom off-camera | Tom pilot held-out match |
+| U1-clear | Eugene | Prior pilot held-out; Tom control |
+| T2 | Tom | Training reference (Tom/N1/Patio/reprocessing controls) |
+| N1 | Unknown TV | Held-out no-match only |
+| T3-patio | Eugene | Patio training |
+| E3-patio-held-out | Eugene | Patio held-out |
+| R1-gs2-fresh | Eugene | Lifecycle training (`3eb88a19…`) |
+| H1-gs2-held-out | Eugene | Lifecycle held-out (`5d87a6ac…`) |
 
-Q1 remains excluded: it has background/TV overlap and no exact saved truthful annotation.
+Q1 remains excluded (listening only, no saved annotation). `vid-c57dbd21f993f6d1` is excluded from Eugene voice evidence.
 
 ## Gate position and locks
 
-Treat the project as **between Gate 2 and Gate 3** for future work: locked deployment and bounded pilot evidence exist, but no broadened Gate 3 processing or Gate 4 archive unlock/start is authorized. The completed pilots do not open Learn or any drain.
+Still **between Gate 2 and Gate 3**. Bounded voice evidence is substantial, but Gate 3 broadened processing and Gate 4 archive unlock/start are **not** authorized. Completed pilots do not open Learn or drains.
 
-Do not run `startmb.ps1`, `startmb.cmd`, legacy prove commands, Learn, an archive pass, a bulk retry, or an unrestricted worker as a shortcut. Do not restart a stopped admission. Do not retry the failed Patio admission; its successful replacement is already recorded.
-
-## Remaining evidence and defects
-
-- Full I13 acceptance remains open: poor or mumbled audio, overlap/multiple speakers, broader unknown/no-match behavior, face/voice corroboration, generalized accuracy, and archive acceptance are not established.
-- The original T1 retirement backup and legacy-count proof was not supplied in this conversation. Do not invent it.
-- A lifecycle stale cascade is confirmed, but no affected-only reprocessing has been proposed or run.
-- The initial Patio run failed before private audio processing because PostgreSQL floating-point display noise triggered exact timestamp comparison. The precision fix is implemented and the successful replacement pilot is recorded.
-- The earlier retired-T1 execution package is obsolete; do not invoke it with `-Execute`.
+Keep `MEMORYBOX_RECOGNITION_DRAIN=0`, `MEMORYBOX_SPEECH_DRAIN=0`, and no `MEMORYBOX_I13_ADMISSION_ID` outside a separately approved bounded operation.
 
 ## Exact next action
 
-Run the existing read-only `docs/implementation/p2-i13-stage-a/inspect-eugene-reprocessing-candidates.py` from an exact FlightSim release using the verified TitaNet Python environment and the configured database environment. It must identify an active, unretired Eugene annotation that has never appeared in a voice-pilot plan. Then prepare, but do not run, one affected-only reprocessing proposal with exact source/annotation IDs, bounds, expected evidence, backup and rollback steps.
+1. **Optional read-only verify** on FlightSim:
 
-If there is no eligible reference, Tom must save one new clear Eugene assignment in MemoryBox. Do not repurpose T1, a prior held-out span, N1, Q1, or TV-overlapped material as a new reference.
+```powershell
+$python = 'C:\MemoryBox-releases\p2-i13-voice-pilot-6d56da5\.titanet-venv\Scripts\python.exe'
+cd C:\MemoryBox
+git pull --ff-only origin codex/p2-i13-stage-a
+& $python -B docs\implementation\p2-i13-stage-a\inspect-voice-pilot-status.py
+```
+
+2. **Next voice gap** requiring owner input before any run: overlap/poor-audio per [OVERLAP-POOR-AUDIO-VOICE-GAP-PLAN.md](docs/implementation/p2-i13-stage-a/OVERLAP-POOR-AUDIO-VOICE-GAP-PLAN.md) (Q1 sub-spans or new clear intervals; not on excluded 1532 Eugene evidence).
+
+3. **Separate track:** face/voice corroboration and Gate 3/Gate 4 authorization remain distinct founder decisions.
 
 ## Actions that must not be repeated
 
-- Do not apply migrations 030, 031, or 032 again.
-- Do not duplicate the already completed T1 retirement.
-- Do not recreate or rerun the stopped Eugene Patio failure admission.
-- Do not use bare `python` on FlightSim for I13 pilot helpers; use the verified TitaNet tool release environment.
-- Do not use literal placeholder paths in PowerShell commands.
-- Do not create or assume an `E:` drive on FlightSim. FlightSim has C: only; the development desktop has C: and E:.
-- Do not move storage, Git metadata, databases, Docker data, models, media, or backups. The H: storage migration remains planning-only.
-- Do not commit runtime data or generated artifacts listed at the start of this handoff.
+- Migrations 030–032, T1 retirement, completed pilot reruns, Patio failure admission retry, playable-copy staging for `vid-34df63e61b949890` (already published), Eugene reprocessing lifecycle run (`66fb93af…`).
+- Bare `python` on FlightSim for I13 pilot helpers; use `.titanet-venv` under `p2-i13-voice-pilot-6d56da5`.
+- Do not create or assume an `E:` drive on FlightSim.
 
-## Known paths and worktrees
+## Known paths
 
-- Development worktree: `E:\MemoryBox-dev\p2-i13-stage-a`.
-- Canonical FlightSim Git checkout: `C:\MemoryBox`.
-- Current FlightSim diagnostic release: `C:\MemoryBox-releases\p2-i13-eugene-t1-retirement-da43db7`.
-- Prior corrected Patio release: `C:\MemoryBox-releases\p2-i13-eugene-patio-precision-32c0136`.
-- Verified TitaNet tool release: `C:\MemoryBox-releases\p2-i13-voice-pilot-6d56da5` (Python at `.titanet-venv\Scripts\python.exe`, not `.venv`).
-- Storage constraint: FlightSim uses C: and has no E:. The development desktop’s E: is separate. Do not infer capacity problems on FlightSim C:, and do not perform any storage move under this handoff.
+- Development worktree: `E:\MemoryBox-dev\p2-i13-stage-a`
+- FlightSim checkout: `C:\MemoryBox`
+- Verified TitaNet tool release: `C:\MemoryBox-releases\p2-i13-voice-pilot-6d56da5` (`.titanet-venv\Scripts\python.exe`)
+- Reprocessing release used: `C:\MemoryBox-releases\p2-i13-eugene-reprocessing-7629c18`
+- Grandpa playback release used: `C:\MemoryBox-releases\p2-i13-grandpa-sessions-2-002-playback-032a113`
+
+## Key evidence files
+
+- [I13-VOICE-PILOT-STATUS.md](docs/implementation/p2-i13-stage-a/I13-VOICE-PILOT-STATUS.md)
+- [eugene-reprocessing-voice-pilot-report.json](docs/implementation/p2-i13-stage-a/eugene-reprocessing-voice-pilot-report.json)
+- [POST-PILOT-VOICE-GAP-PLAN.md](docs/implementation/p2-i13-stage-a/POST-PILOT-VOICE-GAP-PLAN.md)

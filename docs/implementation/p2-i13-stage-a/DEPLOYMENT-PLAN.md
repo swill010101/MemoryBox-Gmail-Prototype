@@ -1,6 +1,6 @@
 # Stage A deployment plan - Tom operates FlightSim
 
-Current voice next step: Eugene reprocessing lifecycle pilot completed on admission `66fb93af-92a9-4ef1-b3e6-c0f700e89276` ([readiness report](DEPLOYMENT-READINESS-EUGENE-REPROCESSING-VOICE-PILOT.md)). Full I13 acceptance gaps remain: overlap/poor-audio, face/voice corroboration, generalized accuracy, and archive unlock. Learn and all processing remain locked.
+Current voice next step: Gate 2 voice evidence is recorded in [I13-VOICE-PILOT-STATUS.md](I13-VOICE-PILOT-STATUS.md). Next gap requiring owner input: overlap/poor-audio ([OVERLAP-POOR-AUDIO-VOICE-GAP-PLAN.md](OVERLAP-POOR-AUDIO-VOICE-GAP-PLAN.md)). Face/voice corroboration and Gate 3/Gate 4 remain separate decisions. Learn locked.
 
 ## Current status - voice-result playback accepted by Tom
 
