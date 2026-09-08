@@ -62,7 +62,7 @@ Keep `MEMORYBOX_RECOGNITION_DRAIN=0`, `MEMORYBOX_SPEECH_DRAIN=0`, and no `MEMORY
 
 ## Exact next action
 
-1. **Voice pilot matrix** — Tom confirms Outcome **W** (waive additional run) in [CONSOLIDATED-VOICE-PILOT-PRODUCTION-REQUEST.md](docs/implementation/p2-i13-stage-a/CONSOLIDATED-VOICE-PILOT-PRODUCTION-REQUEST.md). Coverage: [VOICE-ASSIGNMENT-COVERAGE.md](docs/implementation/p2-i13-stage-a/VOICE-ASSIGNMENT-COVERAGE.md).
+1. **Voice pilot matrix** — **complete.** Tom waived additional runs (`Tom-waived-additional-voice-pilot-matrix-run-2026-09-08`). See [CONSOLIDATED-VOICE-PILOT-PRODUCTION-REQUEST.md](docs/implementation/p2-i13-stage-a/CONSOLIDATED-VOICE-PILOT-PRODUCTION-REQUEST.md).
 
 2. **Gate 4 beyond plan preview** — fresh sign-off for Outcome C+ if archive work continues.
 

@@ -61,9 +61,11 @@ Minimum package before `-Execute`:
 
 | Field | Value |
 |---|---|
-| Outcome (W / R / N) | _pending Tom reply_ |
-| Reference string | _pending_ |
-| Signed | |
-| Date | |
+| Outcome (W / R / N) | **W — Waive additional voice pilot run** |
+| Reference string | `Tom-waived-additional-voice-pilot-matrix-run-2026-09-08` |
+| Signed | Tom (chat 2026-09-08) |
+| Date | 2026-09-08 |
 
 **Agent stops here** until Tom records Outcome **W**, **R**, or **N**.
+
+Tom recorded **Outcome W** on 2026-09-08. No additional bounded voice pilot run is authorized for the five-category matrix.

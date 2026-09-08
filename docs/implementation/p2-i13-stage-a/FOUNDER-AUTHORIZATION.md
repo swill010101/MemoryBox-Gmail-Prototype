@@ -153,3 +153,15 @@ FlightSim preview on release at or after `ebd04f1` matched the reviewed plan:
 | `plan_sha256` | `f36cdb19c51abe13234b80c08b746901d5d195c5e8be621e10e5f2a85f46316c` |
 
 Tom reported all checks pass. Archive register/unlock/start remain separate founder decisions.
+
+
+## Voice pilot matrix Outcome W — 2026-09-08
+
+Tom chose **Outcome W** in [CONSOLIDATED-VOICE-PILOT-PRODUCTION-REQUEST.md](CONSOLIDATED-VOICE-PILOT-PRODUCTION-REQUEST.md): waive any additional bounded voice pilot run for the five-category I13 matrix.
+
+| Field | Value |
+|---|---|
+| Reference | `Tom-waived-additional-voice-pilot-matrix-run-2026-09-08` |
+| Coverage basis | [VOICE-ASSIGNMENT-COVERAGE.md](VOICE-ASSIGNMENT-COVERAGE.md) — canonical eight assignments; all five categories satisfied by **current** stopped admissions |
+
+**Not authorized:** Re-running prior voice pilots, a new matrix pilot, Learn unlock, drains, or treating this waiver as full I13 acceptance. Face/voice corroboration and Gate 4 execution remain separate decisions.
