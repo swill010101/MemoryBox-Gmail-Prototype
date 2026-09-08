@@ -53,24 +53,25 @@ Q1 remains excluded (listening only, no saved annotation). `vid-c57dbd21f993f6d1
 
 ## Gate position and locks
 
-Still **between Gate 2 and Gate 3**. Bounded voice evidence is substantial, but Gate 3 broadened processing and Gate 4 archive unlock/start are **not** authorized. Completed pilots do not open Learn or drains.
+**Gate 3 decision is the active next step.** Bounded Gate 2 voice evidence is recorded; Gate 3 bounded processing and Gate 4 archive unlock/start remain **not** authorized until Tom signs [GATE-3-DECISION-PRD.md](docs/implementation/p2-i13-stage-a/GATE-3-DECISION-PRD.md). Completed voice pilots do not open Learn or drains.
 
 Keep `MEMORYBOX_RECOGNITION_DRAIN=0`, `MEMORYBOX_SPEECH_DRAIN=0`, and no `MEMORYBOX_I13_ADMISSION_ID` outside a separately approved bounded operation.
 
 ## Exact next action
 
-1. **Optional read-only verify** on FlightSim:
+1. **Founder:** Read [GATE-3-DECISION-PRD.md](docs/implementation/p2-i13-stage-a/GATE-3-DECISION-PRD.md) and choose Outcome **A** (full transcription admission run), **B** (waive run; existing words satisfy evidence phase), or **C** (register/start/stop only). Reply with outcome and review reference strings.
+
+2. **Optional read-only preflight** before Outcome A/C on FlightSim:
 
 ```powershell
-$python = 'C:\MemoryBox-releases\p2-i13-voice-pilot-6d56da5\.titanet-venv\Scripts\python.exe'
 cd C:\MemoryBox
 git pull --ff-only origin codex/p2-i13-stage-a
-& $python -B docs\implementation\p2-i13-stage-a\inspect-voice-pilot-status.py
+python -B docs/implementation/p2-i13-stage-a/inventory-transcript-coverage.py
 ```
 
-2. **Next voice gap** requiring owner input before any run: overlap/poor-audio per [OVERLAP-POOR-AUDIO-VOICE-GAP-PLAN.md](docs/implementation/p2-i13-stage-a/OVERLAP-POOR-AUDIO-VOICE-GAP-PLAN.md) (Q1 sub-spans or new clear intervals; not on excluded 1532 Eugene evidence).
+Expect 22/22 sources with stored words (2026-09-06 checkpoint). Re-run changes the decision calculus only if counts differ.
 
-3. **Separate track:** face/voice corroboration and Gate 3/Gate 4 authorization remain distinct founder decisions.
+3. **Parallel track (not Gate 3):** overlap/poor-audio voice gap per [OVERLAP-POOR-AUDIO-VOICE-GAP-PLAN.md](docs/implementation/p2-i13-stage-a/OVERLAP-POOR-AUDIO-VOICE-GAP-PLAN.md); face/voice corroboration; Gate 4 remain separate.
 
 ## Actions that must not be repeated
 

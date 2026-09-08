@@ -51,3 +51,21 @@ After automatic approval review rejected publication, the assistant asked: "May 
 ## Explicit annotation performance publication approval
 
 Tom replied "approved" to the explicit request to commit and push the tested annotation query performance correction to origin/codex/p2-i13-stage-a. This covers the revised unapplied 031 view, tests, synthetic performance proof, rollback-only clone rehearsal helper and review documents. It does not authorize runtime migration or deployment.
+
+
+## Gate 3 Outcome A authorized — 2026-09-08
+
+Tom chose **Outcome A** (full bounded evidence-generation run) in [GATE-3-DECISION-PRD.md](GATE-3-DECISION-PRD.md).
+
+| Field | Value |
+|---|---|
+| Outcome | A — register, start, enqueue 22 transcribe units, process, stop |
+| Review reference | `Tom-approved-gate-3-evidence-generation-outcome-a-2026-09-08` |
+| Start reference | `Tom-approved-gate-3-bounded-start-2026-09-08` |
+| Plan | `bounded-manifest-proposal.json` SHA `330c2f90fa0de3b319097d17f31ca5dfabe6bd57b469a1a033a79e3851259b35` |
+
+This authorizes **transcription-only** admission on the 22-source manifest. It does **not** authorize Learn, recognition drain, face/voice matching, or Gate 4. Existing stored words are expected to produce noop completions.
+
+Tom also reported new owner evidence for the **parallel overlap/poor-audio voice track**: Eugene Will assignments plus an off-camera Tom Will reference. That work is **not** part of Gate 3; start overlap pilot planning with Eugene Will after Gate 3 execution. Run [inspect-overlap-voice-annotations.py](inspect-overlap-voice-annotations.py) on FlightSim to capture annotation IDs before proposing the next voice pilot.
+
+Execution: [DEPLOYMENT-READINESS-GATE-3-EVIDENCE-GENERATION.md](DEPLOYMENT-READINESS-GATE-3-EVIDENCE-GENERATION.md) and [deploy-gate-3-evidence-generation.ps1](deploy-gate-3-evidence-generation.ps1).

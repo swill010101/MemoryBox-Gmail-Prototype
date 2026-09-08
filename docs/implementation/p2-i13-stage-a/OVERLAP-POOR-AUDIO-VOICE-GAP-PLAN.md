@@ -12,6 +12,20 @@ Lifecycle reprocessing, Tom off-camera positive evidence, N1 Unknown no-match, a
 - `vid-c57dbd21f993f6d1` is excluded from **Eugene training and held-out voice evidence** because TV/background audio overlaps Eugene throughout Tom's listening review.
 - N1 on `vid-c015e0fe07414fcc` is narrow Unknown TV-announcer evidence only; it does not generalize to overlap on 1532.
 
+## Tom-reported owner evidence (2026-09-08)
+
+Tom saved Eugene Will evidence and an off-camera Tom Will reference for the next overlap/poor-audio voice pilot. **Start pilot planning with Eugene Will** after Gate 3 completes.
+
+Capture exact IDs on FlightSim before any proposal:
+
+```powershell
+cd C:\MemoryBox
+git pull --ff-only origin codex/p2-i13-stage-a
+python -B docs/implementation/p2-i13-stage-a/inspect-overlap-voice-annotations.py
+```
+
+Paste JSON output. Flag any Eugene assignment on `vid-c57dbd21f993f6d1` — that source remains excluded from Eugene training/held-out voice evidence.
+
 ## Candidate owner work (no pilot until saved)
 
 | Key | Range | Current state | Needed |

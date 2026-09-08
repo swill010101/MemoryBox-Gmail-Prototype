@@ -1,6 +1,6 @@
 # Stage A deployment plan - Tom operates FlightSim
 
-Current voice next step: Gate 2 voice evidence is recorded in [I13-VOICE-PILOT-STATUS.md](I13-VOICE-PILOT-STATUS.md). Next gap requiring owner input: overlap/poor-audio ([OVERLAP-POOR-AUDIO-VOICE-GAP-PLAN.md](OVERLAP-POOR-AUDIO-VOICE-GAP-PLAN.md)). Face/voice corroboration and Gate 3/Gate 4 remain separate decisions. Learn locked.
+**Active founder decision:** [GATE-3-DECISION-PRD.md](GATE-3-DECISION-PRD.md) — authorize bounded evidence-generation (transcription-only) Outcome A/C, or waive run Outcome B. Execution package: [DEPLOYMENT-READINESS-GATE-3-EVIDENCE-GENERATION.md](DEPLOYMENT-READINESS-GATE-3-EVIDENCE-GENERATION.md). Gate 2 voice evidence is recorded in [I13-VOICE-PILOT-STATUS.md](I13-VOICE-PILOT-STATUS.md). Overlap/poor-audio, face/voice corroboration, and Gate 4 remain separate. Learn locked.
 
 ## Current status - voice-result playback accepted by Tom
 
