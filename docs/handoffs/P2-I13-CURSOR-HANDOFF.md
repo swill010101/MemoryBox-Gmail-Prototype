@@ -4,7 +4,7 @@
 
 - Repository: `E:\MemoryBox-dev\p2-i13-stage-a`
 - Branch: `codex/p2-i13-stage-a`
-- Handoff HEAD: `ef12cb3` (after Eugene reprocessing lifecycle pilot recorded)
+- Handoff HEAD: `1b60e79`+ (after Gate 3 evidence-generation recorded)
 - Remote: `origin/codex/p2-i13-stage-a`
 - Working tree: clean unless noted below.
 
@@ -24,17 +24,17 @@ This handoff contains source and documentation state only. Do not add database d
 - Migrations 030, 031, and 032 applied on FlightSim. Do not rerun them.
 - Annotation-review workflow accepted at `7bc47b5911caeb8ca256dcc260f17943d2fb777a`.
 - Playback/result-modal release accepted at `d3785b93311920a3409961054368796ed7fa66b3`.
+- **Gate 3 evidence-generation completed** 2026-09-08 — admission `458d1a76-4ecb-4722-bd76-20125b14c1d3` (stopped); 22/22 transcribe noops; see [gate-3-evidence-generation-report.json](docs/implementation/p2-i13-stage-a/gate-3-evidence-generation-report.json).
 - Bounded voice pilots completed and stopped:
   - Original Eugene (T1) — admission `1039c733…` now **stale** after T1 retirement
   - Tom off-camera — `9e0a2605…` **current**
   - N1 Unknown — `46cb1d21…` **current**
   - Eugene Patio — `f59050d5…` **current**
-  - Eugene reprocessing lifecycle — `66fb93af…` **current** (2026-09-08)
+  - Eugene reprocessing lifecycle — `66fb93af…` **current**
 - T1 lifecycle retirement completed; stale cascade verified.
 - Playable copy published for `vid-34df63e61b949890` (`grandpa sessions 2 002.MP4`).
-- Two new Eugene assignments on that source enabled the lifecycle pilot.
 
-## Owner voice annotations (ten reviewed)
+## Owner voice annotations (ten reviewed + overlap track in progress)
 
 | Key | Person | Status |
 |---|---|---|
@@ -46,49 +46,46 @@ This handoff contains source and documentation state only. Do not add database d
 | N1 | Unknown TV | Held-out no-match only |
 | T3-patio | Eugene | Patio training |
 | E3-patio-held-out | Eugene | Patio held-out |
-| R1-gs2-fresh | Eugene | Lifecycle training (`3eb88a19…`) |
-| H1-gs2-held-out | Eugene | Lifecycle held-out (`5d87a6ac…`) |
+| R1-gs2-fresh | Eugene | Lifecycle training |
+| H1-gs2-held-out | Eugene | Lifecycle held-out |
 
-Q1 remains excluded (listening only, no saved annotation). `vid-c57dbd21f993f6d1` is excluded from Eugene voice evidence.
+Tom reports new Eugene Will and off-camera Tom Will evidence for overlap/poor-audio pilot planning. Run inspector on FlightSim to capture IDs. Q1 on 1532 remains listening-only. `vid-c57dbd21f993f6d1` excluded from Eugene voice match evidence.
 
 ## Gate position and locks
 
-**Gate 3 decision is the active next step.** Bounded Gate 2 voice evidence is recorded; Gate 3 bounded processing and Gate 4 archive unlock/start remain **not** authorized until Tom signs [GATE-3-DECISION-PRD.md](docs/implementation/p2-i13-stage-a/GATE-3-DECISION-PRD.md). Completed voice pilots do not open Learn or drains.
+**Between Gate 3 and Gate 4.** Gate 3 transcription evidence-generation is **complete**. Gate 4 archive unlock/start is **not** authorized. Learn and recognition drains stay locked.
 
 Keep `MEMORYBOX_RECOGNITION_DRAIN=0`, `MEMORYBOX_SPEECH_DRAIN=0`, and no `MEMORYBOX_I13_ADMISSION_ID` outside a separately approved bounded operation.
 
 ## Exact next action
 
-1. **Founder:** Read [GATE-3-DECISION-PRD.md](docs/implementation/p2-i13-stage-a/GATE-3-DECISION-PRD.md) and choose Outcome **A** (full transcription admission run), **B** (waive run; existing words satisfy evidence phase), or **C** (register/start/stop only). Reply with outcome and review reference strings.
-
-2. **Optional read-only preflight** before Outcome A/C on FlightSim:
+1. **Overlap voice pilot prep** — Eugene Will first. On FlightSim:
 
 ```powershell
+$python = 'C:\MemoryBox-releases\p2-i13-voice-pilot-6d56da5\.titanet-venv\Scripts\python.exe'
 cd C:\MemoryBox
 git pull --ff-only origin codex/p2-i13-stage-a
-python -B docs/implementation/p2-i13-stage-a/inventory-transcript-coverage.py
+& $python -B docs\implementation\p2-i13-stage-a\inspect-overlap-voice-annotations.py
 ```
 
-Expect 22/22 sources with stored words (2026-09-06 checkpoint). Re-run changes the decision calculus only if counts differ.
+Paste JSON. Agent drafts four-span overlap pilot proposal (design-only first).
 
-3. **Parallel track (not Gate 3):** overlap/poor-audio voice gap per [OVERLAP-POOR-AUDIO-VOICE-GAP-PLAN.md](docs/implementation/p2-i13-stage-a/OVERLAP-POOR-AUDIO-VOICE-GAP-PLAN.md); face/voice corroboration; Gate 4 remain separate.
+2. **Separate track:** Gate 4 decision; face/voice corroboration; full I13 acceptance — none automatic.
 
 ## Actions that must not be repeated
 
-- Migrations 030–032, T1 retirement, completed pilot reruns, Patio failure admission retry, playable-copy staging for `vid-34df63e61b949890` (already published), Eugene reprocessing lifecycle run (`66fb93af…`).
-- Bare `python` on FlightSim for I13 pilot helpers; use `.titanet-venv` under `p2-i13-voice-pilot-6d56da5`.
-- Do not create or assume an `E:` drive on FlightSim.
+- Migrations 030–032, T1 retirement, completed voice pilot reruns, Patio failure admission retry, grandpa 002 playable-copy staging, Eugene reprocessing lifecycle (`66fb93af…`), **Gate 3 evidence-generation run (`458d1a76…`)**.
+- Bare `python` on FlightSim for I13 helpers; use `.titanet-venv` under `p2-i13-voice-pilot-6d56da5`.
 
 ## Known paths
 
 - Development worktree: `E:\MemoryBox-dev\p2-i13-stage-a`
 - FlightSim checkout: `C:\MemoryBox`
-- Verified TitaNet tool release: `C:\MemoryBox-releases\p2-i13-voice-pilot-6d56da5` (`.titanet-venv\Scripts\python.exe`)
-- Reprocessing release used: `C:\MemoryBox-releases\p2-i13-eugene-reprocessing-7629c18`
-- Grandpa playback release used: `C:\MemoryBox-releases\p2-i13-grandpa-sessions-2-002-playback-032a113`
+- Verified TitaNet tool release: `C:\MemoryBox-releases\p2-i13-voice-pilot-6d56da5`
+- Gate 3 backup: `C:\MemoryBox-backups\i13-final-pre-gate-3-evidence-2bc4a542025249d2ab62886aa84cf4a5\memorybox.dump`
 
 ## Key evidence files
 
+- [gate-3-evidence-generation-report.json](docs/implementation/p2-i13-stage-a/gate-3-evidence-generation-report.json)
 - [I13-VOICE-PILOT-STATUS.md](docs/implementation/p2-i13-stage-a/I13-VOICE-PILOT-STATUS.md)
-- [eugene-reprocessing-voice-pilot-report.json](docs/implementation/p2-i13-stage-a/eugene-reprocessing-voice-pilot-report.json)
-- [POST-PILOT-VOICE-GAP-PLAN.md](docs/implementation/p2-i13-stage-a/POST-PILOT-VOICE-GAP-PLAN.md)
+- [OVERLAP-POOR-AUDIO-VOICE-GAP-PLAN.md](docs/implementation/p2-i13-stage-a/OVERLAP-POOR-AUDIO-VOICE-GAP-PLAN.md)

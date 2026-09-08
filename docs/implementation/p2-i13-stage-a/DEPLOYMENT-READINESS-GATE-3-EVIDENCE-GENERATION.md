@@ -1,6 +1,6 @@
 # Deployment readiness — Gate 3 evidence-generation (transcription only)
 
-**Status:** Tom authorized Outcome A on 2026-09-08. Execution package ready; FlightSim run pending.
+**Status:** Tom authorized Outcome A on 2026-09-08. **Completed** on FlightSim same day — admission `458d1a76-4ecb-4722-bd76-20125b14c1d3`, 22/22 transcribe items completed, legacy counts unchanged. Report: [gate-3-evidence-generation-report.json](gate-3-evidence-generation-report.json). **Do not rerun.**
 
 If Outcome **A** is approved, follow this document and [deploy-gate-3-evidence-generation.ps1](deploy-gate-3-evidence-generation.ps1).
 

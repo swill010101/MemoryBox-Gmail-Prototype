@@ -1,7 +1,6 @@
 # Gate 3 decision — bounded evidence-generation authorization
 
-**Status:** Awaiting founder sign-off  
-**Date:** 2026-09-08  
+**Status:** Outcome A completed on FlightSim 2026-09-08 — see [gate-3-evidence-generation-report.json](gate-3-evidence-generation-report.json).
 **Branch:** `codex/p2-i13-stage-a`  
 **Plan:** [bounded-manifest-proposal.json](bounded-manifest-proposal.json) (`purpose: evidence_generation`, transcribe lane only)
 
@@ -180,7 +179,8 @@ If Outcome **B** is approved, no FlightSim processing run; update `FOUNDER-AUTHO
 | Decision (A / B / C) | **A** — full bounded run |
 | Review / waiver reference | `Tom-approved-gate-3-evidence-generation-outcome-a-2026-09-08` |
 | Start reference (A/C only) | `Tom-approved-gate-3-bounded-start-2026-09-08` |
-| Signed | Tom (chat 2026-09-08) |
+| Signed | Tom (chat 2026-09-08; executed same day) |
 | Date | 2026-09-08 |
+| Admission | `458d1a76-4ecb-4722-bd76-20125b14c1d3` (stopped) |
 
 **Parallel note (not Gate 3):** Tom reported Eugene Will evidence and an off-camera Tom Will reference saved in MB for the overlap/poor-audio voice track. Next voice pilot planning starts with Eugene Will after Gate 3 executes.

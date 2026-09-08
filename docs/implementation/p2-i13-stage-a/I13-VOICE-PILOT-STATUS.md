@@ -27,7 +27,7 @@ Playable copy for `vid-34df63e61b949890` published to `browser_proxies/7cb205f4b
 1. **Overlap / poor-audio** — Q1 listening-only; U1 remainder unreviewed; `vid-c57dbd21f993f6d1` excluded from Eugene evidence.
 2. **Face/voice corroboration** — separate acceptance matrix.
 3. **Generalized accuracy** — not claimed by any pilot.
-4. **Gate 3 bounded processing** — founder decision pending; see [GATE-3-DECISION-PRD.md](GATE-3-DECISION-PRD.md).
+4. **Gate 3 bounded processing** — **complete** 2026-09-08; admission `458d1a76-4ecb-4722-bd76-20125b14c1d3` (stopped). See [gate-3-evidence-generation-report.json](gate-3-evidence-generation-report.json). Do not retry.
 5. **Gate 4 archive unlock** — separate founder decision.
 
 See [POST-PILOT-VOICE-GAP-PLAN.md](POST-PILOT-VOICE-GAP-PLAN.md).

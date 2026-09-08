@@ -15,7 +15,7 @@ This checklist makes existing requirements explicit; it does not replace the acc
 - [ ] Review poor-audio, multiple-person and no-match cases against owner-confirmed annotations; uncertain output must not masquerade as confirmed identity.
 - [ ] Record source/interval provenance, model and threshold versions, measured results and errors. Threshold policy remains for founder review after bounded measurement; no numeric accuracy target is invented here.
 - [x] Preserve immutable machine transcripts and additive audited owner overlays. Retirement and lifecycle reprocessing verified: T1 retirement stale cascade and fresh-reference pilot `66fb93af…` completed without altering legacy queues or current Tom/N1/Patio evidence.
-- [ ] Prove scope/cardinality limits, queue/retry/worker gates and locked archive behavior throughout. Founder acceptance, archive unlock and archive start remain separate decisions.
+- [ ] Prove scope/cardinality limits, queue/retry/worker gates and locked archive behavior throughout. Gate 3 evidence-generation admission exercised 22 transcribe units under I13 controls with legacy counts unchanged; founder acceptance, archive unlock and archive start remain separate decisions.
 
 ## Completed bounded pilot evidence
 

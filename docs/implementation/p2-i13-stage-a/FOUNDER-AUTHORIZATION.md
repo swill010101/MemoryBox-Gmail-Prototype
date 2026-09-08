@@ -69,3 +69,15 @@ This authorizes **transcription-only** admission on the 22-source manifest. It d
 Tom also reported new owner evidence for the **parallel overlap/poor-audio voice track**: Eugene Will assignments plus an off-camera Tom Will reference. That work is **not** part of Gate 3; start overlap pilot planning with Eugene Will after Gate 3 execution. Run [inspect-overlap-voice-annotations.py](inspect-overlap-voice-annotations.py) on FlightSim to capture annotation IDs before proposing the next voice pilot.
 
 Execution: [DEPLOYMENT-READINESS-GATE-3-EVIDENCE-GENERATION.md](DEPLOYMENT-READINESS-GATE-3-EVIDENCE-GENERATION.md) and [deploy-gate-3-evidence-generation.ps1](deploy-gate-3-evidence-generation.ps1).
+
+
+## Gate 3 Outcome A completed — 2026-09-08
+
+FlightSim execution completed on release `1b60e798f69c4d17ab71f9bffc35e6912fdbde70`. Admission `458d1a76-4ecb-4722-bd76-20125b14c1d3` registered, started, enqueued 22 transcribe units, processed to completion, and stopped. All 22 queue items completed (expected noop for existing words). Legacy word/annotation counts unchanged; automatic retry false.
+
+| Field | Value |
+|---|---|
+| Backup | `C:\MemoryBox-backups\i13-final-pre-gate-3-evidence-2bc4a542025249d2ab62886aa84cf4a5\memorybox.dump` |
+| Backup SHA-256 | `284d06b88d6e4fe90f19ef9397adf8f589e51fc2935d66f0f5335f6e3e84f909` |
+
+Recorded in [gate-3-evidence-generation-report.json](gate-3-evidence-generation-report.json). Gate 3 transcription evidence-generation is **complete**. Gate 4 archive unlock/start remains a separate founder decision. Learn and recognition drains remain locked unless separately authorized.

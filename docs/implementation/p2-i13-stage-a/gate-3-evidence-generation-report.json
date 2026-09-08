@@ -1,0 +1,27 @@
+{
+  "ok": true,
+  "completed_at": "2026-09-08",
+  "release_sha": "1b60e798f69c4d17ab71f9bffc35e6912fdbde70",
+  "admission_id": "458d1a76-4ecb-4722-bd76-20125b14c1d3",
+  "state": "stopped",
+  "purpose": "evidence_generation",
+  "plan_sha256": "330c2f90fa0de3b319097d17f31ca5dfabe6bd57b469a1a033a79e3851259b35",
+  "review_reference": "Tom-approved-gate-3-evidence-generation-outcome-a-2026-09-08",
+  "start_reference": "Tom-approved-gate-3-bounded-start-2026-09-08",
+  "stop_reference": "Tom-stopped-gate-3-evidence-generation-2026-09-08",
+  "backup_file": "C:\\MemoryBox-backups\\i13-final-pre-gate-3-evidence-2bc4a542025249d2ab62886aa84cf4a5\\memorybox.dump",
+  "backup_sha256": "284d06b88d6e4fe90f19ef9397adf8f589e51fc2935d66f0f5335f6e3e84f909",
+  "enqueued": 22,
+  "processed_batches": 22,
+  "queue_final": {
+    "by_status": {
+      "completed": 22
+    },
+    "total": 22
+  },
+  "legacy_counts_unchanged": true,
+  "automatic_retry": false,
+  "expected_runtime": "noop_transcribe_for_existing_words",
+  "tool_release": "C:\\MemoryBox-releases\\p2-i13-voice-pilot-6d56da5",
+  "notes": "All 22 admitted transcribe items completed; transcript word counts unchanged. Does not authorize Learn, recognition drain, acceptance_learning, or Gate 4."
+}

@@ -1,6 +1,8 @@
 # Stage A deployment plan - Tom operates FlightSim
 
-**Active founder decision:** [GATE-3-DECISION-PRD.md](GATE-3-DECISION-PRD.md) — authorize bounded evidence-generation (transcription-only) Outcome A/C, or waive run Outcome B. Execution package: [DEPLOYMENT-READINESS-GATE-3-EVIDENCE-GENERATION.md](DEPLOYMENT-READINESS-GATE-3-EVIDENCE-GENERATION.md). Gate 2 voice evidence is recorded in [I13-VOICE-PILOT-STATUS.md](I13-VOICE-PILOT-STATUS.md). Overlap/poor-audio, face/voice corroboration, and Gate 4 remain separate. Learn locked.
+**Gate position:** Gate 3 evidence-generation **complete** (2026-09-08). Next: overlap/poor-audio voice pilot planning (Eugene Will first) and separate Gate 4 decision. Learn locked.
+
+**Gate 3 admission (stopped, do not retry):** `458d1a76-4ecb-4722-bd76-20125b14c1d3` — [gate-3-evidence-generation-report.json](gate-3-evidence-generation-report.json).
 
 ## Current status - voice-result playback accepted by Tom
 
