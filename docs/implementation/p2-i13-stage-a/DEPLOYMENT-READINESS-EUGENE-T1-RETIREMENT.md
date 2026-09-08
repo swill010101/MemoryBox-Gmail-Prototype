@@ -8,7 +8,7 @@ T2 is excluded because it is shared by the current Tom and N1 pilots.
 
 ## Guarded execution
 
-The script requires the read-only T1 preflight to remain current, verifies a new custom-format PostgreSQL backup with `pg_restore --list` and matching container/local SHA-256 on FlightSim C:, then writes exactly one immutable retirement record. It verifies the original Eugene result becomes stale while the current Tom, N1, and Eugene Patio results remain current, and legacy counts remain unchanged.
+The script uses the verified TitaNet tool release's Python environment, requires the read-only T1 preflight to remain current, verifies a new custom-format PostgreSQL backup with `pg_restore --list` and matching container/local SHA-256 on FlightSim C:, then writes exactly one immutable retirement record. It verifies the original Eugene result becomes stale while the current Tom, N1, and Eugene Patio results remain current, and legacy counts remain unchanged.
 
 No private audio, model inference, media conversion, Learn, queue drain, migration, service restart, or reprocessing occurs. No planned downtime.
 

@@ -2,11 +2,13 @@
 param(
     [Parameter(Mandatory=$true)][string]$ExpectedReleaseSha,
     [Parameter(Mandatory=$true)][string]$ApprovalReference,
+    [Parameter(Mandatory=$true)][string]$ToolRelease,
     [switch]$Execute
 )
 $ErrorActionPreference='Stop'
 $release=(Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
-$python=(Get-Command python -ErrorAction Stop).Source
+$toolRoot=(Resolve-Path -LiteralPath $ToolRelease).Path
+$python=Join-Path $toolRoot '.titanet-venv\Scripts\python.exe'
 $preflight=Join-Path $PSScriptRoot 'prepare-eugene-t1-retirement.py'
 $annotation='d5a3d050-76d6-446e-91d4-ff89986856cb'
 $admission='1039c733-2149-40b2-b027-97058e032af3'
@@ -28,6 +30,7 @@ try {
   if(git status --porcelain){throw 'Release is not clean; preserve it and stop.'}
   if(-not $ApprovalReference.Trim()){throw 'Approval reference is required.'}
   if(-not $env:MEMORYBOX_DATABASE_URL){throw 'MEMORYBOX_DATABASE_URL is absent; use the configured FlightSim shell.'}
+  if(-not (Test-Path -LiteralPath $python)){throw 'The verified TitaNet Python environment is unavailable.'}
   $check=& $python -B $preflight
   Require-LastExit 'T1 retirement preflight failed.'
   $checkJson=(($check|Where-Object{$_ -and $_.Trim()})-join "`n")|ConvertFrom-Json
