@@ -38,6 +38,16 @@ class TitaNetTests(unittest.TestCase):
     def test_substitute_checkpoint_rejected(self):
         p=fixture();p['model']['sha256']='0'*64
         with self.assertRaises(ValueError):validate(p)
+    def test_check_stopped_is_explicit_and_read_only(self):
+        from memorybox.processing.voice_pilot_cli import main
+        from memorybox.processing import voice_pilot_store as store, voice_pilot_runner as runner
+        from contextlib import redirect_stdout
+        import io
+        plan=fixture(); output=io.StringIO()
+        with patch.object(store,'load_for_check',return_value=plan) as load, patch.object(runner,'preflight') as preflight, redirect_stdout(output):
+            result=main(['check','--id','test','--expected-plan-sha',validate(plan)['plan_sha256'],'--media-root','root','--model','model','--ffmpeg','ffmpeg','--allow-stopped'])
+        self.assertEqual(result,0); load.assert_called_once_with('test'); preflight.assert_called_once()
+        self.assertIn('"read_only": true',output.getvalue())
     def test_prepare_requires_explicit_thresholds(self):
         from memorybox.processing.voice_pilot_cli import main
         from contextlib import redirect_stderr

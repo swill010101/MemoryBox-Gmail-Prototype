@@ -19,12 +19,15 @@ $backupRoot = 'C:\MemoryBox-backups'
 $container = 'memorybox-pg'
 $mediaRoot = 'P:\Photos\Home Videos'
 
-function Require-LastExit([string]$message) {
-    if ($LASTEXITCODE -ne 0) { throw $message }
+function Require-LastExit([string]$message, [object[]]$output) {
+    if ($LASTEXITCODE -ne 0) {
+        foreach ($line in $output) { if ($null -ne $line) { Write-Host $line } }
+        throw $message
+    }
 }
 function Invoke-DbJson([string]$query) {
     $out = docker exec $container psql -X -q -A -t -U memorybox -d memorybox -v ON_ERROR_STOP=1 -c $query
-    Require-LastExit 'Database read failed.'
+    Require-LastExit 'Database read failed.' $out
     return (($out | Where-Object { $_ -and $_.Trim() }) -join '') | ConvertFrom-Json
 }
 function Snapshot-Counts {
@@ -45,7 +48,7 @@ try {
     if ((Get-FileHash -LiteralPath $model -Algorithm SHA256).Hash.ToLowerInvariant() -ne $modelSha) { throw 'TitaNet model hash mismatch.' }
     if (-not (Test-Path -LiteralPath $plan)) { throw 'Reviewed Eugene Patio pilot plan is missing.' }
     $preview = & $python -B -m memorybox.processing.control preview --plan $plan
-    Require-LastExit 'Eugene Patio pilot plan preview failed.'
+    Require-LastExit 'Eugene Patio pilot plan preview failed.' $preview
     $previewJson = (($preview | Where-Object { $_ -and $_.Trim() }) -join "`n") | ConvertFrom-Json
     if ($previewJson.purpose -ne 'voice_pilot' -or $previewJson.work_items -ne 4 -or $previewJson.max_attempts -ne 4 -or $previewJson.audio_seconds -ne 49.64) { throw 'Eugene Patio pilot preview did not preserve the fixed scope.' }
     if ($previewJson.plan_sha256 -ne $ExpectedPlanSha.ToLowerInvariant()) { throw 'Reviewed Eugene Patio pilot plan hash mismatch.' }
@@ -55,7 +58,7 @@ try {
     }
     if (-not (Test-Path -LiteralPath $mediaRoot)) { throw 'Configured media root is unavailable.' }
     docker inspect $container | Out-Null
-    Require-LastExit 'memorybox-pg container is unavailable.'
+    Require-LastExit 'memorybox-pg container is unavailable.' @()
     $ffmpeg = Get-Command ffmpeg.exe -ErrorAction SilentlyContinue
     if (-not $ffmpeg) { $ffmpeg = Get-Command ffmpeg -ErrorAction SilentlyContinue }
     if (-not $ffmpeg) { throw 'ffmpeg is unavailable.' }
@@ -67,31 +70,31 @@ try {
     $remoteDir = "/tmp/mb-i13-final-pre-eugene-patio-$token"
     New-Item -ItemType Directory -Path $backupDir -ErrorAction Stop | Out-Null
     docker exec $container mkdir $remoteDir
-    Require-LastExit 'Container backup directory creation failed.'
+    Require-LastExit 'Container backup directory creation failed.' @()
     docker exec -e 'PGOPTIONS=-c default_transaction_read_only=on' $container pg_dump -U memorybox -d memorybox --format=custom --lock-wait-timeout=5000 --file="$remoteDir/memorybox.dump"
-    Require-LastExit 'Fresh backup failed.'
+    Require-LastExit 'Fresh backup failed.' @()
     docker exec $container pg_restore --list "$remoteDir/memorybox.dump" | Out-Null
-    Require-LastExit 'Fresh backup archive inspection failed.'
+    Require-LastExit 'Fresh backup archive inspection failed.' @()
     $containerHash = ((docker exec $container sha256sum "$remoteDir/memorybox.dump") -split '\s+')[0]
-    Require-LastExit 'Container backup hash failed.'
+    Require-LastExit 'Container backup hash failed.' @()
     $backupFile = Join-Path $backupDir 'memorybox.dump'
     docker cp "${container}:$remoteDir/memorybox.dump" $backupFile
-    Require-LastExit 'Backup copy failed.'
+    Require-LastExit 'Backup copy failed.' @()
     $backupHash = (Get-FileHash -LiteralPath $backupFile -Algorithm SHA256).Hash.ToLowerInvariant()
     if ($backupHash -ne $containerHash) { throw 'Fresh backup hash mismatch.' }
     [pscustomobject]@{ backup_file=$backupFile; bytes=(Get-Item -LiteralPath $backupFile).Length; sha256=$backupHash; container_hash_matches=$true } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $backupDir 'backup-proof.json') -Encoding UTF8
 
     $planSha = $previewJson.plan_sha256
     $registered = & $python -B -m memorybox.processing.control register --plan $plan --review-ref $ApprovalReference
-    Require-LastExit 'Eugene Patio pilot admission registration failed.'
+    Require-LastExit 'Eugene Patio pilot admission registration failed.' $registered
     $admission = (($registered | Where-Object { $_ -and $_.Trim() }) -join "`n") | ConvertFrom-Json
     if (-not $admission.id) { throw 'Admission identifier missing.' }
     $admissionId = $admission.id
     try {
         & $python -B -m memorybox.processing.control start --id $admissionId --reference $ApprovalReference | Out-Null
-        Require-LastExit 'Eugene Patio pilot admission start failed.'
-        $run = & $python -B -m memorybox.processing.voice_pilot_cli run --id $admissionId --expected-plan-sha $planSha --media-root $mediaRoot --model $model --ffmpeg $ffmpeg.Source
-        Require-LastExit 'Eugene Patio pilot run failed; no automatic retry.'
+        Require-LastExit 'Eugene Patio pilot admission start failed.' @()
+        $run = & $python -B -m memorybox.processing.voice_pilot_cli run --id $admissionId --expected-plan-sha $planSha --media-root $mediaRoot --model $model --ffmpeg $ffmpeg.Source 2>&1
+        Require-LastExit 'Eugene Patio pilot run failed; no automatic retry.' $run
         $runResult = (($run | Where-Object { $_ -and $_.Trim() }) -join "`n") | ConvertFrom-Json
     }
     finally {

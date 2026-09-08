@@ -7,13 +7,14 @@ from memorybox.speech.annotations import corpus, validate_span
 from .scope import ScopeDenied, digest
 from .voice_pilot import validate
 
-def check_annotations(c, plan):
+def check_annotations(c, plan, *, lock_sources=True):
     parent = corpus()
     if digest(parent) != plan['parent_manifest_sha256'] or parent != plan['manifest']:
         raise ScopeDenied('pilot_parent_changed')
-    # Same source lock used by owner annotation writes and transcript publication.
-    for key in sorted({s['provider_key']+':'+s['source_id'] for s in plan['spans']}):
-        c.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))',(key,))
+    # Mutating paths serialize with annotation/transcript publication. Diagnostics read only.
+    if lock_sources:
+        for key in sorted({s['provider_key']+':'+s['source_id'] for s in plan['spans']}):
+            c.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))',(key,))
     for s in plan['spans']:
         row=c.execute("""SELECT a.*,v.machine,v.provider_key,v.source_id FROM i13_active_annotations a
           JOIN i13_current_transcripts v ON v.id=a.version_id WHERE a.id=%s::uuid""",(s['annotation_id'],)).fetchone()
@@ -27,22 +28,30 @@ def check_annotations(c, plan):
         if c.execute('SELECT 1 FROM i13_voice_pilot_retirements WHERE annotation_id=%s::uuid',(s['annotation_id'],)).fetchone():
             raise ScopeDenied('pilot_reference_or_evidence_retired')
 
-def checked(c, identifier):
+def checked(c, identifier, *, allow_stopped=False, lock_sources=True):
     UUID(identifier)
     c.execute("SET LOCAL lock_timeout='5s'")
     c.execute("SET LOCAL statement_timeout='20s'")
-    row=c.execute('SELECT * FROM i13_processing_admissions WHERE id=%s::uuid FOR SHARE',(identifier,)).fetchone()
+    row=c.execute('SELECT * FROM i13_processing_admissions WHERE id=%s::uuid'+(' FOR SHARE' if lock_sources else ''),(identifier,)).fetchone()
     if not row: raise ScopeDenied('admission_not_found')
     plan=row['plan_json']; validate(plan)
-    if row['plan_sha256']!=digest(plan) or row['state']!='started' or not row['start_ref']:
+    valid_state = row['state']=='started' or (allow_stopped and row['state']=='stopped')
+    if row['plan_sha256']!=digest(plan) or not valid_state or not row['start_ref']:
         raise ScopeDenied('pilot_not_started_or_changed')
-    check_annotations(c,plan)
+    check_annotations(c,plan,lock_sources=lock_sources)
     return plan
 
 def load(identifier):
     with connection() as c:
         c.execute("SET LOCAL statement_timeout='20s'")
         return checked(c,identifier)
+
+def load_for_check(identifier):
+    """Read current evidence for an already-stopped pilot; never authorizes work."""
+    with connection() as c:
+        c.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
+        c.execute("SET LOCAL statement_timeout='20s'")
+        return checked(c,identifier,allow_stopped=True,lock_sources=False)
 
 def claim(identifier):
     with connection() as c:

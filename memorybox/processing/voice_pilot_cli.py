@@ -47,6 +47,7 @@ def main(argv=None):
     for verb in ('check','run'):
         q=sub.add_parser(verb)
         for flag in ('id','expected-plan-sha','media-root','model','ffmpeg'):q.add_argument('--'+flag,required=True)
+        if verb=='check': q.add_argument('--allow-stopped',action='store_true')
     q=sub.add_parser('retire');q.add_argument('--annotation-id',required=True);q.add_argument('--reason',required=True)
     a=p.parse_args(argv)
     try:
@@ -59,8 +60,8 @@ def main(argv=None):
             result=retire(a.annotation_id,a.reason)
         elif a.action=='check':
             from .voice_pilot_runner import preflight
-            from .voice_pilot_store import load
-            plan=load(a.id)
+            from .voice_pilot_store import load, load_for_check
+            plan=(load_for_check if a.allow_stopped else load)(a.id)
             if digest(plan)!=a.expected_plan_sha: raise ScopeDenied('pilot_reviewed_plan_hash_mismatch')
             preflight(plan,a.media_root,a.model,a.ffmpeg,time.monotonic()+1200)
             result={'read_only':True,'files_verified':True,'model_execution_verified':False,**validate(plan)}
