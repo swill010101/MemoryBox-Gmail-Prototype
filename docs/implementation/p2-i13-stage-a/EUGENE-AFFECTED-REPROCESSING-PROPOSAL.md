@@ -59,4 +59,4 @@ Budget: one training span, three held-out spans, ~39.52 seconds selected audio, 
 
 ## Current state
 
-Design-only proposal is **ready for founder review**. No admission, backup, deployment helper, or processing run is authorized by this document alone. Next: founder consolidated authorization, then prepare FlightSim readiness package mirroring Patio/Tom/N1 deploy helpers.
+Tom approved the proposal and one bounded lifecycle run on 2026-09-08 (`Tom-approved-eugene-reprocessing-lifecycle-run-2026-09-08`). FlightSim helpers and readiness steps are in [DEPLOYMENT-READINESS-EUGENE-REPROCESSING-VOICE-PILOT.md](DEPLOYMENT-READINESS-EUGENE-REPROCESSING-VOICE-PILOT.md). Execute from a detached release using the verified TitaNet tool release; no Learn, drains, or archive processing.
