@@ -1,6 +1,6 @@
 # FlightSim readiness: Gate 4 archive plan preview (Outcome B)
 
-**Status:** Plan-only — **no register, unlock, start, or drains**  
+**Status:** **Outcome B complete** on FlightSim 2026-09-08 — preview matched expected SHA and counts. No register/unlock/start.
 **Waiver:** [NARROW-ACCEPTANCE-WAIVER.md](NARROW-ACCEPTANCE-WAIVER.md)  
 **Plan:** [archive-manifest-proposal.json](archive-manifest-proposal.json)
 

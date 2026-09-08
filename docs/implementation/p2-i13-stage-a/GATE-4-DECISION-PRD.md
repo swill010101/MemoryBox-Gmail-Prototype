@@ -200,7 +200,7 @@ Escalating operator paths. Each step requires fresh backup before writes. **Do n
 
 **Deferred until:** face/voice corroboration scope decided, or full corpus acceptance path chosen.
 
-**2026-09-08 update:** Tom authorized [NARROW-ACCEPTANCE-WAIVER.md](NARROW-ACCEPTANCE-WAIVER.md) and Gate 4 Outcome **B** plan-only preview — see [archive-manifest-proposal.json](archive-manifest-proposal.json) and [DEPLOYMENT-READINESS-GATE-4-ARCHIVE-PLAN-PREVIEW.md](DEPLOYMENT-READINESS-GATE-4-ARCHIVE-PLAN-PREVIEW.md). Register/unlock/start still require fresh sign-off.
+**2026-09-08 update:** Tom authorized [NARROW-ACCEPTANCE-WAIVER.md](NARROW-ACCEPTANCE-WAIVER.md) and Gate 4 Outcome **B** plan-only preview — see [archive-manifest-proposal.json](archive-manifest-proposal.json) and [DEPLOYMENT-READINESS-GATE-4-ARCHIVE-PLAN-PREVIEW.md](DEPLOYMENT-READINESS-GATE-4-ARCHIVE-PLAN-PREVIEW.md). **Outcome B completed on FlightSim** same day (preview SHA/counts matched). Register/unlock/start still require fresh sign-off.
 
 ---
 

@@ -62,7 +62,7 @@ Keep `MEMORYBOX_RECOGNITION_DRAIN=0`, `MEMORYBOX_SPEECH_DRAIN=0`, and no `MEMORY
 
 ## Exact next action
 
-1. **Gate 4 Outcome B** — Run plan preview on FlightSim: [DEPLOYMENT-READINESS-GATE-4-ARCHIVE-PLAN-PREVIEW.md](docs/implementation/p2-i13-stage-a/DEPLOYMENT-READINESS-GATE-4-ARCHIVE-PLAN-PREVIEW.md). Narrow acceptance waiver recorded: [NARROW-ACCEPTANCE-WAIVER.md](docs/implementation/p2-i13-stage-a/NARROW-ACCEPTANCE-WAIVER.md).
+1. **Gate 4 beyond plan preview** — fresh sign-off required for Outcome C (register only), D (unlock), or E (full start). Waiver and plan SHA recorded in [NARROW-ACCEPTANCE-WAIVER.md](docs/implementation/p2-i13-stage-a/NARROW-ACCEPTANCE-WAIVER.md); FlightSim preview **passed** 2026-09-08.
 
 2. **Separate track:** face/voice corroboration; full I13 acceptance; P2-I14 only after I13 closeout.
 

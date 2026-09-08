@@ -138,3 +138,18 @@ Tom chose option **2**: narrow acceptance waiver plus Gate 4 Outcome **B** (arch
 See [NARROW-ACCEPTANCE-WAIVER.md](NARROW-ACCEPTANCE-WAIVER.md) and [DEPLOYMENT-READINESS-GATE-4-ARCHIVE-PLAN-PREVIEW.md](DEPLOYMENT-READINESS-GATE-4-ARCHIVE-PLAN-PREVIEW.md).
 
 **Not authorized:** `register`, `unlock`, `start`, drains, full 22-source acceptance, full I13 sign-off, or P2-I14.
+
+
+## Gate 4 Outcome B plan preview completed — 2026-09-08
+
+FlightSim preview on release at or after `ebd04f1` matched the reviewed plan:
+
+| Field | Value |
+|---|---|
+| `source_count` | 5 |
+| `person_count` | 2 |
+| `work_items` | 10 |
+| `max_attempts` | 20 |
+| `plan_sha256` | `f36cdb19c51abe13234b80c08b746901d5d195c5e8be621e10e5f2a85f46316c` |
+
+Tom reported all checks pass. Archive register/unlock/start remain separate founder decisions.
