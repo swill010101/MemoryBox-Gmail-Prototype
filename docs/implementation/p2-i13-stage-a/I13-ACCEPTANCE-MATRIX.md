@@ -145,5 +145,8 @@ Corroboration-specific: `tests/test_i13_face_voice_corroboration.py` (7 tests).
 FlightSim read-only corroboration (when DB available):
 
 ```powershell
-python docs/implementation/p2-i13-stage-a/inspect-face-voice-corroboration.py
+cd C:\MemoryBox
+# deployment env loaded (MEMORYBOX_DATABASE_URL)
+$python = 'C:\MemoryBox-releases\p2-i13-voice-pilot-6d56da5\.titanet-venv\Scripts\python.exe'
+& $python -B docs\implementation\p2-i13-stage-a\inspect-face-voice-corroboration.py
 ```

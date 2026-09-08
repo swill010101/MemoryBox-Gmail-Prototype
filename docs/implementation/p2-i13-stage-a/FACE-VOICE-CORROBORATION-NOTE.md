@@ -40,12 +40,19 @@ I13 requires face and voice evidence to remain **independent**, with **transpare
 ## Verification
 
 1. Run unit tests: `python -m unittest tests.test_i13_face_voice_corroboration -v`
-2. On FlightSim (read-only): `python docs/implementation/p2-i13-stage-a/inspect-face-voice-corroboration.py`
+2. On FlightSim (read-only) — load deployment env first, then use **TitaNet venv**, not bare `python`:
+
+```powershell
+cd C:\MemoryBox
+# load established deployment env (MEMORYBOX_DATABASE_URL) as for serve
+$python = 'C:\MemoryBox-releases\p2-i13-voice-pilot-6d56da5\.titanet-venv\Scripts\python.exe'
+& $python -B docs\implementation\p2-i13-stage-a\inspect-face-voice-corroboration.py
+```
 3. Review UI: `/review/ui` → **Face/voice corroboration** section
 
 Optional JSON export (E: path only):
 
 ```powershell
 $env:MEMORYBOX_I13_CORROBORATION_OUTPUT = "E:\MemoryBox-dev\p2-i13-stage-a\docs\implementation\p2-i13-stage-a\face-voice-corroboration-report.json"
-python docs/implementation/p2-i13-stage-a/inspect-face-voice-corroboration.py
+& $python -B docs\implementation\p2-i13-stage-a\inspect-face-voice-corroboration.py
 ```

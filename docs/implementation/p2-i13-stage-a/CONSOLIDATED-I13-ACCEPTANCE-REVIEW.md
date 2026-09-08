@@ -105,8 +105,9 @@ cd C:\MemoryBox
 git fetch origin
 git checkout codex/p2-i13-stage-a
 git pull origin codex/p2-i13-stage-a
-# restart serve/ask as usual
-python docs/implementation/p2-i13-stage-a/inspect-face-voice-corroboration.py
+# restart serve as usual (deployment env loaded)
+$python = 'C:\MemoryBox-releases\p2-i13-voice-pilot-6d56da5\.titanet-venv\Scripts\python.exe'
+& $python -B docs\implementation\p2-i13-stage-a\inspect-face-voice-corroboration.py
 ```
 
 **Do not** run archive register/unlock/start or enable drains as part of I13 closeout.
