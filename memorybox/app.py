@@ -1166,6 +1166,20 @@ def review_voice_pilot_results() -> dict[str, Any]:
         "processing_started": False,
     }
 
+
+@app.get("/review/face-voice-corroboration")
+def review_face_voice_corroboration() -> dict[str, Any]:
+    """Return read-only face/voice corroboration for bounded canonical assignments."""
+    from memorybox.processing import face_voice_corroboration as fvc
+
+    try:
+        return fvc.build_report_from_connection()
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="face/voice corroboration evidence unavailable",
+        ) from exc
+
 @app.get("/review/ui")
 def review_ui() -> HTMLResponse:
     return _html_ui(REVIEW_STATIC, surface="review", missing="Review UI missing")

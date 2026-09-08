@@ -107,6 +107,13 @@
       <div id="voicePilotResults" class="muted">Loading completed pilot results…</div>
     </section>
 
+    <section aria-labelledby="corroborationHeading">
+      <h2 id="corroborationHeading" style="font-size:1rem;margin:0 0 0.5rem">Face/voice corroboration</h2>
+      <p class="muted">Independent face and voice evidence on the same source interval. Corroboration does not merge scores or start processing.</p>
+      <button class="secondary" id="refreshCorroboration" type="button">Refresh corroboration</button>
+      <div id="corroborationResults" class="muted">Loading corroboration report…</div>
+    </section>
+
     <section>
       <h2 style="font-size:1rem;margin:0 0 0.5rem">1. Video</h2>
       <button class="secondary" id="refreshVideos" type="button">Refresh videos</button>
@@ -249,6 +256,67 @@
         renderVoicePilotResults(await j("/review/voice-pilot-results"));
       } catch (err) {
         root.textContent = "Voice-pilot results are unavailable.";
+        show(err);
+      }
+    }
+
+    function renderCorroboration(data) {
+      const root = document.getElementById("corroborationResults");
+      root.replaceChildren();
+      const rows = data.assignments || [];
+      if (!rows.length) {
+        root.textContent = "No bounded corroboration assignments are available.";
+        return;
+      }
+      const summary = document.createElement("p");
+      summary.className = "muted";
+      summary.textContent = (data.policy_summary || "") + " Policy " + (data.policy_version || "");
+      root.appendChild(summary);
+      const list = document.createElement("div");
+      list.className = "voice-pilot-list";
+      rows.forEach((row) => {
+        const card = document.createElement("div");
+        card.className = "voice-pilot-run";
+        const head = document.createElement("div");
+        head.className = "muted";
+        const status = row.corroboration && row.corroboration.status ? row.corroboration.status : "unknown";
+        head.textContent = (row.key || "?") + " · " + status + " · " + (row.source_id || "source unavailable");
+        card.appendChild(head);
+        const detail = document.createElement("div");
+        detail.className = "voice-pilot-outcome";
+        const voice = row.voice_evidence;
+        const voiceText = voice
+          ? "voice " + (voice.decision || "n/a") + (Number.isFinite(Number(voice.score)) ? " (" + Number(voice.score).toFixed(3) + ")" : "")
+          : "voice evidence unavailable";
+        const faceCount = (row.face_evidence || []).length;
+        appendPilotText(detail, voiceText + " · face moments " + faceCount);
+        if (row.source_id) {
+          const open = document.createElement("button");
+          open.type = "button";
+          open.className = "secondary";
+          open.textContent = "Open source";
+          open.addEventListener("click", () => openPilotSource(row.source_id, row.interval && row.interval.start_sec));
+          detail.appendChild(open);
+        }
+        card.appendChild(detail);
+        if (row.corroboration && row.corroboration.summary) {
+          const note = document.createElement("div");
+          note.className = "muted";
+          note.textContent = row.corroboration.summary;
+          card.appendChild(note);
+        }
+        list.appendChild(card);
+      });
+      root.appendChild(list);
+    }
+
+    async function loadCorroboration() {
+      const root = document.getElementById("corroborationResults");
+      root.textContent = "Loading corroboration report…";
+      try {
+        renderCorroboration(await j("/review/face-voice-corroboration"));
+      } catch (err) {
+        root.textContent = "Face/voice corroboration is unavailable.";
         show(err);
       }
     }
@@ -559,6 +627,7 @@
     }
 
     document.getElementById("refreshVoicePilotResults").onclick = () => loadVoicePilotResults();
+    document.getElementById("refreshCorroboration").onclick = () => loadCorroboration();
     document.getElementById("refreshVideos").onclick = () => loadVideos().catch(show);
     document.getElementById("videoSel").onchange = () => {
       try { onVideoChange(); } catch (e) { show(e); }
@@ -823,6 +892,7 @@
     })();
 
     loadVoicePilotResults();
+    loadCorroboration();
     loadVideos().catch(show);
   </script>
 </body>

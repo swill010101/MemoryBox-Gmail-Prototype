@@ -165,3 +165,20 @@ Tom chose **Outcome W** in [CONSOLIDATED-VOICE-PILOT-PRODUCTION-REQUEST.md](CONS
 | Coverage basis | [VOICE-ASSIGNMENT-COVERAGE.md](VOICE-ASSIGNMENT-COVERAGE.md) — canonical eight assignments; all five categories satisfied by **current** stopped admissions |
 
 **Not authorized:** Re-running prior voice pilots, a new matrix pilot, Learn unlock, drains, or treating this waiver as full I13 acceptance. Face/voice corroboration and Gate 4 execution remain separate decisions.
+
+
+## Founder continuation — 2026-09-08 (corroboration + acceptance matrix)
+
+Tom authorized continuing P2-I13 on the existing branch/checkout:
+
+| Decision | Detail |
+|---|---|
+| Archive Outcomes C/D/E | **Rejected** — keep register/unlock/start and processing drains disabled |
+| Face/voice corroboration | Existing I13 scope; implement read-only report + tests on bounded corpus |
+| Acceptance matrix | One complete matrix classifying every PRD requirement (passed/waived/deferred/failed) |
+| Ordinary fixes | Inspect, implement, test, fix, document, commit, push without intermediate approvals |
+| I13 closeout | Only after consolidated founder acceptance review |
+
+**Stop before:** destructive data actions, new real-data processing outside approved bounded scope, deployment, or material PRD changes.
+
+Implementation: [FACE-VOICE-CORROBORATION-NOTE.md](FACE-VOICE-CORROBORATION-NOTE.md). Acceptance package: [I13-ACCEPTANCE-MATRIX.md](I13-ACCEPTANCE-MATRIX.md), [CONSOLIDATED-I13-ACCEPTANCE-REVIEW.md](CONSOLIDATED-I13-ACCEPTANCE-REVIEW.md).
