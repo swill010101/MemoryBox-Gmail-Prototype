@@ -59,4 +59,4 @@ Budget: one training span, three held-out spans, ~39.52 seconds selected audio, 
 
 ## Current state
 
-Tom approved the proposal and one bounded lifecycle run on 2026-09-08 (`Tom-approved-eugene-reprocessing-lifecycle-run-2026-09-08`). FlightSim helpers and readiness steps are in [DEPLOYMENT-READINESS-EUGENE-REPROCESSING-VOICE-PILOT.md](DEPLOYMENT-READINESS-EUGENE-REPROCESSING-VOICE-PILOT.md). Execute from a detached release using the verified TitaNet tool release; no Learn, drains, or archive processing.
+**Completed 2026-09-08.** Admission `66fb93af-92a9-4ef1-b3e6-c0f700e89276` stopped after one bounded run; all held-out decisions matched the approved expectations. See [DEPLOYMENT-READINESS-EUGENE-REPROCESSING-VOICE-PILOT.md](DEPLOYMENT-READINESS-EUGENE-REPROCESSING-VOICE-PILOT.md). Learn, drains, and archive processing remain locked.

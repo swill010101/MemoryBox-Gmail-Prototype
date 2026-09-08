@@ -1,6 +1,6 @@
 # Stage A deployment plan - Tom operates FlightSim
 
-Current voice next step: two fresh Eugene assignments on `vid-34df63e61b949890` unblock the design-only [EUGENE-AFFECTED-REPROCESSING-PROPOSAL.md](EUGENE-AFFECTED-REPROCESSING-PROPOSAL.md) (`fresh_reference_count: 2`). Founder consolidated authorization and a FlightSim readiness package are required before any bounded lifecycle run. Learn and all processing remain locked.
+Current voice next step: Eugene reprocessing lifecycle pilot completed on admission `66fb93af-92a9-4ef1-b3e6-c0f700e89276` ([readiness report](DEPLOYMENT-READINESS-EUGENE-REPROCESSING-VOICE-PILOT.md)). Full I13 acceptance gaps remain: overlap/poor-audio, face/voice corroboration, generalized accuracy, and archive unlock. Learn and all processing remain locked.
 
 ## Current status - voice-result playback accepted by Tom
 

@@ -63,3 +63,15 @@ Reserve up to 25 minutes. Expected held-out outcomes: H1-gs2-held-out `match`; T
 ## Rollback
 
 Preserve admission output and backup. Do not restore the database or retry automatically on failure.
+
+## Completed lifecycle run — 2026-09-08
+
+FlightSim completed admission `66fb93af-92a9-4ef1-b3e6-c0f700e89276` on release `7629c18a57804a3c29521bda5c90c1f12a4622a7` for plan `c2e02c2ad73caa24723dcbd7894c4006c31d72cb459c89429d84c96340717b75`. Fresh backup: `C:\MemoryBox-backups\i13-final-pre-eugene-reprocessing-91b3cbb901d34f33a07192560af51bea\memorybox.dump`, SHA-256 `010c698ef0dfc077f371b883b64330931dbe74f4e54420775d06c6d7ea2317d5`.
+
+| Key | Expected | Score | Decision |
+|---|---|---|---|
+| H1-gs2-held-out | match | 0.7410769454 | match |
+| T2-as-Eugene-negative | no-match | 0.1186575217 | no_match |
+| N1-TV-announcer-unknown | no-match | -0.0199960785 | no_match |
+
+Training reference: `R1-gs2-fresh` / `3eb88a19-7249-4ce6-b976-e3066daf205a`. Helper reported unchanged legacy counts, current Tom/N1/Patio results, one stopped admission, and no automatic retry. This is bounded lifecycle evidence only; it does not authorize Learn, drains, archive processing, or generalized accuracy claims.

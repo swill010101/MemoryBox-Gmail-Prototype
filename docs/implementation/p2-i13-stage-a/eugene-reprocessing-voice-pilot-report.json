@@ -1,0 +1,22 @@
+{
+  "ok": true,
+  "admission_id": "66fb93af-92a9-4ef1-b3e6-c0f700e89276",
+  "release_sha": "7629c18a57804a3c29521bda5c90c1f12a4622a7",
+  "plan_sha256": "c2e02c2ad73caa24723dcbd7894c4006c31d72cb459c89429d84c96340717b75",
+  "approval_reference": "Tom-approved-eugene-reprocessing-lifecycle-run-2026-09-08",
+  "backup_file": "C:\\MemoryBox-backups\\i13-final-pre-eugene-reprocessing-91b3cbb901d34f33a07192560af51bea\\memorybox.dump",
+  "backup_sha256": "010c698ef0dfc077f371b883b64330931dbe74f4e54420775d06c6d7ea2317d5",
+  "training_key": "R1-gs2-fresh",
+  "training_annotation_id": "3eb88a19-7249-4ce6-b976-e3066daf205a",
+  "results": [
+    {"key": "H1-gs2-held-out", "annotation_id": "5d87a6ac-d512-4504-857e-ec8589e8bd78", "expected_match": true, "score": 0.7410769453907592, "decision": "match"},
+    {"key": "T2-as-Eugene-negative", "annotation_id": "5e106e50-76ce-4fb2-8f62-0083119154cc", "expected_match": false, "score": 0.11865752174770779, "decision": "no_match"},
+    {"key": "N1-TV-announcer-unknown", "annotation_id": "74cc9646-82db-4899-960d-f795f691c524", "expected_match": false, "score": -0.0199960785381607, "decision": "no_match"}
+  ],
+  "legacy_counts_unchanged": true,
+  "tom_result_current": true,
+  "n1_result_current": true,
+  "patio_result_current": true,
+  "automatic_retry": false,
+  "completed": "2026-09-08"
+}

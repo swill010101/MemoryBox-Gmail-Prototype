@@ -11,7 +11,7 @@ This is evidence for source-audio matching and a negative off-camera control. It
 1. Positive recognition of Tom Will is now established only for the second pilot's exact T2 reference and O1 held-out passage; generalized accuracy remains unproven.
 2. The selected clear U1 portion was not overlapping or poor-audio acceptance evidence. The unselected remainder remains unreviewed.
 3. A confirmed background/no-match case is now measured by N1; it was correctly rejected as Tom. This is narrow evidence for the exact TV-announcer span, not a general background-audio claim.
-4. Exemplar retirement, stale-result marking, and bounded affected reprocessing are implemented controls but have not been exercised against a separately approved voice reference.
+4. Exemplar retirement, stale-result marking, and bounded affected reprocessing are now exercised: T1 retirement stale cascade was verified earlier; the fresh `R1-gs2-fresh` lifecycle pilot completed on admission `66fb93af-92a9-4ef1-b3e6-c0f700e89276` with expected held-out outcomes while Tom, N1, and Patio results remained current.
 5. Face/voice corroboration and the broader I13 scenario matrix remain separate acceptance work.
 
 ## Smallest owner-review queue before any second run
@@ -56,4 +56,6 @@ FlightSim admission `f59050d5-cb4b-4ff7-beee-609b28f7af61` completed once and st
 
 FlightSim read-only verification confirms that retired T1 admission `1039c733-2149-40b2-b027-97058e032af3` is stopped and stale. The N1, Tom, and Eugene Patio admissions `46cb1d21-b464-4bc4-bf7c-7d0de0202ca6`, `9e0a2605-8bfc-4ec7-aa6e-501f9bca7cea`, and `f59050d5-cb4b-4ff7-beee-609b28f7af61` are stopped and current. This verifies the intended stale cascade without altering current evidence. The supplied read-only output does not establish the historical backup or legacy-count evidence for the original retirement.
 
-The remaining lifecycle item is a separately reviewed, affected-only reprocessing proposal. First run the read-only Eugene reprocessing candidate inspector; do not reuse T1, change any current evidence, or start reprocessing.
+## Completed Eugene reprocessing lifecycle pilot
+
+FlightSim admission `66fb93af-92a9-4ef1-b3e6-c0f700e89276` completed once and stopped on 2026-09-08. It trained on fresh `R1-gs2-fresh` (`3eb88a19…`) and held out `H1-gs2-held-out` (`5d87a6ac…`), Tom T2, and Unknown N1. H1 matched Eugene at `0.7410769454`; T2 and N1 were correctly `no_match`. Legacy counts were unchanged; Tom, N1, and Patio results remained current; automatic retry was false. See [DEPLOYMENT-READINESS-EUGENE-REPROCESSING-VOICE-PILOT.md](DEPLOYMENT-READINESS-EUGENE-REPROCESSING-VOICE-PILOT.md).
