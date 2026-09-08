@@ -1,12 +1,20 @@
 """Pilot persistence only. Never writes legacy speech/recognition/owner records."""
 import getpass
 import json
+import math
 from uuid import UUID
 from memorybox.db import connection
 from memorybox.speech.annotations import corpus, validate_span
 from .scope import ScopeDenied, digest
 from .voice_pilot import validate
 
+TIMING_TOLERANCE_SEC = 0.000001
+
+def same_timestamp(left, right):
+    return (isinstance(left, (int, float)) and not isinstance(left, bool)
+            and isinstance(right, (int, float)) and not isinstance(right, bool)
+            and math.isfinite(left) and math.isfinite(right)
+            and abs(left - right) <= TIMING_TOLERANCE_SEC)
 def check_annotations(c, plan, *, lock_sources=True):
     parent = corpus()
     if digest(parent) != plan['parent_manifest_sha256'] or parent != plan['manifest']:
@@ -24,7 +32,8 @@ def check_annotations(c, plan, *, lock_sources=True):
             raise ScopeDenied('pilot_annotation_changed')
         if 'speaker_state' in s and row['speaker_state']!=s['speaker_state']:
             raise ScopeDenied('pilot_annotation_changed')
-        if validate_span(row['machine'],s['word_ids'])!=(s['start'],s['end']): raise ScopeDenied('pilot_span_changed')
+        actual_start, actual_end = validate_span(row['machine'],s['word_ids'])
+        if not same_timestamp(actual_start,s['start']) or not same_timestamp(actual_end,s['end']): raise ScopeDenied('pilot_span_changed')
         if c.execute('SELECT 1 FROM i13_voice_pilot_retirements WHERE annotation_id=%s::uuid',(s['annotation_id'],)).fetchone():
             raise ScopeDenied('pilot_reference_or_evidence_retired')
 

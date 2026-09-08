@@ -6,9 +6,11 @@ from test_i13_voice_pilot import fixture
 
 class TitaNetTests(unittest.TestCase):
     def test_postgres_float_display_noise_is_accepted_but_real_timing_edits_are_rejected(self):
-        from memorybox.processing.voice_pilot_cli import same_timestamp
-        self.assertTrue(same_timestamp(15.939999999999998, 15.94))
-        self.assertFalse(same_timestamp(15.939, 15.94))
+        from memorybox.processing.voice_pilot_cli import same_timestamp as prepare_timestamp
+        from memorybox.processing.voice_pilot_store import same_timestamp as execution_timestamp
+        for same_timestamp in (prepare_timestamp, execution_timestamp):
+            self.assertTrue(same_timestamp(15.939999999999998, 15.94))
+            self.assertFalse(same_timestamp(15.939, 15.94))
 
     def test_only_new_checkpoint_contract_admitted(self):
         p=fixture();validate(p)
