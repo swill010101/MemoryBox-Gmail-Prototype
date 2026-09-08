@@ -23,6 +23,14 @@ function Require-LastExit([string]$message, [object[]]$output) {
     }
 }
 
+function Get-UnexpectedReleaseChanges {
+    @(git status --porcelain | Where-Object {
+        $line = $_.Trim()
+        if ($line -match '^\?\?\s+i13-reviewed-.+-voice-pilot-plan\.json$') { return $false }
+        return $true
+    })
+}
+
 Push-Location $release
 try {
     if ((git rev-parse HEAD).Trim().ToLowerInvariant() -ne $ExpectedReleaseSha.ToLowerInvariant()) {
@@ -37,15 +45,10 @@ try {
         throw 'TitaNet model hash mismatch.'
     }
 
-    $unexpectedChanges = @()
-    if ($WritePlan) {
-        $expectedPlanRelative = 'i13-reviewed-overlap-poor-audio-voice-pilot-plan.json'
-        $unexpectedChanges = @(git status --porcelain | Where-Object { $_ -ne "?? $expectedPlanRelative" })
+    $unexpectedChanges = @(Get-UnexpectedReleaseChanges)
+    if ($unexpectedChanges.Count -ne 0) {
+        throw ('Release has unexpected changes; preserve it and stop. Unexpected: ' + ($unexpectedChanges -join ' | '))
     }
-    elseif (git status --porcelain) {
-        $unexpectedChanges = @(git status --porcelain)
-    }
-    if ($unexpectedChanges.Count -ne 0) { throw 'Release has unexpected changes; preserve it and stop.' }
 
     $preflight = & $python -B (Join-Path $PSScriptRoot 'prepare-overlap-poor-audio-voice-pilot.py') 2>&1
     Require-LastExit 'Overlap pilot preflight failed.' $preflight

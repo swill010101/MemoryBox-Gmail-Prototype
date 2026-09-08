@@ -94,4 +94,4 @@ Tom confirmed after in-browser review on `20111105_1532.MP4`:
 
 Reference: `Tom-confirmed-overlap-pilot-intervals-2026-09-08`. Interval-specific waiver for `bbceb696` on excluded 1532 is **approved** for this bounded pilot only.
 
-Execution package: [DEPLOYMENT-READINESS-OVERLAP-POOR-AUDIO-VOICE-PILOT.md](DEPLOYMENT-READINESS-OVERLAP-POOR-AUDIO-VOICE-PILOT.md). Run requires separate approval reference `Tom-approved-overlap-poor-audio-voice-pilot-run-2026-09-08`.
+Execution package: [DEPLOYMENT-READINESS-OVERLAP-POOR-AUDIO-VOICE-PILOT.md](DEPLOYMENT-READINESS-OVERLAP-POOR-AUDIO-VOICE-PILOT.md). Run approval: `Tom-approved-overlap-poor-audio-voice-pilot-run-2026-09-08` (Tom chat 2026-09-08).
