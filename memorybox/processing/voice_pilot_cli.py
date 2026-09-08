@@ -1,12 +1,21 @@
 """Operator pilot preparation/check/run. No default processing action."""
 import argparse
 import json
+import math
 import time
 from pathlib import Path
 from memorybox.db import connection
 from memorybox.speech.annotations import corpus
 from .scope import digest, ScopeDenied
 from .voice_pilot import validate, LIMITS
+
+TIMING_TOLERANCE_SEC = 0.000001
+
+def same_timestamp(left, right):
+    return (isinstance(left, (int, float)) and not isinstance(left, bool)
+            and isinstance(right, (int, float)) and not isinstance(right, bool)
+            and math.isfinite(left) and math.isfinite(right)
+            and abs(left - right) <= TIMING_TOLERANCE_SEC)
 
 def prepare(selection, model, revision, match_threshold, uncertain_threshold):
     from .voice_pilot_runner import sha
@@ -16,7 +25,10 @@ def prepare(selection, model, revision, match_threshold, uncertain_threshold):
         for requested in selection['selections']:
             row=c.execute("""SELECT a.*,v.provider_key,v.source_id FROM i13_active_annotations a
             JOIN i13_current_transcripts v ON v.id=a.version_id WHERE a.id=%s::uuid""",(requested['annotation_id'],)).fetchone()
-            if not row or str(row['version_id'])!=requested['version_id'] or row['source_id']!=requested['source_id'] or row['t_start']!=requested['start'] or row['t_end']!=requested['end']:
+            if (not row or str(row['version_id'])!=requested['version_id']
+                    or row['source_id']!=requested['source_id']
+                    or not same_timestamp(row['t_start'], requested['start'])
+                    or not same_timestamp(row['t_end'], requested['end'])):
                 raise ScopeDenied('selected_annotation_changed')
             spans.append({k:requested[k] for k in ('key','role','source_id','version_id','annotation_id','start','end','provider_key','source_sha256')})
             spans[-1].update(person_id=str(row['person_id']) if row['person_id'] else None,

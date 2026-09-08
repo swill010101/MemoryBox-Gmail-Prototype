@@ -16,8 +16,11 @@ $python = Join-Path $toolRoot '.titanet-venv\Scripts\python.exe'
 $writtenPlan = Join-Path $release 'i13-reviewed-eugene-patio-voice-pilot-plan.json'
 $tempPlan = $null
 
-function Require-LastExit([string]$message) {
-    if ($LASTEXITCODE -ne 0) { throw $message }
+function Require-LastExit([string]$message, [object[]]$output) {
+    if ($LASTEXITCODE -ne 0) {
+        foreach ($line in $output) { if ($null -ne $line) { Write-Host $line } }
+        throw $message
+    }
 }
 
 Push-Location $release
@@ -45,13 +48,13 @@ try {
 
     $prepared = & $python -B -m memorybox.processing.voice_pilot_cli prepare `
         --selection $selection --model $model --revision 'nvidia/nemo/titanet_large:v1' `
-        --output $outputPlan --match-threshold 0.45 --uncertain-threshold 0.30
-    Require-LastExit 'Eugene Patio pilot plan preparation failed.'
+        --output $outputPlan --match-threshold 0.45 --uncertain-threshold 0.30 2>&1
+    Require-LastExit 'Eugene Patio pilot plan preparation failed.' $prepared
     $preparedJson = (($prepared | Where-Object { $_ -and $_.Trim() }) -join "`n") | ConvertFrom-Json
     if (-not $preparedJson.plan_sha256) { throw 'Prepared plan digest is missing.' }
 
-    $preview = & $python -B -m memorybox.processing.control preview --plan $outputPlan
-    Require-LastExit 'Eugene Patio pilot plan preview failed.'
+    $preview = & $python -B -m memorybox.processing.control preview --plan $outputPlan 2>&1
+    Require-LastExit 'Eugene Patio pilot plan preview failed.' $preview
     $previewJson = (($preview | Where-Object { $_ -and $_.Trim() }) -join "`n") | ConvertFrom-Json
     if ($previewJson.purpose -ne 'voice_pilot' -or $previewJson.work_items -ne 4 -or $previewJson.max_attempts -ne 4 -or $previewJson.audio_seconds -ne 49.66) {
         throw 'Eugene Patio pilot preview did not preserve the fixed bounded scope.'
