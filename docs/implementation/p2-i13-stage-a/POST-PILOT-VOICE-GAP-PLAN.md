@@ -48,4 +48,8 @@ FlightSim admission `46cb1d21-b464-4bc4-bf7c-7d0de0202ca6` completed once and st
 
 The run used release `29e3f6fb6944adfcece404cb6c89ebb4180f6fe1` and reviewed plan `a9d2a32115db543c13381592bfed189c38c1ba5fb94f303e99f8df62986cf25d`. It created the fresh verified backup `C:\MemoryBox-backups\i13-final-pre-n1-unknown-f3b23c9c1a7645f69932bc9099c744a8\memorybox.dump` with SHA-256 `a89ce78d77cf0ac683b2b8ec143c264def1f2845f9677a77c5830401ee349162`; its E: copy remains a separate storage action until Tom supplies the copy/hash result. Legacy counts were unchanged and automatic retry was false.
 
-The next remaining voice acceptance item is lifecycle proof: retire one separately selected reference, verify its dependent result becomes stale, and prepare a distinct bounded reprocessing proposal. This does not authorize changing the T2/O1/H1/N1 evidence or starting any reprocessing.
+## Completed Eugene Patio held-out pilot
+
+FlightSim admission `f59050d5-cb4b-4ff7-beee-609b28f7af61` completed once and stopped on 2026-09-08. It used a distinct Patio T3 Eugene reference, Eugene E3 as held-out evidence, Tom T2 as a no-match control, and owner-confirmed Unknown N1 as a no-match control. E3 matched Eugene at `0.7873078673565811`; T2 and N1 were correctly `no_match` at `0.019287476760572082` and `-0.032470365229563855`. Legacy counts were unchanged and automatic retry was false. This is distinct, bounded evidence only.
+
+The next remaining voice acceptance item is lifecycle proof: retire one separately selected reference, verify its dependent result becomes stale while the current Tom, N1, and Eugene Patio results remain current, and prepare a distinct bounded reprocessing proposal. This does not authorize changing any current evidence or starting reprocessing.
