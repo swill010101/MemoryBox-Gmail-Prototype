@@ -21,6 +21,9 @@ Use a new detached FlightSim release at the exact published SHA and existing ver
 
 The only production writes are the pilot admission/events, one run, four attempts and additive result provenance. Existing annotations, transcripts, legacy queues, originals, proxies, Capture and drains remain unchanged. A failure preserves artifacts and stops; it never retries. No app/worker restart or planned downtime is required. Reserve up to 25 minutes for backup and the capped run.
 
+## Verified plan preparation - 2026-09-08
+
+FlightSim check-only preparation passed on release 31b75255412333894b96f7bebb785d34044dbd8e using verified tool release C:\MemoryBox-releases\p2-i13-voice-pilot-6d56da5. It produced plan SHA 99b8a8e93f0bfc7addb1eea05ae0c6e9705de9d0085cecfb0999281df04c59fe for four work items and 49.64 seconds, with private audio, database writes and admission creation all false. The separate plan-write step then created only i13-reviewed-eugene-patio-voice-pilot-plan.json in the detached release. This evidence does not authorize execution.
 ## Acceptance and rollback
 
 A result is acceptance evidence only: E3 should match Eugene; T2 and N1 should be no-match. A different result is recorded and reviewed, never retried automatically. If preparation fails before registration, production is unchanged. After registration, the helper stops the admission in `finally`; preserve output and do not delete results, restore the database or modify media without a separate decision.
