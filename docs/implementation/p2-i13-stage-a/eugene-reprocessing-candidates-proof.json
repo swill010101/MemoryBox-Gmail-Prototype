@@ -1,59 +1,12 @@
 {
   "ok": true,
   "read_only": true,
-  "private_audio_processed": false,
-  "database_writes": false,
-  "person_id": "b67708d8-0262-404d-a230-2cc99900cea4",
-  "inspector": "docs/implementation/p2-i13-stage-a/inspect-eugene-reprocessing-candidates.py",
-  "tool_release": "C:\\MemoryBox-releases\\p2-i13-voice-pilot-6d56da5",
-  "checkout": "C:\\MemoryBox",
-  "run_date": "2026-09-08",
-  "fresh_reference_count": 0,
-  "next": "No fresh Eugene reference exists. Save one new clear Eugene owner assignment in MemoryBox; do not edit or reuse retired T1.",
-  "candidates": [
-    {
-      "annotation_id": "6b41bd21-f595-4d9c-b44f-2ea9a012d1de",
-      "key": "T3-patio",
-      "source_id": "vid-8163a680131fd30a",
-      "eligible_fresh_reference": false,
-      "block_reason": "prior_pilot_training"
-    },
-    {
-      "annotation_id": "5651a4bd-dffd-4d26-a985-16e8abaf37c2",
-      "key": "U1-clear",
-      "source_id": "vid-c57dbd21f993f6d1",
-      "eligible_fresh_reference": false,
-      "block_reason": "prior_pilot_held_out_and_source_excluded"
-    },
-    {
-      "annotation_id": "d5a3d050-76d6-446e-91d4-ff89986856cb",
-      "key": "T1",
-      "source_id": "vid-da41273dbd9ac4bb",
-      "eligible_fresh_reference": false,
-      "block_reason": "retired"
-    },
-    {
-      "annotation_id": "b4e5fd32-08f9-44f3-bf0a-1fa2d8251864",
-      "key": "E3-patio-held-out",
-      "source_id": "vid-8163a680131fd30a",
-      "eligible_fresh_reference": false,
-      "block_reason": "prior_pilot_held_out"
-    },
-    {
-      "annotation_id": "f47ee4ec-6b28-442a-81b2-152fbe8f45e2",
-      "key": "H1",
-      "source_id": "vid-c57dbd21f993f6d1",
-      "eligible_fresh_reference": false,
-      "block_reason": "prior_pilot_held_out_and_source_excluded"
-    },
-    {
-      "annotation_id": "bbceb696-f8b4-434a-820d-dcb6928cbc5e",
-      "key": null,
-      "source_id": "vid-c57dbd21f993f6d1",
-      "t_start": 542.82,
-      "t_end": 552.78,
-      "eligible_fresh_reference": false,
-      "block_reason": "source_excluded_no_prior_pilot_use"
-    }
-  ]
+  "inspector_run_date": "2026-09-08-second",
+  "fresh_reference_count": 2,
+  "selected_training_annotation_id": "3eb88a19-7249-4ce6-b976-e3066daf205a",
+  "selected_held_out_annotation_id": "5d87a6ac-d512-4504-857e-ec8589e8bd78",
+  "source_id": "vid-34df63e61b949890",
+  "version_id": "aa9d7675-5f50-4685-ba25-3d462f2abf6d",
+  "proposal": "eugene-affected-reprocessing-proposal.json",
+  "next": "Founder review of design-only proposal; no run until consolidated authorization."
 }

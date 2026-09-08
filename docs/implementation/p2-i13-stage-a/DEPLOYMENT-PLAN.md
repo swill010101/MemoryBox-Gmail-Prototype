@@ -1,6 +1,6 @@
 # Stage A deployment plan - Tom operates FlightSim
 
-Current voice next step: FlightSim read-only inspection on 2026-09-08 returned `fresh_reference_count: 0` ([proof](eugene-reprocessing-candidates-proof.json)). Tom must save one new clear Eugene assignment on a non-excluded source, rerun the inspector, then finalize [EUGENE-AFFECTED-REPROCESSING-PROPOSAL.md](EUGENE-AFFECTED-REPROCESSING-PROPOSAL.md). Learn and all processing remain locked.
+Current voice next step: two fresh Eugene assignments on `vid-34df63e61b949890` unblock the design-only [EUGENE-AFFECTED-REPROCESSING-PROPOSAL.md](EUGENE-AFFECTED-REPROCESSING-PROPOSAL.md) (`fresh_reference_count: 2`). Founder consolidated authorization and a FlightSim readiness package are required before any bounded lifecycle run. Learn and all processing remain locked.
 
 ## Current status - voice-result playback accepted by Tom
 

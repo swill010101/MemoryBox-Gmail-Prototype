@@ -1,0 +1,85 @@
+{
+  "status": "design_only_not_an_admission",
+  "processing_authorized": false,
+  "purpose": "voice_pilot",
+  "lifecycle_note": "Affected-only lifecycle reprocessing proof after T1 retirement stale cascade; not archive acceptance or generalized accuracy.",
+  "target_person_id": "b67708d8-0262-404d-a230-2cc99900cea4",
+  "target_person": "Eugene Will",
+  "inspector_run_date": "2026-09-08",
+  "fresh_reference_count": 2,
+  "selections": [
+    {
+      "key": "R1-gs2-fresh",
+      "role": "training",
+      "source_id": "vid-34df63e61b949890",
+      "version_id": "aa9d7675-5f50-4685-ba25-3d462f2abf6d",
+      "annotation_id": "3eb88a19-7249-4ce6-b976-e3066daf205a",
+      "start": 26.3,
+      "end": 34.78,
+      "provider_key": "hvrt",
+      "source_sha256": "61505855a1220985482c415238bd4622278bf4eff053687dffad5e02a1b77a32",
+      "expected_match": true,
+      "expected": "Eugene Will; owner-confirmed fresh training reference on grandpa sessions 2 002"
+    },
+    {
+      "key": "H1-gs2-held-out",
+      "role": "held_out",
+      "source_id": "vid-34df63e61b949890",
+      "version_id": "aa9d7675-5f50-4685-ba25-3d462f2abf6d",
+      "annotation_id": "5d87a6ac-d512-4504-857e-ec8589e8bd78",
+      "start": 86.42,
+      "end": 105.44,
+      "provider_key": "hvrt",
+      "source_sha256": "61505855a1220985482c415238bd4622278bf4eff053687dffad5e02a1b77a32",
+      "expected_match": true,
+      "expected": "Eugene Will; distinct owner-confirmed hold-out on the same source"
+    },
+    {
+      "key": "T2-as-Eugene-negative",
+      "role": "held_out",
+      "source_id": "vid-da41273dbd9ac4bb",
+      "version_id": "8bc1f1c4-c3ef-4623-92da-6f5f3b41c20f",
+      "annotation_id": "5e106e50-76ce-4fb2-8f62-0083119154cc",
+      "start": 37.12,
+      "end": 42.4,
+      "provider_key": "hvrt",
+      "source_sha256": "636ee92d9588dfc31550d94f2e1ac1343fb4296c2dc62879325c412e89c0dd7b",
+      "expected_match": false,
+      "expected": "Tom Will; owner-confirmed known-person Eugene no-match control"
+    },
+    {
+      "key": "N1-TV-announcer-unknown",
+      "role": "held_out",
+      "source_id": "vid-c015e0fe07414fcc",
+      "version_id": "8f879c74-ceb9-4f2c-b464-4f494ca66c25",
+      "annotation_id": "74cc9646-82db-4899-960d-f795f691c524",
+      "start": 0.0,
+      "end": 6.74,
+      "provider_key": "hvrt",
+      "source_sha256": "09e6dfb523724448888586183d9e265f3181f241ab37fa9d6d800ac1b6cf92b3",
+      "expected_match": false,
+      "expected": "Unknown TV announcer; owner-confirmed Eugene no-match control"
+    }
+  ],
+  "budget": {
+    "source_count": 3,
+    "target_people": 1,
+    "training_spans": 1,
+    "held_out_spans": 3,
+    "max_audio_extractions": 4,
+    "max_embeddings": 4,
+    "max_comparisons": 3,
+    "max_attempts_per_span": 1,
+    "selected_audio_seconds": 39.52,
+    "automatic_retries": 0
+  },
+  "invariants": [
+    "R1-gs2-fresh is the sole fresh training reference selected from inspector fresh_reference_count 2.",
+    "H1-gs2-held-out is a distinct fresh Eugene hold-out on vid-34df63e61b949890 and must not be reused as training.",
+    "Retired T1 and prior pilot held-out/training spans remain excluded.",
+    "vid-c57dbd21f993f6d1 remains excluded from Eugene voice evidence.",
+    "N1 remains held-out Unknown evidence only; it cannot train or create a Person.",
+    "Tom, N1, and Eugene Patio pilot results must remain current; this is separate bounded lifecycle evidence only.",
+    "Execution requires fresh read-only preflight, verified backup, exact annotation recheck, and separate founder approval."
+  ]
+}
