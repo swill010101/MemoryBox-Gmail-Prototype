@@ -1,6 +1,6 @@
 # Stage A deployment plan - Tom operates FlightSim
 
-Next founder action: review the [post-pilot voice gap plan](POST-PILOT-VOICE-GAP-PLAN.md). It identifies the smallest set of already-shortlisted intervals needed to prepare a distinct Tom training/held-out proof and a real uncertain/no-match case. Learn and all processing remain locked.
+Current voice next step: run the read-only [Eugene reprocessing candidate review](EUGENE-REPROCESSING-CANDIDATES.md) before proposing any affected-only reprocessing. FlightSim now confirms the older T1 pilot is stale after retirement while the Tom, N1, and Eugene Patio pilot results remain current. Learn and all processing remain locked.
 
 ## Current status - voice-result playback accepted by Tom
 
@@ -18,7 +18,7 @@ Tom reports "all works as designed and I now understand how multiple reviews can
 
 Migration 031 was already applied and was not part of this UI release. The complete deployment was approved before Tom's acceptance. The fresh backup output and exact startup/process evidence for this release have not been supplied in the conversation; do not infer those artifacts or independent queue-count verification from UI acceptance. The earlier supplied pre031 backup and migration results remain the recorded evidence.
 
-Next: owner annotation and read-only coverage review for the exact 22-source manifest, distinguishing reviewed assignments from unreviewed evidence. Full face/voice recognition acceptance, off-camera speaker recognition, exemplar retirement/reprocessing proof and any separately bounded processing remain outstanding. Learn/drains/archive processing remain locked. This acceptance does not authorize an evidence or recognition run. No new deployment is needed for this documentation update.
+Next: owner annotation and read-only coverage review for the exact 22-source manifest, distinguishing reviewed assignments from unreviewed evidence. Full face/voice recognition acceptance, off-camera speaker recognition, bounded affected-only reprocessing proof and any separately bounded processing remain outstanding. Learn/drains/archive processing remain locked. This acceptance does not authorize an evidence or recognition run. No new deployment is needed for this documentation update.
 
 Historical deployment notes below are superseded by the current status above where they differ.
 

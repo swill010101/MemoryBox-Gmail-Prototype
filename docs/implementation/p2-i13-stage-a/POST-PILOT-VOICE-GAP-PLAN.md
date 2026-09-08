@@ -52,4 +52,8 @@ The run used release `29e3f6fb6944adfcece404cb6c89ebb4180f6fe1` and reviewed pla
 
 FlightSim admission `f59050d5-cb4b-4ff7-beee-609b28f7af61` completed once and stopped on 2026-09-08. It used a distinct Patio T3 Eugene reference, Eugene E3 as held-out evidence, Tom T2 as a no-match control, and owner-confirmed Unknown N1 as a no-match control. E3 matched Eugene at `0.7873078673565811`; T2 and N1 were correctly `no_match` at `0.019287476760572082` and `-0.032470365229563855`. Legacy counts were unchanged and automatic retry was false. This is distinct, bounded evidence only.
 
-The next remaining voice acceptance item is lifecycle proof: retire one separately selected reference, verify its dependent result becomes stale while the current Tom, N1, and Eugene Patio results remain current, and prepare a distinct bounded reprocessing proposal. This does not authorize changing any current evidence or starting reprocessing.
+## Completed T1 lifecycle stale-cascade proof
+
+FlightSim read-only verification confirms that retired T1 admission `1039c733-2149-40b2-b027-97058e032af3` is stopped and stale. The N1, Tom, and Eugene Patio admissions `46cb1d21-b464-4bc4-bf7c-7d0de0202ca6`, `9e0a2605-8bfc-4ec7-aa6e-501f9bca7cea`, and `f59050d5-cb4b-4ff7-beee-609b28f7af61` are stopped and current. This verifies the intended stale cascade without altering current evidence. The supplied read-only output does not establish the historical backup or legacy-count evidence for the original retirement.
+
+The remaining lifecycle item is a separately reviewed, affected-only reprocessing proposal. First run the read-only Eugene reprocessing candidate inspector; do not reuse T1, change any current evidence, or start reprocessing.
