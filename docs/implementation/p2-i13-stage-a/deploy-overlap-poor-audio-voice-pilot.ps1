@@ -25,13 +25,6 @@ function Require-LastExit([string]$message, [object[]]$output) {
         throw $message
     }
 }
-function Get-UnexpectedReleaseChanges {
-    @(git status --porcelain | Where-Object {
-        $line = $_.Trim()
-        if ($line -match '^\?\?\s+i13-reviewed-.+-voice-pilot-plan\.json$') { return $false }
-        return $true
-    })
-}
 function Invoke-DbJson([string]$query) {
     $out = docker exec $container psql -X -q -A -t -U memorybox -d memorybox -v ON_ERROR_STOP=1 -c $query
     Require-LastExit 'Database read failed.' $out
@@ -44,10 +37,6 @@ function Snapshot-Counts {
 Push-Location $release
 try {
     if ((git rev-parse HEAD).Trim().ToLowerInvariant() -ne $ExpectedReleaseSha.ToLowerInvariant()) { throw 'Release SHA mismatch.' }
-    $unexpectedChanges = @(Get-UnexpectedReleaseChanges)
-    if ($unexpectedChanges.Count -ne 0) {
-        throw ('Release has unexpected changes; preserve it and stop. Unexpected: ' + ($unexpectedChanges -join ' | '))
-    }
     if (-not $ApprovalReference.Trim()) { throw 'Approval reference is required.' }
     if (-not $env:MEMORYBOX_DATABASE_URL) { throw 'MEMORYBOX_DATABASE_URL is absent; use the configured FlightSim shell.' }
     if (-not (Test-Path -LiteralPath $python)) { throw 'The verified TitaNet Python environment is unavailable.' }

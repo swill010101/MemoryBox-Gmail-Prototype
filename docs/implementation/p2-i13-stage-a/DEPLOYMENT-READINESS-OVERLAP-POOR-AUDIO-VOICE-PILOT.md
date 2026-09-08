@@ -26,7 +26,7 @@ Budget: four extracts, four embeddings, three comparisons, 32.38 seconds, one at
 
 ## FlightSim execution sequence
 
-Use checkout `C:\MemoryBox` at the pushed commit and tool release `C:\MemoryBox-releases\p2-i13-voice-pilot-6d56da5`.
+Use checkout `C:\MemoryBox` at the pushed commit. Live-checkout WIP (marvin_capture, config, runtime dirs) is expected; helpers pin **code identity by SHA only**, not a clean git tree.
 
 ```powershell
 cd C:\MemoryBox

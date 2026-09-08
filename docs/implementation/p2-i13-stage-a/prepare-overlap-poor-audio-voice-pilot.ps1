@@ -23,14 +23,6 @@ function Require-LastExit([string]$message, [object[]]$output) {
     }
 }
 
-function Get-UnexpectedReleaseChanges {
-    @(git status --porcelain | Where-Object {
-        $line = $_.Trim()
-        if ($line -match '^\?\?\s+i13-reviewed-.+-voice-pilot-plan\.json$') { return $false }
-        return $true
-    })
-}
-
 Push-Location $release
 try {
     if ((git rev-parse HEAD).Trim().ToLowerInvariant() -ne $ExpectedReleaseSha.ToLowerInvariant()) {
@@ -43,11 +35,6 @@ try {
     if ((Get-Item -LiteralPath $model).Length -ne $modelBytes) { throw 'TitaNet model byte count mismatch.' }
     if ((Get-FileHash -LiteralPath $model -Algorithm SHA256).Hash.ToLowerInvariant() -ne $modelSha) {
         throw 'TitaNet model hash mismatch.'
-    }
-
-    $unexpectedChanges = @(Get-UnexpectedReleaseChanges)
-    if ($unexpectedChanges.Count -ne 0) {
-        throw ('Release has unexpected changes; preserve it and stop. Unexpected: ' + ($unexpectedChanges -join ' | '))
     }
 
     $preflight = & $python -B (Join-Path $PSScriptRoot 'prepare-overlap-poor-audio-voice-pilot.py') 2>&1
