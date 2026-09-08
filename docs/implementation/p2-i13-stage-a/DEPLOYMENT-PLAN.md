@@ -1,6 +1,6 @@
 # Stage A deployment plan - Tom operates FlightSim
 
-Current voice next step: run the read-only [Eugene reprocessing candidate review](EUGENE-REPROCESSING-CANDIDATES.md) before proposing any affected-only reprocessing. FlightSim now confirms the older T1 pilot is stale after retirement while the Tom, N1, and Eugene Patio pilot results remain current. Learn and all processing remain locked.
+Current voice next step: FlightSim read-only inspection on 2026-09-08 returned `fresh_reference_count: 0` ([proof](eugene-reprocessing-candidates-proof.json)). Tom must save one new clear Eugene assignment on a non-excluded source, rerun the inspector, then finalize [EUGENE-AFFECTED-REPROCESSING-PROPOSAL.md](EUGENE-AFFECTED-REPROCESSING-PROPOSAL.md). Learn and all processing remain locked.
 
 ## Current status - voice-result playback accepted by Tom
 

@@ -89,5 +89,5 @@ If there is no eligible reference, Tom must save one new clear Eugene assignment
 - Canonical FlightSim Git checkout: `C:\MemoryBox`.
 - Current FlightSim diagnostic release: `C:\MemoryBox-releases\p2-i13-eugene-t1-retirement-da43db7`.
 - Prior corrected Patio release: `C:\MemoryBox-releases\p2-i13-eugene-patio-precision-32c0136`.
-- Verified TitaNet tool release: `C:\MemoryBox-releases\p2-i13-voice-pilot-6d56da5`.
+- Verified TitaNet tool release: `C:\MemoryBox-releases\p2-i13-voice-pilot-6d56da5` (Python at `.titanet-venv\Scripts\python.exe`, not `.venv`).
 - Storage constraint: FlightSim uses C: and has no E:. The development desktop’s E: is separate. Do not infer capacity problems on FlightSim C:, and do not perform any storage move under this handoff.
