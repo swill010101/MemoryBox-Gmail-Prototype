@@ -22,7 +22,7 @@
 | Readiness | [DEPLOYMENT-READINESS-ACCEPTANCE-LEARNING.md](DEPLOYMENT-READINESS-ACCEPTANCE-LEARNING.md) |
 | Tests | `tests/test_i13_admin.py` |
 
-Explore Learn (`submitExploreLearn`, `POST /recognition/learn`, `POST /speech/learn`) activates under a **bounded `acceptance_learning` admission**. During proof the admission is **started**; after proof, run **`enable-interactive-learn`**, keep `MEMORYBOX_I13_ADMISSION_ID` in serve env, and Learn stays authorized while archive processing remains locked. See [INTERACTIVE-LEARN-OPERATING-STATE.md](INTERACTIVE-LEARN-OPERATING-STATE.md).
+Explore Learn activates under a **bounded `acceptance_learning` admission on the accepted 22-video manifest only** — not archive-wide Learn. During proof the admission is **started**; after proof, run **`enable-interactive-learn`**, keep `MEMORYBOX_I13_ADMISSION_ID` in serve env. Learn follow-on is **queued** (Admin → Jobs), not synchronous full-video recognition. See [INTERACTIVE-LEARN-OPERATING-STATE.md](INTERACTIVE-LEARN-OPERATING-STATE.md).
 
 ---
 

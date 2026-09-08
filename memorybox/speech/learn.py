@@ -6,8 +6,8 @@ from typing import Any
 from memorybox.speech.constants import PRIORITY_CURRENT, VOICE_MODEL
 from memorybox.speech.embeddings import embed_video_span
 from memorybox.speech.media import resolve_speech_media_path
-from memorybox.speech.process import persist_transcript, recognize_person_on_video
-from memorybox.speech.queue import enqueue_videos
+from memorybox.speech.process import persist_transcript
+from memorybox.speech.queue import enqueue_interactive_owner_learn
 from memorybox.speech.store import assign_turn_person, persist_voice_exemplar
 
 _LEARN_FAIL_DETAIL = {
@@ -89,26 +89,13 @@ def owner_learn_voice(
             continue
         if turn.get("id"):
             assign_turn_person(str(turn["id"]), person_id, status="owner_confirmed", confidence=1.0)
-    current = recognize_person_on_video(
+    queued_follow_on = enqueue_interactive_owner_learn(
+        admission=admission,
         person_id=person_id,
         video_provider_key=vpk,
         video_external_id=video_external_id,
-        video_provider=video_provider,
+        priority=PRIORITY_CURRENT,
     )
-    rest: list[dict[str, Any]] = []
-    if admission.state == "started" and admission.start_ref:
-        enqueue_videos(
-            videos=[
-                {
-                    "video_provider_key": vpk,
-                    "video_external_id": video_external_id,
-                    "priority": PRIORITY_CURRENT,
-                }
-            ],
-            enqueue_reason="owner_learn",
-            person_id=person_id,
-            priority=PRIORITY_CURRENT,
-        )
     display_name = person_id
     try:
         from memorybox.person import get_person
@@ -121,8 +108,8 @@ def owner_learn_voice(
     return {
         "ok": True,
         "exemplar": saved,
-        "current_video": current,
-        "queued_other_videos": len(rest),
+        "queued_follow_on": queued_follow_on,
+        "follow_on_policy": "async_queue_current_source_only",
         "person": {"id": person_id, "display_name": display_name},
         "span": {"t_start": float(t_start), "t_end": float(t_end)},
     }

@@ -137,6 +137,77 @@ def enqueue_full_eligible_archive(
     }
 
 
+def enqueue_interactive_owner_learn(
+    *,
+    admission,
+    person_id: str | UUID,
+    video_provider_key: str,
+    video_external_id: str,
+    priority: int = 1,
+    run_kind: str = "owner_learned",
+) -> dict[str, Any]:
+    """Queue face rescan on the selected source only — interactive Learn follow-on."""
+    from memorybox.processing.scope import reserve_interactive_queue_item
+    from memorybox.recognition.allowlist import face_scan_enabled
+
+    pid = str(person_id)
+    if not face_scan_enabled(pid):
+        return {
+            "person_id": pid,
+            "enqueue_reason": "owner_learn",
+            "run_kind": run_kind,
+            "enqueued_or_updated": 0,
+            "skipped": "face_scan_off",
+            "video_external_id": video_external_id,
+        }
+    video = {
+        "video_provider_key": video_provider_key,
+        "video_external_id": video_external_id,
+        "eligible": True,
+        "priority": priority,
+    }
+    with connection() as conn:
+        reserve_interactive_queue_item(conn, admission, "face", video, pid, "owner_learn")
+        row = conn.execute(
+            """
+            INSERT INTO recognition_queue_items (
+                person_id, video_provider_key, video_external_id,
+                status, priority, enqueue_reason, run_kind, i13_admission_id
+            ) VALUES (%s::uuid, %s, %s, 'queued', %s, 'owner_learn', %s, %s::uuid)
+            ON CONFLICT (person_id, video_provider_key, video_external_id, enqueue_reason)
+            DO UPDATE SET
+                i13_admission_id = EXCLUDED.i13_admission_id,
+                updated_at = now(),
+                priority = LEAST(recognition_queue_items.priority, EXCLUDED.priority),
+                run_kind = EXCLUDED.run_kind,
+                status = CASE
+                    WHEN recognition_queue_items.status = 'running'
+                    THEN recognition_queue_items.status
+                    WHEN recognition_queue_items.status = 'excluded'
+                    THEN recognition_queue_items.status
+                    WHEN recognition_queue_items.status IN ('completed', 'failed')
+                    THEN 'queued'
+                    ELSE recognition_queue_items.status
+                END,
+                finished_at = CASE
+                    WHEN recognition_queue_items.status IN ('completed', 'failed')
+                    THEN NULL
+                    ELSE recognition_queue_items.finished_at
+                END
+            RETURNING id, status
+            """,
+            (pid, video_provider_key, video_external_id, int(priority), run_kind, admission.id),
+        ).fetchone()
+    return {
+        "person_id": pid,
+        "enqueue_reason": "owner_learn",
+        "run_kind": run_kind,
+        "enqueued_or_updated": 1 if row else 0,
+        "video_external_id": video_external_id,
+        "queue_status": row["status"] if row else None,
+    }
+
+
 def retry_failed_items(*, person_id: str | UUID | None = None) -> int:
     from memorybox.processing.scope import require_admission, admit
     admission = require_admission("face")

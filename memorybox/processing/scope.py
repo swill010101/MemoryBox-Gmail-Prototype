@@ -225,6 +225,26 @@ def reserve_queue_item(conn, admission: Admission, lane: str, video: dict, perso
     state=conn.execute("SELECT state,plan_sha256 FROM i13_processing_admissions WHERE id=%s::uuid FOR SHARE",(admission.id,)).fetchone()
     if not state or state["state"]!="started" or state["plan_sha256"]!=admission.plan_sha256:
         raise ScopeDenied("admission_changed")
+    _insert_queue_unit(conn, admission, lane, video, person, reason)
+
+def reserve_interactive_queue_item(conn, admission: Admission, lane: str, video: dict, person: str | None, reason: str) -> None:
+    """Reserve one owner-Learn follow-on unit without starting bulk processing."""
+    admission.check_interactive_learn(lane, [video], [str(person)] if person else [])
+    state=conn.execute(
+        "SELECT state,plan_sha256,interactive_learn_enabled FROM i13_processing_admissions WHERE id=%s::uuid FOR SHARE",
+        (admission.id,),
+    ).fetchone()
+    if not state or state["plan_sha256"]!=admission.plan_sha256:
+        raise ScopeDenied("admission_changed")
+    if state["state"]=="started" and admission.start_ref:
+        pass
+    elif state["state"]=="stopped" and state["interactive_learn_enabled"]:
+        pass
+    else:
+        raise ScopeDenied("interactive_learn_locked")
+    _insert_queue_unit(conn, admission, lane, video, person, reason)
+
+def _insert_queue_unit(conn, admission: Admission, lane: str, video: dict, person: str | None, reason: str) -> None:
     row=conn.execute("""INSERT INTO i13_queue_units(admission_id,lane,provider_key,video_external_id,person_key,enqueue_reason)
         VALUES(%s::uuid,%s,%s,%s,%s,%s)
         ON CONFLICT(admission_id,lane,provider_key,video_external_id,person_key)

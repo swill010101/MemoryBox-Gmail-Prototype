@@ -89,6 +89,57 @@ def enqueue_videos(
     return {"ok": True, "enqueued_or_updated": created, "enqueue_reason": enqueue_reason}
 
 
+def enqueue_interactive_owner_learn(
+    *,
+    admission,
+    person_id: str | UUID,
+    video_provider_key: str,
+    video_external_id: str,
+    priority: int = 1,
+) -> dict[str, Any]:
+    """Queue voice recognition on the selected source only — interactive Learn follow-on."""
+    from memorybox.processing.scope import reserve_interactive_queue_item
+
+    pid = str(person_id)
+    video = {
+        "video_provider_key": video_provider_key,
+        "video_external_id": video_external_id,
+        "priority": priority,
+    }
+    with connection() as conn:
+        reserve_interactive_queue_item(conn, admission, "voice", video, pid, "owner_learn")
+        conn.execute(
+            """
+            INSERT INTO speech_queue_items (
+                video_provider_key, video_external_id, person_id,
+                status, priority, enqueue_reason, i13_admission_id
+            ) VALUES (%s, %s, %s::uuid, 'queued', %s, 'owner_learn', %s::uuid)
+            ON CONFLICT (video_provider_key, video_external_id, enqueue_reason, person_id)
+            WHERE person_id IS NOT NULL
+            DO UPDATE SET
+                i13_admission_id = EXCLUDED.i13_admission_id,
+                status = CASE
+                    WHEN speech_queue_items.status = 'running'
+                    THEN speech_queue_items.status
+                    WHEN speech_queue_items.status IN ('completed', 'failed')
+                    THEN 'queued'
+                    ELSE 'queued'
+                END,
+                finished_at = NULL,
+                priority = LEAST(speech_queue_items.priority, EXCLUDED.priority),
+                updated_at = now()
+            """,
+            (video_provider_key, video_external_id, pid, int(priority), admission.id),
+        )
+    return {
+        "ok": True,
+        "enqueue_reason": "owner_learn",
+        "person_id": pid,
+        "video_external_id": video_external_id,
+        "enqueued_or_updated": 1,
+    }
+
+
 def claim_next_item() -> dict[str, Any] | None:
     from memorybox.processing.scope import load_admission, require_source
     admission = load_admission()

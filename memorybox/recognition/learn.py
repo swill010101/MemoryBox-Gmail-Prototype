@@ -7,13 +7,12 @@ from memorybox.person import AUTHORITY_OWNER_CONFIRMED
 from memorybox.person.face_evidence import CONFIRM_OWNER
 from memorybox.recognition.constants import (
     MODEL_ID,
-    PRIORITY_OTHER_VIDEO,
+    PRIORITY_CURRENT_VIDEO,
 )
 from memorybox.recognition.crops import decode_data_url_jpeg, parse_bbox, quality_flags
 from memorybox.recognition.embeddings import embed_jpeg_bytes
 from memorybox.recognition.exemplars import persist_exemplar
-from memorybox.recognition.queue import enqueue_full_eligible_archive
-from memorybox.recognition.scan import scan_video_for_person
+from memorybox.recognition.queue import enqueue_interactive_owner_learn
 
 
 def save_pending_review_crop(
@@ -161,41 +160,21 @@ def owner_learn_from_review(
     except Exception:
         pass
 
-    current_scan = None
+    queued_follow_on = None
     if video_external_id:
-        current_scan = scan_video_for_person(
+        queued_follow_on = enqueue_interactive_owner_learn(
+            admission=admission,
             person_id=person_id,
-            video_provider=video_provider,
-            video_external_id=video_external_id,
             video_provider_key=vpk,
+            video_external_id=str(video_external_id),
+            priority=PRIORITY_CURRENT_VIDEO,
             run_kind="owner_learned",
-            trigger="owner_learn",
         )
-
-    enqueue = None
-    if video_external_id and admission.state == "started" and admission.start_ref:
-        others = []
-        for v in admission.videos:
-            veid = str(v.get("video_external_id") or "")
-            if not veid or veid == video_external_id:
-                continue
-            item = dict(v)
-            item["priority"] = PRIORITY_OTHER_VIDEO
-            others.append(item)
-        if others and admission.plan.get("scope_kind") == "archive":
-            enqueue = enqueue_full_eligible_archive(
-                person_id=person_id,
-                videos=others,
-                enqueue_reason="owner_learn",
-                priority=PRIORITY_OTHER_VIDEO,
-                run_kind="owner_learned",
-            )
 
     return {
         "ok": True,
         "exemplar": row,
         "person": {"id": person_id, "display_name": display_name},
-        "current_video_scan": current_scan,
-        "enqueue_others": enqueue,
-        "rescan_policy": "current_source_only_for_bounded_interactive_learn",
+        "queued_follow_on": queued_follow_on,
+        "follow_on_policy": "async_queue_current_source_only",
     }

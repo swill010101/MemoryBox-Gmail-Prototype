@@ -116,6 +116,12 @@ class ScopeTests(unittest.TestCase):
         a.check_interactive_learn("voice",a.videos[:1],[PERSON])
         with self.assertRaisesRegex(scope.ScopeDenied,"interactive_learn_locked"):
             admission(state="stopped",interactive_learn_enabled=False).check_interactive_learn("face",[],[PERSON])
+    def test_interactive_queue_reservation_while_stopped(self):
+        a=admission(state="stopped",interactive_learn_enabled=True);c=FakeConnection(a)
+        scope.reserve_interactive_queue_item(c,a,"face",a.videos[0],PERSON,"owner_learn")
+        self.assertEqual(len(c.units),1)
+        with self.assertRaisesRegex(scope.ScopeDenied,"interactive_learn_locked"):
+            scope.reserve_interactive_queue_item(c,admission(state="stopped"),"face",a.videos[0],PERSON,"owner_learn")
     def test_interactive_learn_blocked_for_archive_scope(self):
         p=plan();p["scope_kind"]="archive"
         a=admission(p,state="stopped",interactive_learn_enabled=True,acceptance_ref="x",unlock_ref="y")
@@ -148,6 +154,64 @@ class ScopeTests(unittest.TestCase):
             with self.assertRaisesRegex(scope.ScopeDenied,"attempt_limit"):
                 scope.begin_work("face","synthetic","video-0",PERSON)
             self.assertEqual(c.attempts[('face','synthetic','video-0',PERSON)],2)
+
+class InteractiveLearnFollowOnTests(unittest.TestCase):
+    def _fn_body(self, path: str, name: str) -> str:
+        text=(ROOT/path).read_text(encoding="utf-8")
+        tree=ast.parse(text)
+        node=next(n for n in ast.walk(tree) if isinstance(n,ast.FunctionDef) and n.name==name)
+        return ast.get_source_segment(text, node) or ""
+
+    def test_face_learn_does_not_sync_scan(self):
+        body=self._fn_body("memorybox/recognition/learn.py","owner_learn_from_review")
+        self.assertNotIn("scan_video_for_person",body)
+        self.assertIn("enqueue_interactive_owner_learn",body)
+
+    def test_voice_learn_does_not_sync_recognize(self):
+        body=self._fn_body("memorybox/speech/learn.py","owner_learn_voice")
+        self.assertNotIn("recognize_person_on_video",body)
+        self.assertIn("enqueue_interactive_owner_learn",body)
+
+    def test_face_learn_queues_follow_on_without_sync_scan(self):
+        queued=[]
+        a=admission(state="stopped",interactive_learn_enabled=True)
+        def enqueue(**kw):
+            queued.append(kw)
+            return {"enqueued_or_updated":1,"video_external_id":kw["video_external_id"]}
+        fn=function(
+            "memorybox/recognition/learn.py",
+            "owner_learn_from_review",
+            {
+                "AUTHORITY_OWNER_CONFIRMED":"owner_confirmed",
+                "CONFIRM_OWNER":"owner_confirmed",
+                "MODEL_ID":"buffalo_l",
+                "PRIORITY_CURRENT_VIDEO":1,
+                "require_interactive_source":lambda *a,**k:a,
+                "take_pending_review_crop":lambda *_:None,
+                "parse_bbox":lambda *_:None,
+                "quality_flags":lambda *_:{"usable":True},
+                "decode_data_url_jpeg":lambda *_:b"jpeg",
+                "embed_jpeg_bytes":lambda *_:[0.1,0.2],
+                "persist_exemplar":lambda **k:{"id":"ex-1"},
+                "set_face_scan":lambda *a,**k:None,
+                "enqueue_interactive_owner_learn":enqueue,
+                "get_person":lambda *_:None,
+            },
+        )
+        with patch.object(scope,"require_interactive_source",return_value=a), patch(
+            "memorybox.recognition.allowlist.set_face_scan", lambda *a, **k: None
+        ):
+            result=fn(
+                person_id=PERSON,
+                face_external_id="face-1",
+                video_provider=object(),
+                video_external_id="video-0",
+                crop_jpeg_base64="data:image/jpeg;base64,abc",
+            )
+        self.assertTrue(result["ok"])
+        self.assertEqual(len(queued),1)
+        self.assertEqual(queued[0]["video_external_id"],"video-0")
+        self.assertEqual(result["follow_on_policy"],"async_queue_current_source_only")
 
 class Result:
     def __init__(self,row=None,rows=None):self.row=row;self.rows=rows or []
