@@ -110,12 +110,16 @@ if __name__ == "__main__":
         )
         raise SystemExit(2)
     except Exception as exc:
+        detail = str(exc)
+        if isinstance(exc, ModuleNotFoundError):
+            detail = f"missing_module:{getattr(exc, 'name', detail)}"
         print(
             json.dumps(
                 {
                     "ok": False,
                     "error_type": type(exc).__name__,
-                    "message": "Gate 3 preflight failed; no media or database writes occurred.",
+                    "message": detail,
+                    "hint": "Use .titanet-venv under the verified tool release, not bare python.",
                 }
             )
         )

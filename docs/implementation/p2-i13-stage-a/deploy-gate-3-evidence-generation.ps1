@@ -4,12 +4,14 @@ param(
     [Parameter(Mandatory = $true)][string]$ReviewReference,
     [Parameter(Mandatory = $true)][string]$StartReference,
     [Parameter(Mandatory = $true)][string]$ExpectedPlanSha,
+    [Parameter(Mandatory = $true)][string]$ToolRelease,
     [switch]$Execute
 )
 
 $ErrorActionPreference = 'Stop'
 $release = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
-$python = (Get-Command python -ErrorAction Stop).Source
+$toolRoot = (Resolve-Path -LiteralPath $ToolRelease).Path
+$python = Join-Path $toolRoot '.titanet-venv\Scripts\python.exe'
 $plan = Join-Path $release 'docs/implementation/p2-i13-stage-a/bounded-manifest-proposal.json'
 $backupRoot = 'C:\MemoryBox-backups'
 $container = 'memorybox-pg'
@@ -53,6 +55,9 @@ try {
     }
     if (-not $env:MEMORYBOX_DATABASE_URL) {
         throw 'MEMORYBOX_DATABASE_URL is absent; use the configured FlightSim shell.'
+    }
+    if (-not (Test-Path -LiteralPath $python)) {
+        throw 'The verified tool-release Python is unavailable (.titanet-venv\Scripts\python.exe).'
     }
     if (-not (Test-Path -LiteralPath $plan)) {
         throw 'Reviewed Gate 3 plan is missing.'

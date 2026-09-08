@@ -66,12 +66,14 @@ cd C:\MemoryBox
 git fetch origin codex/p2-i13-stage-a
 git pull --ff-only origin codex/p2-i13-stage-a
 $sha = (git rev-parse HEAD).Trim()
+$tool = 'C:\MemoryBox-releases\p2-i13-voice-pilot-6d56da5'
 
 powershell -NoProfile -ExecutionPolicy Bypass -File docs\implementation\p2-i13-stage-a\deploy-gate-3-evidence-generation.ps1 `
   -ExpectedReleaseSha $sha `
   -ReviewReference 'Tom-approved-gate-3-evidence-generation-outcome-a-2026-09-08' `
   -StartReference 'Tom-approved-gate-3-bounded-start-2026-09-08' `
-  -ExpectedPlanSha '330c2f90fa0de3b319097d17f31ca5dfabe6bd57b469a1a033a79e3851259b35'
+  -ExpectedPlanSha '330c2f90fa0de3b319097d17f31ca5dfabe6bd57b469a1a033a79e3851259b35' `
+  -ToolRelease $tool
 ```
 
 If check-only passes, rerun with `-Execute`. Paste the final JSON for recording.
