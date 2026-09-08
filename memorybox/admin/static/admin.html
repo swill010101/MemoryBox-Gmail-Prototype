@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en" data-mb-surface="admin">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MemoryBox — Admin</title>
+  <style>
+    main { max-width: 920px; margin: 0 auto; padding: 1.25rem; }
+    h1 { font-family: Georgia, serif; margin: 0 0 0.35rem; }
+    .sub { color: #5a6170; margin-bottom: 1rem; }
+    .grid { display: grid; gap: 0.75rem; }
+    a.card {
+      display: block; padding: 1rem; border: 1px solid #c5c9d1;
+      background: #f7f8fb; color: #1a1f2a; text-decoration: none;
+    }
+    a.card strong { display: block; margin-bottom: 0.25rem; }
+    .muted { color: #6a7180; font-size: 0.9rem; }
+    ul.links { margin: 0.5rem 0 0; padding-left: 1.1rem; }
+  </style>
+</head>
+<body class="mb-shell">
+<main>
+  <h1>Admin</h1>
+  <p class="sub">Owner-only I13 administration. Interactive Learn uses Explore; this hub tracks scoped jobs and learned evidence.</p>
+  <div class="grid">
+    <a class="card" href="/admin/jobs/ui"><strong>Processing Jobs</strong><span class="muted">I13-scoped queue work, admission lock, retry and view.</span></a>
+    <a class="card" href="/admin/learned-evidence/ui"><strong>Learned Evidence</strong><span class="muted">Face and voice exemplars, appearances, spoken moments; withdraw or correct.</span></a>
+    <a class="card" href="/explore/ui"><strong>Explore — Learn</strong><span class="muted">Face box and transcript selection Learn (requires started acceptance_learning admission).</span></a>
+  </div>
+  <p class="muted" style="margin-top:1rem">Related: <a href="/status/ui">Archive Health</a> · <a href="/settings/ui">Settings</a> · <a href="/historian-capture/ui">Historian Capture</a></p>
+  <pre id="status" class="muted" style="white-space:pre-wrap;margin-top:1rem">Loading admission status…</pre>
+</main>
+<script>
+async function load() {
+  const root = document.getElementById("status");
+  try {
+    const data = await fetch("/admin/api/i13/status").then(r => r.json());
+    root.textContent = JSON.stringify({
+      interactive_learn_enabled: data.interactive_learn_enabled,
+      archive_processing_locked: data.archive_processing_locked,
+      admission_state: data.admission && data.admission.state,
+      purpose: data.admission && data.admission.plan && data.admission.plan.purpose,
+      lanes: data.admission && data.admission.plan && data.admission.plan.lanes
+    }, null, 2);
+  } catch (e) {
+    root.textContent = "Status unavailable.";
+  }
+}
+load();
+</script>
+</body>
+</html>

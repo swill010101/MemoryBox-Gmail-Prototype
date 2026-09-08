@@ -1,0 +1,8 @@
+{
+  "initial": 12,
+  "current": 25,
+  "pauses": 0,
+  "passed": true,
+  "kind": "fr005_binder_spotcheck_offline",
+  "flightsim_manual": "On /explore/ui open a video moment; verify playback continues past relevance end."
+}

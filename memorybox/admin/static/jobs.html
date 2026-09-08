@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en" data-mb-surface="admin-jobs">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MemoryBox — Admin Jobs</title>
+  <style>
+    main { max-width: 1100px; margin: 0 auto; padding: 1.25rem; }
+    h1 { font-family: Georgia, serif; margin: 0 0 0.35rem; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+    th, td { border-bottom: 1px solid #ddd; padding: 0.35rem 0.4rem; text-align: left; vertical-align: top; }
+    button, .btn { border: 1px solid #2c4a6e; background: #2c4a6e; color: #fff; padding: 0.35rem 0.6rem; cursor: pointer; font: inherit; margin-right: 0.35rem; }
+    button.secondary { background: transparent; color: #2c4a6e; }
+    .muted { color: #6a7180; font-size: 0.88rem; }
+    #lock { margin: 0.75rem 0; padding: 0.65rem; background: #f7f8fb; border: 1px solid #c5c9d1; }
+  </style>
+</head>
+<body class="mb-shell">
+<main>
+  <h1>Processing Jobs</h1>
+  <p class="muted"><a href="/admin/ui">← Admin</a> · Scoped I13 queue items stamped with the active admission.</p>
+  <div id="lock" class="muted">Loading scope lock…</div>
+  <button type="button" id="refresh">Refresh</button>
+  <button type="button" class="secondary" id="retry">Retry failed (scoped)</button>
+  <p id="msg" class="muted"></p>
+  <table>
+    <thead><tr><th>Lane</th><th>Source</th><th>Person</th><th>Status</th><th>Reason</th><th>Attempts</th><th></th></tr></thead>
+    <tbody id="rows"><tr><td colspan="7" class="muted">Loading…</td></tr></tbody>
+  </table>
+</main>
+<script>
+async function load() {
+  const data = await fetch("/admin/api/jobs").then(r => r.json());
+  const lock = document.getElementById("lock");
+  lock.textContent = "Interactive Learn enabled: " + data.scope_lock.interactive_learn_enabled
+    + " · Archive processing locked: " + data.scope_lock.archive_processing_locked
+    + " · Admission: " + (data.admission_id || "(none in env)");
+  const tbody = document.getElementById("rows");
+  tbody.replaceChildren();
+  if (!data.items.length) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = '<td colspan="7" class="muted">No I13-scoped queue items.</td>';
+    tbody.appendChild(tr);
+    return;
+  }
+  data.items.forEach(item => {
+    const tr = document.createElement("tr");
+    const person = item.person_id ? item.person_id.slice(0, 8) + "…" : "—";
+    const open = document.createElement("button");
+    open.type = "button";
+    open.className = "secondary";
+    open.textContent = "View source";
+    open.onclick = () => {
+      const url = new URL("/explore/ui", location.origin);
+      url.searchParams.set("video", item.video_external_id || "");
+      location.assign(url.pathname + url.search);
+    };
+    tr.innerHTML = `<td>${item.lane}</td><td>${item.video_external_id || ""}</td><td>${person}</td><td>${item.status}</td><td>${item.enqueue_reason || ""}</td><td>${item.attempt_count || 0}</td><td></td>`;
+    tr.cells[6].appendChild(open);
+    tbody.appendChild(tr);
+  });
+}
+document.getElementById("refresh").onclick = () => load().catch(e => document.getElementById("msg").textContent = e.message);
+document.getElementById("retry").onclick = async () => {
+  const msg = document.getElementById("msg");
+  msg.textContent = "Retrying failed scoped items…";
+  try {
+    const r = await fetch("/admin/api/jobs/retry-failed", {method: "POST"});
+    const d = await r.json();
+    if (!r.ok || !d.ok) throw new Error(d.detail || d.error || "retry failed");
+    msg.textContent = "Retried " + (d.retried || 0) + " item(s).";
+    await load();
+  } catch (e) { msg.textContent = e.message; }
+};
+load().catch(e => document.getElementById("msg").textContent = e.message);
+</script>
+</body>
+</html>

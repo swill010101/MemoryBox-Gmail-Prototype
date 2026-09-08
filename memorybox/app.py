@@ -158,6 +158,9 @@ HC_STATIC = Path(__file__).resolve().parent / "historian_capture" / "static" / "
 EXPORT_STATIC = Path(__file__).resolve().parent / "export" / "static" / "export.html"
 STATUS_STATIC = Path(__file__).resolve().parent / "status" / "static" / "status.html"
 SETTINGS_STATIC = Path(__file__).resolve().parent / "settings" / "static" / "settings.html"
+ADMIN_STATIC = Path(__file__).resolve().parent / "admin" / "static" / "admin.html"
+ADMIN_JOBS_STATIC = Path(__file__).resolve().parent / "admin" / "static" / "jobs.html"
+ADMIN_LEARNED_STATIC = Path(__file__).resolve().parent / "admin" / "static" / "learned_evidence.html"
 SHELL_STATIC_DIR = Path(__file__).resolve().parent / "shell" / "static"
 EXPLORE_STATIC = Path(__file__).resolve().parent / "explore" / "static" / "explore.html"
 EXPLORE_STATIC_DIR = Path(__file__).resolve().parent / "explore" / "static"
@@ -1311,6 +1314,93 @@ def status_ui() -> HTMLResponse:
 def settings_ui() -> HTMLResponse:
     """Settings stub entry (owner/system) — mature Settings deferred to I14."""
     return _html_ui(SETTINGS_STATIC, surface="settings", missing="Settings UI missing")
+
+
+@app.get("/admin/ui")
+def admin_ui() -> HTMLResponse:
+    return _html_ui(ADMIN_STATIC, surface="admin", missing="Admin UI missing")
+
+
+@app.get("/admin/jobs/ui")
+def admin_jobs_ui() -> HTMLResponse:
+    return _html_ui(ADMIN_JOBS_STATIC, surface="admin-jobs", missing="Admin Jobs UI missing")
+
+
+@app.get("/admin/learned-evidence/ui")
+def admin_learned_evidence_ui() -> HTMLResponse:
+    return _html_ui(ADMIN_LEARNED_STATIC, surface="admin-evidence", missing="Admin Learned Evidence UI missing")
+
+
+@app.get("/admin/api/i13/status")
+def admin_i13_status() -> dict[str, Any]:
+    from memorybox.admin import i13_admin
+
+    try:
+        return i13_admin.i13_status()
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@app.get("/admin/api/jobs")
+def admin_jobs(limit: int = Query(200, ge=1, le=500)) -> dict[str, Any]:
+    from memorybox.admin import i13_admin
+
+    try:
+        return i13_admin.list_jobs(limit=limit)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@app.post("/admin/api/jobs/retry-failed")
+def admin_jobs_retry_failed() -> dict[str, Any]:
+    from memorybox.processing.scope import load_admission
+    from memorybox.recognition.queue import retry_failed_items
+
+    try:
+        admission = load_admission()
+        if admission.plan.get("purpose") != "acceptance_learning":
+            raise HTTPException(status_code=403, detail="retry_requires_acceptance_learning_admission")
+        retried = retry_failed_items()
+        return {"ok": True, "retried": retried, "admission_id": admission.id}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+
+@app.get("/admin/api/learned-evidence")
+def admin_learned_evidence(limit: int = Query(300, ge=1, le=1000)) -> dict[str, Any]:
+    from memorybox.admin import i13_admin
+
+    try:
+        return i13_admin.list_learned_evidence(limit=limit)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+class AdminWithdrawRequest(BaseModel):
+    id: str
+    reason: str = "owner_review_withdraw"
+
+
+@app.post("/admin/api/learned-evidence/withdraw-face-exemplar")
+def admin_withdraw_face_exemplar(body: AdminWithdrawRequest) -> dict[str, Any]:
+    from memorybox.admin import i13_admin
+
+    try:
+        return i13_admin.withdraw_face_exemplar(body.id, reason=body.reason)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/admin/api/learned-evidence/withdraw-voice-exemplar")
+def admin_withdraw_voice_exemplar(body: AdminWithdrawRequest) -> dict[str, Any]:
+    from memorybox.admin import i13_admin
+
+    try:
+        return i13_admin.withdraw_voice_exemplar(body.id, reason=body.reason)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get("/status/summary")

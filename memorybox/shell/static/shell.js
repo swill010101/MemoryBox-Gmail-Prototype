@@ -17,6 +17,7 @@
   const SYSTEM = [
     { id: "explore", href: "/explore/ui", label: "Explore" },
     { id: "library", href: "/library/ui", label: "Library" },
+    { id: "admin", href: "/admin/ui", label: "Admin" },
     { id: "status", href: "/status/ui", label: "Archive Health" },
     { id: "settings", href: "/settings/ui", label: "Settings" },
     { id: "export", href: "/export/ui", label: "Export" },

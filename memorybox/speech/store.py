@@ -322,3 +322,16 @@ def overlaps_withdrawal(t_sec: float, withdrawals: list[dict[str, Any]]) -> bool
         if a - 0.25 <= t_sec <= b + 0.25:
             return True
     return False
+
+
+def withdraw_voice_exemplar(exemplar_id: str, *, reason: str = "owner_withdraw") -> None:
+    with connection() as conn:
+        conn.execute(
+            """
+            UPDATE speech_voice_exemplars
+            SET withdrawn = true,
+                meta_json = COALESCE(meta_json, '{}'::jsonb) || %s::jsonb
+            WHERE id = %s::uuid
+            """,
+            (json.dumps({"withdraw_reason": reason}), exemplar_id),
+        )

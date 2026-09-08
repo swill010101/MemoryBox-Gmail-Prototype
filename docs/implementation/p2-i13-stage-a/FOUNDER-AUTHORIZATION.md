@@ -182,3 +182,20 @@ Tom authorized continuing P2-I13 on the existing branch/checkout:
 **Stop before:** destructive data actions, new real-data processing outside approved bounded scope, deployment, or material PRD changes.
 
 Implementation: [FACE-VOICE-CORROBORATION-NOTE.md](FACE-VOICE-CORROBORATION-NOTE.md). Acceptance package: [I13-ACCEPTANCE-MATRIX.md](I13-ACCEPTANCE-MATRIX.md), [CONSOLIDATED-I13-ACCEPTANCE-REVIEW.md](CONSOLIDATED-I13-ACCEPTANCE-REVIEW.md).
+
+
+## Founder decision B — reject bounded closeout; complete I13 scope — 2026-09-08
+
+Tom rejected bounded closeout (**Outcome B** in [CONSOLIDATED-I13-ACCEPTANCE-REVIEW.md](CONSOLIDATED-I13-ACCEPTANCE-REVIEW.md)) and authorized full completion of accepted I13 scope:
+
+| Authorized | Not authorized |
+|---|---|
+| Interactive Explore Learn (face + voice) under bounded `acceptance_learning` | Archive Outcomes C/D/E |
+| Admin → Jobs, Learned Evidence, landing | Archive drains / archive-wide processing |
+| Correction / retirement / removal with live proof | Waiving Learn or Admin screens |
+| One bounded acceptance_learning proof on reviewed corpus | Gate 3 re-run; voice pilot reruns |
+| FR-005 live Explore spot-check + offline binder | |
+
+**Reference:** `Tom-reject-bounded-closeout-complete-i13-scope-2026-09-08`  
+**Plan:** [acceptance-learning-bounded-plan.json](acceptance-learning-bounded-plan.json)  
+**Deploy:** [CONSOLIDATED-DEPLOYMENT-REQUEST-ACCEPTANCE-LEARNING.md](CONSOLIDATED-DEPLOYMENT-REQUEST-ACCEPTANCE-LEARNING.md)

@@ -37,9 +37,9 @@ def _static_route_inventory() -> dict:
         "speech_learn_post": '"/speech/learn"' in text,
         "appearances_correct_post": '"/recognition/appearances/correct"' in text,
         "speech_moments_correct_post": '"/speech/moments/correct"' in text,
-        "admin_landing": "/admin" in text and "admin/ui" in text,
-        "admin_learned_evidence": "learned-evidence" in text.lower() or "learned_evidence" in text.lower(),
-        "admin_jobs_i13": "/admin/jobs" in text or "admin_jobs" in text,
+        "admin_landing": '"/admin/ui"' in text or "@app.get(\"/admin/ui\")" in text,
+        "admin_learned_evidence": '"/admin/learned-evidence/ui"' in text,
+        "admin_jobs_i13": '"/admin/jobs/ui"' in text,
         "status_ui_archive_health": '"/status/ui"' in text,
         "review_ui": '"/review/ui"' in text,
     }
@@ -211,7 +211,7 @@ def _classify(*, routes: dict, explore: dict, db: dict | None, env: dict) -> lis
 
     # 3 Admin Learned Evidence
     if routes.get("admin_learned_evidence"):
-        c, e = "not tested", "Admin Learned Evidence route exists; live render not recorded."
+        c, e = "not tested", "Admin Learned Evidence UI exists; live withdraw/list proof required after acceptance_learning admission."
     else:
         c, e = (
             "failed",
@@ -221,7 +221,7 @@ def _classify(*, routes: dict, explore: dict, db: dict | None, env: dict) -> lis
 
     # 4 Admin Jobs
     if routes.get("admin_jobs_i13"):
-        c, e = "not tested", "Admin Jobs route exists; live render not recorded."
+        c, e = "not tested", "Admin Jobs UI exists; live scoped queue proof required after acceptance_learning start."
     else:
         c, e = (
             "failed",
