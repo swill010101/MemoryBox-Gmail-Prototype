@@ -47,7 +47,7 @@ try {
     $preview = & $python -B -m memorybox.processing.control preview --plan $plan
     Require-LastExit 'Eugene Patio pilot plan preview failed.'
     $previewJson = (($preview | Where-Object { $_ -and $_.Trim() }) -join "`n") | ConvertFrom-Json
-    if ($previewJson.purpose -ne 'voice_pilot' -or $previewJson.work_items -ne 4 -or $previewJson.max_attempts -ne 4 -or $previewJson.audio_seconds -ne 49.66) { throw 'Eugene Patio pilot preview did not preserve the fixed scope.' }
+    if ($previewJson.purpose -ne 'voice_pilot' -or $previewJson.work_items -ne 4 -or $previewJson.max_attempts -ne 4 -or $previewJson.audio_seconds -ne 49.64) { throw 'Eugene Patio pilot preview did not preserve the fixed scope.' }
     if ($previewJson.plan_sha256 -ne $ExpectedPlanSha.ToLowerInvariant()) { throw 'Reviewed Eugene Patio pilot plan hash mismatch.' }
     if (-not $Execute) {
         [pscustomobject]@{ ok=$true; mode='check_only'; release_sha=$ExpectedReleaseSha.ToLowerInvariant(); plan_sha256=$previewJson.plan_sha256; migration='032_p2_i13_voice_pilot.sql already present'; private_audio_processed=$false; database_writes=$false; admission_created=$false } | ConvertTo-Json

@@ -1,4 +1,4 @@
-﻿# FlightSim readiness: bounded Eugene Patio voice pilot
+# FlightSim readiness: bounded Eugene Patio voice pilot
 
 ## Approval requested
 
@@ -13,11 +13,11 @@ Approve one bounded private-audio Eugene Will pilot using the exact four-span re
 | T2-as-Eugene-negative | held-out | Tom Will, 20111105_1530, 00:37.12–00:42.40 | no-match |
 | N1-TV-announcer-unknown | held-out | Unknown TV announcer, 00:00.00–00:06.74 | no-match |
 
-The selected budget is exactly four extracts, four embeddings, three comparisons, one attempt per span, 49.66 seconds, and no automatic retry. `vid-c57dbd21f993f6d1` is excluded from Eugene evidence because Tom confirmed TV/background overlap.
+The selected budget is exactly four extracts, four embeddings, three comparisons, one attempt per span, 49.64 seconds, and no automatic retry. `vid-c57dbd21f993f6d1` is excluded from Eugene evidence because Tom confirmed TV/background overlap.
 
 ## Preconditions and deployment
 
-Use a new detached FlightSim release at the exact published SHA and existing verified TitaNet tool release. First run `prepare-eugene-patio-voice-pilot.ps1` without `-WritePlan`; it writes nothing and must report four items, 49.66 seconds and no admission. After review, run it with `-WritePlan` to create the one expected untracked reviewed-plan file. The deployment helper then requires that plan digest, a fresh backup, migration 032, no active voice admission and an explicit approval reference.
+Use a new detached FlightSim release at the exact published SHA and existing verified TitaNet tool release. First run `prepare-eugene-patio-voice-pilot.ps1` without `-WritePlan`; it writes nothing and must report four items, 49.64 seconds and no admission. After review, run it with `-WritePlan` to create the one expected untracked reviewed-plan file. The deployment helper then requires that plan digest, a fresh backup, migration 032, no active voice admission and an explicit approval reference.
 
 The only production writes are the pilot admission/events, one run, four attempts and additive result provenance. Existing annotations, transcripts, legacy queues, originals, proxies, Capture and drains remain unchanged. A failure preserves artifacts and stops; it never retries. No app/worker restart or planned downtime is required. Reserve up to 25 minutes for backup and the capped run.
 

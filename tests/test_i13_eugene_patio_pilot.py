@@ -34,7 +34,7 @@ class EugenePatioPilotProposal(unittest.TestCase):
         proposal, rows = self.rows()
         result = validate_rows(proposal, rows)
         self.assertEqual(result['work_items'], 4)
-        self.assertEqual(result['audio_seconds'], 49.66)
+        self.assertEqual(result['audio_seconds'], 49.64)
         self.assertTrue(result['patio_annotations_fresh'])
 
     def test_postgres_float_representation_of_first_patio_time_is_accepted(self):

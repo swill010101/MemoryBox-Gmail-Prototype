@@ -56,7 +56,7 @@ try {
     $preview = & $python -B -m memorybox.processing.control preview --plan $outputPlan 2>&1
     Require-LastExit 'Eugene Patio pilot plan preview failed.' $preview
     $previewJson = (($preview | Where-Object { $_ -and $_.Trim() }) -join "`n") | ConvertFrom-Json
-    if ($previewJson.purpose -ne 'voice_pilot' -or $previewJson.work_items -ne 4 -or $previewJson.max_attempts -ne 4 -or $previewJson.audio_seconds -ne 49.66) {
+    if ($previewJson.purpose -ne 'voice_pilot' -or $previewJson.work_items -ne 4 -or $previewJson.max_attempts -ne 4 -or $previewJson.audio_seconds -ne 49.64) {
         throw 'Eugene Patio pilot preview did not preserve the fixed bounded scope.'
     }
 

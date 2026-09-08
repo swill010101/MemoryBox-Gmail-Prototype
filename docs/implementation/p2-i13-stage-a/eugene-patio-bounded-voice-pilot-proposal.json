@@ -67,7 +67,7 @@
     "max_embeddings": 4,
     "max_comparisons": 3,
     "max_attempts_per_span": 1,
-    "selected_audio_seconds": 49.66,
+    "selected_audio_seconds": 49.64,
     "automatic_retries": 0
   },
   "invariants": [
