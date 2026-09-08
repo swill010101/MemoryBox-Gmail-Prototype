@@ -1,8 +1,8 @@
 # Overlap / poor-audio voice pilot proposal
 
-**Status:** design only — **no run authorized**  
+**Status:** intervals confirmed by Tom 2026-09-08 — run pending explicit production approval  
 **Proposal:** [overlap-poor-audio-voice-pilot-proposal.json](overlap-poor-audio-voice-pilot-proposal.json)  
-**Inventory:** [overlap-voice-annotations-inventory.json](overlap-voice-annotations-inventory.json) (FlightSim 2026-09-08)
+**Readiness:** [DEPLOYMENT-READINESS-OVERLAP-POOR-AUDIO-VOICE-PILOT.md](DEPLOYMENT-READINESS-OVERLAP-POOR-AUDIO-VOICE-PILOT.md)
 
 ---
 
@@ -41,14 +41,12 @@ Prior pilot spans (H1, U1-clear, O1, R1, H1-gs2, Patio, N1) are **not** reused a
 
 ## Founder waiver required before execution
 
-The blanket rule excludes `vid-c57dbd21f993f6d1` from **Eugene training and Eugene held-out match evidence** because TV/background overlaps Eugene throughout Tom's review.
+Tom confirmed both intervals on 2026-09-08 (`Tom-confirmed-overlap-pilot-intervals-2026-09-08`):
 
-This proposal uses **one** Eugene assignment on 1532 (`bbceb696…`) as the overlap/poor-audio **positive** held-out. That requires you to confirm:
+1. **E2 (`bbceb696…`)** — Eugene speaking with TV on in background; STT sometimes splits attribution between Eugene and TV. Interval-specific 1532 waiver **approved**.  
+2. **O2 (`2b013ef8…`)** — Tom Will off-camera **confirmed**.
 
-1. **`bbceb696…` is truthful** — Eugene Will speaking on that interval despite overlap/poor audio.  
-2. **Interval-specific waiver** — you approve using this annotation only for bounded overlap acceptance, without reopening H1/U1/O1 or general 1532 Eugene matching.
-
-If you reject the waiver, save a new Eugene overlap annotation on an **approved** non-1532 source and we revise the proposal.
+Bounded run still requires separate production approval — see readiness doc.
 
 ---
 

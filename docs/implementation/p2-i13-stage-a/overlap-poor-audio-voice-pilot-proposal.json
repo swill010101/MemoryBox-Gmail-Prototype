@@ -8,6 +8,12 @@
   "target_person": "Eugene Will",
   "inspector_run_date": "2026-09-08",
   "inventory_ref": "overlap-voice-annotations-inventory.json",
+  "founder_waiver_ref": "Tom-confirmed-overlap-pilot-intervals-2026-09-08",
+  "owner_interval_confirmation_ref": "Tom-confirmed-overlap-pilot-intervals-2026-09-08",
+  "owner_confirmation_notes": {
+    "E2-1532-overlap-held-out": "Eugene speaking with TV on in background; STT sometimes attributes words to Eugene and sometimes to TV.",
+    "O2-tom-offcamera-negative": "Tom Will off camera confirmed."
+  },
   "selections": [
     {
       "key": "T-gs2-reuse",

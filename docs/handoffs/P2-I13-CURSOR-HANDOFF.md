@@ -59,7 +59,7 @@ Keep `MEMORYBOX_RECOGNITION_DRAIN=0`, `MEMORYBOX_SPEECH_DRAIN=0`, and no `MEMORY
 
 ## Exact next action
 
-1. **Overlap pilot waiver** — Tom confirms [OVERLAP-POOR-AUDIO-VOICE-PILOT-PROPOSAL.md](docs/implementation/p2-i13-stage-a/OVERLAP-POOR-AUDIO-VOICE-PILOT-PROPOSAL.md): approve `bbceb696` interval waiver on 1532 and `2b013ef8` as O2 off-camera control (or specify revisions).
+1. **Overlap voice pilot run** — Tom authorizes execution (`Tom-approved-overlap-poor-audio-voice-pilot-run-2026-09-08` or explicit “approved run”). Steps in [DEPLOYMENT-READINESS-OVERLAP-POOR-AUDIO-VOICE-PILOT.md](docs/implementation/p2-i13-stage-a/DEPLOYMENT-READINESS-OVERLAP-POOR-AUDIO-VOICE-PILOT.md).
 
 2. **Separate track:** Gate 4 decision; face/voice corroboration; full I13 acceptance.
 

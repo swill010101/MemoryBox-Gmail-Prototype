@@ -81,3 +81,17 @@ FlightSim execution completed on release `1b60e798f69c4d17ab71f9bffc35e6912fdbde
 | Backup SHA-256 | `284d06b88d6e4fe90f19ef9397adf8f589e51fc2935d66f0f5335f6e3e84f909` |
 
 Recorded in [gate-3-evidence-generation-report.json](gate-3-evidence-generation-report.json). Gate 3 transcription evidence-generation is **complete**. Gate 4 archive unlock/start remains a separate founder decision. Learn and recognition drains remain locked unless separately authorized.
+
+
+## Overlap / poor-audio pilot intervals confirmed — 2026-09-08
+
+Tom confirmed after in-browser review on `20111105_1532.MP4`:
+
+| Key | Confirmation |
+|---|---|
+| E2-1532-overlap-held-out (`bbceb696…`, 09:02–09:12) | Eugene speaking; TV on in background; mixed attribution in STT |
+| O2-tom-offcamera-negative (`2b013ef8…`, 15:48–15:55) | Tom Will off-camera |
+
+Reference: `Tom-confirmed-overlap-pilot-intervals-2026-09-08`. Interval-specific waiver for `bbceb696` on excluded 1532 is **approved** for this bounded pilot only.
+
+Execution package: [DEPLOYMENT-READINESS-OVERLAP-POOR-AUDIO-VOICE-PILOT.md](DEPLOYMENT-READINESS-OVERLAP-POOR-AUDIO-VOICE-PILOT.md). Run requires separate approval reference `Tom-approved-overlap-poor-audio-voice-pilot-run-2026-09-08`.
