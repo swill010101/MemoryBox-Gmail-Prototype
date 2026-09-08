@@ -17,12 +17,12 @@ Budget: four extracts, four embeddings, three comparisons, 39.52 seconds, one at
 
 ## FlightSim execution sequence
 
-Use a new detached release at `8150fcfd8ac0d73e03122e8a0a6bb89ddd3e537e` (or later commit containing these helpers) and verified tool release `C:\MemoryBox-releases\p2-i13-voice-pilot-6d56da5`.
+Use a new detached release at `7629c18a57804a3c29521bda5c90c1f12a4622a7` and verified tool release `C:\MemoryBox-releases\p2-i13-voice-pilot-6d56da5`.
 
 ```powershell
 $root = 'C:\MemoryBox'
-$release = 'C:\MemoryBox-releases\p2-i13-eugene-reprocessing-8150fcf'
-$sha = '8150fcfd8ac0d73e03122e8a0a6bb89ddd3e537e'
+$release = 'C:\MemoryBox-releases\p2-i13-eugene-reprocessing-7629c18'
+$sha = '7629c18a57804a3c29521bda5c90c1f12a4622a7'
 $tool = 'C:\MemoryBox-releases\p2-i13-voice-pilot-6d56da5'
 $approval = 'Tom-approved-eugene-reprocessing-lifecycle-run-2026-09-08'
 
