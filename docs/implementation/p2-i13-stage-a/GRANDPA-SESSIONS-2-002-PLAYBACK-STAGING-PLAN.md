@@ -55,11 +55,11 @@ Tom approved **one** staging-and-validation attempt on 2026-09-08. Approval refe
 
 ## Step 4 — Owner staged review
 
-Tom opens `staged.mp4` locally and verifies moving picture, orientation, audible speech, and seeking at beginning, middle (~02:40), and end (~05:10).
+Tom reported staged playback pass on 2026-09-08 after local review of `staged.mp4` (moving picture, audio, seeking). Visual review reference: `Tom-staged-visual-audio-seek-pass-2026-09-08`. Staging execute output: `validated: true`, `published: false`.
 
 ## Step 5 — Separate publication approval
 
-Only after staged review passes: `--publish --visual-review-ref <ref>`. This atomically hard-links the validated stage to `browser_proxies/7cb205f4b99419be11e3d3f5.mp4`. Then verify playback in MemoryBox for this source.
+Tom authorized publication on 2026-09-08. Approval reference: `Tom-approved-grandpa-sessions-2-002-publication-2026-09-08`. Use the same helper release `032a113c43de8eae3117b9ae64ebcda1b3229eb2` with `--publish --visual-review-ref Tom-staged-visual-audio-seek-pass-2026-09-08`. This atomically hard-links the validated stage to `browser_proxies/7cb205f4b99419be11e3d3f5.mp4`. Then verify playback in MemoryBox for this source.
 
 ## Step 6 — Resume Eugene annotation
 
