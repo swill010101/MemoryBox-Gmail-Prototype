@@ -35,6 +35,11 @@ FlightSim has no `E:` drive; its C: drive is the appropriate location for Flight
 ## Corrected guard verified on FlightSim - 2026-09-08
 
 The read-only stopped-admission check passed from release `32c013649abfbe8bad1163506079c6a2a1353b20` for stopped admission `f9aa45bc-d5b1-4608-bca1-61cfe9993aeb` and plan `99b8a8e93f0bfc7addb1eea05ae0c6e9705de9d0085cecfb0999281df04c59fe`. It verified the current evidence, model and source files with `database_writes=false`, `private_audio_processed=false`, `admission_created=false`, and `model_execution_verified=false`. This proves the timestamp-precision correction admits the unchanged bounded scope; it does not restart the stopped admission or authorize a new run.
+## Bounded Eugene Patio pilot completed - 2026-09-08
+
+FlightSim completed the newly approved four-span admission `f59050d5-cb4b-4ff7-beee-609b28f7af61` on release `32c013649abfbe8bad1163506079c6a2a1353b20` for plan `99b8a8e93f0bfc7addb1eea05ae0c6e9705de9d0085cecfb0999281df04c59fe`. The fresh backup was `C:\MemoryBox-backups\i13-final-pre-eugene-patio-ed7c4cc9e2d54d0d91a867a3d477a2d5\memorybox.dump`, SHA-256 `87f767938d13b9f9d7ff35a47ca34d92b6e5e850af72eb13f7395ae8b93a655e`.
+
+All held-out results met their approved expected decisions: E3-patio-held-out was Eugene `match` at `0.7873078673565811`; T2-as-Eugene-negative was `no_match` at `0.019287476760572082`; and N1-TV-announcer-unknown was `no_match` at `-0.032470365229563855`. The helper reported unchanged legacy counts, processed only the approved private audio, and performed no automatic retry. The admission is stopped. This is bounded voice-pilot evidence only; it does not authorize Learn, drains, archive processing, or a broader recognition run.
 ## Acceptance and rollback
 
 A result is acceptance evidence only: E3 should match Eugene; T2 and N1 should be no-match. A different result is recorded and reviewed, never retried automatically. If preparation fails before registration, production is unchanged. After registration, the helper stops the admission in `finally`; preserve output and do not delete results, restore the database or modify media without a separate decision.
