@@ -32,6 +32,9 @@ Read-only status confirms zero run records, attempts, events and results. Theref
 ## Stopped-admission diagnostic
 
 FlightSim has no `E:` drive; its C: drive is the appropriate location for FlightSim release checkouts. The development desktop uses E: for development work. The Git-memory diagnostic can also run from the existing FlightSim release without creating a checkout or file. The helper performs a repeatable-read database check and hashes the existing model and source files. It does not claim the stopped admission, create a run/attempt/event/result, extract audio, start the encoder, create a plan, or write the database. Its success output states `database_writes=false` and `private_audio_processed=false`; a failure prints the original guard JSON. It is diagnostic only and cannot make the stopped admission runnable.
+## Corrected guard verified on FlightSim - 2026-09-08
+
+The read-only stopped-admission check passed from release `32c013649abfbe8bad1163506079c6a2a1353b20` for stopped admission `f9aa45bc-d5b1-4608-bca1-61cfe9993aeb` and plan `99b8a8e93f0bfc7addb1eea05ae0c6e9705de9d0085cecfb0999281df04c59fe`. It verified the current evidence, model and source files with `database_writes=false`, `private_audio_processed=false`, `admission_created=false`, and `model_execution_verified=false`. This proves the timestamp-precision correction admits the unchanged bounded scope; it does not restart the stopped admission or authorize a new run.
 ## Acceptance and rollback
 
 A result is acceptance evidence only: E3 should match Eugene; T2 and N1 should be no-match. A different result is recorded and reviewed, never retried automatically. If preparation fails before registration, production is unchanged. After registration, the helper stops the admission in `finally`; preserve output and do not delete results, restore the database or modify media without a separate decision.
