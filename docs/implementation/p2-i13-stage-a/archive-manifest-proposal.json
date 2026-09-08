@@ -1,0 +1,102 @@
+{
+  "status": "design_only_not_an_admission",
+  "processing_authorized": false,
+  "purpose": "acceptance_learning",
+  "scope_kind": "archive",
+  "acceptance_waiver_ref": "Tom-narrow-bounded-voice-acceptance-waiver-2026-09-08",
+  "owner_truth_export_ref": "Tom-owner-truth-export-flightsim-2026-09-08",
+  "lifecycle_note": "Five-source archive inventory after narrow bounded voice acceptance waiver. Not full 22-source corpus acceptance or generalized archive release.",
+  "manifest": {
+    "id": "p2-i13-flightsim-archive-5",
+    "version": "0.1-narrow-acceptance-waiver",
+    "membership_parent": "p2-i13-flightsim-22/0.2-membership-confirmed",
+    "sources": [
+      {
+        "provider_key": "hvrt",
+        "video_external_id": "vid-da41273dbd9ac4bb",
+        "relative_path": "20111105_1530.MP4",
+        "source_sha256": "636ee92d9588dfc31550d94f2e1ac1343fb4296c2dc62879325c412e89c0dd7b",
+        "size_bytes": 2028580459,
+        "duration_sec": 1790.789,
+        "owner_confirmed": true,
+        "owner_truth_ref": "Tom-owner-truth-export-flightsim-2026-09-08",
+        "coverage_tags": ["off_camera_voice", "sustained_appearance"],
+        "truth": [
+          {"modality": "voice", "person_id": "33509a4c-0869-458a-b0b9-35a669aace16", "start_sec": 37.12, "end_sec": 42.4, "annotation_id": "5e106e50-76ce-4fb2-8f62-0083119154cc"},
+          {"modality": "voice", "person_id": "b67708d8-0262-404d-a230-2cc99900cea4", "start_sec": 138.72, "end_sec": 144.66, "annotation_id": "d5a3d050-76d6-446e-91d4-ff89986856cb"}
+        ]
+      },
+      {
+        "provider_key": "hvrt",
+        "video_external_id": "vid-c57dbd21f993f6d1",
+        "relative_path": "20111105_1532.MP4",
+        "source_sha256": "26f3646b4adbda7573ff19c02da3b11bafceff4ac5cd7d967d5b0053a2e10705",
+        "size_bytes": 1251525801,
+        "duration_sec": 1105.104,
+        "owner_confirmed": true,
+        "owner_truth_ref": "Tom-owner-truth-export-flightsim-2026-09-08",
+        "coverage_tags": ["off_camera_voice", "poor_audio", "multiple_people", "sustained_appearance"],
+        "truth": [
+          {"modality": "voice", "person_id": "b67708d8-0262-404d-a230-2cc99900cea4", "start_sec": 129.64, "end_sec": 138.72, "annotation_id": "5651a4bd-dffd-4d26-a985-16e8abaf37c2"},
+          {"modality": "voice", "person_id": "33509a4c-0869-458a-b0b9-35a669aace16", "start_sec": 152.24, "end_sec": 158.34, "annotation_id": "3fa1c4e1-d8a6-423f-9c9b-1a229d550945"},
+          {"modality": "voice", "person_id": "b67708d8-0262-404d-a230-2cc99900cea4", "start_sec": 325.22, "end_sec": 345.56, "annotation_id": "f47ee4ec-6b28-442a-81b2-152fbe8f45e2"},
+          {"modality": "voice", "person_id": "b67708d8-0262-404d-a230-2cc99900cea4", "start_sec": 542.82, "end_sec": 552.78, "annotation_id": "bbceb696-f8b4-434a-820d-dcb6928cbc5e"},
+          {"modality": "voice", "person_id": "33509a4c-0869-458a-b0b9-35a669aace16", "start_sec": 620.14, "end_sec": 622.04, "annotation_id": "d890e55e-e35b-4f9d-959a-256b74f8d0f5"},
+          {"modality": "voice", "person_id": "33509a4c-0869-458a-b0b9-35a669aace16", "start_sec": 948.3, "end_sec": 955.5, "annotation_id": "2b013ef8-92f4-4193-9ae1-cd4ed778a40c"}
+        ]
+      },
+      {
+        "provider_key": "hvrt",
+        "video_external_id": "vid-c015e0fe07414fcc",
+        "relative_path": "second meals on wheels.mp4",
+        "source_sha256": "09e6dfb523724448888586183d9e265f3181f241ab37fa9d6d800ac1b6cf92b3",
+        "size_bytes": 6249411,
+        "duration_sec": 305.4066666666667,
+        "owner_confirmed": true,
+        "owner_truth_ref": "Tom-owner-truth-export-flightsim-2026-09-08",
+        "coverage_tags": ["no_match"],
+        "truth": [
+          {"modality": "no_match", "start_sec": 0.0, "end_sec": 6.74, "annotation_id": "74cc9646-82db-4899-960d-f795f691c524"}
+        ]
+      },
+      {
+        "provider_key": "hvrt",
+        "video_external_id": "vid-8163a680131fd30a",
+        "relative_path": "2011-03-13 Grandpa sessions/Grandpa sessions 003.MP4",
+        "source_sha256": "ccda7f166a780c512fa9dc72b366ad20b314003aa6cc2f3869a0cf5396dc37e1",
+        "size_bytes": 1055204616,
+        "duration_sec": 931.931,
+        "owner_confirmed": true,
+        "owner_truth_ref": "Tom-owner-truth-export-flightsim-2026-09-08",
+        "coverage_tags": ["sustained_appearance"],
+        "truth": [
+          {"modality": "voice", "person_id": "b67708d8-0262-404d-a230-2cc99900cea4", "start_sec": 15.94, "end_sec": 32.04, "annotation_id": "6b41bd21-f595-4d9c-b44f-2ea9a012d1de"},
+          {"modality": "voice", "person_id": "b67708d8-0262-404d-a230-2cc99900cea4", "start_sec": 150.02, "end_sec": 171.54, "annotation_id": "b4e5fd32-08f9-44f3-bf0a-1fa2d8251864"}
+        ]
+      },
+      {
+        "provider_key": "hvrt",
+        "video_external_id": "vid-34df63e61b949890",
+        "relative_path": "2011-03-21 grandpa sessions 2/grandpa sessions 2 002.MP4",
+        "source_sha256": "61505855a1220985482c415238bd4622278bf4eff053687dffad5e02a1b77a32",
+        "size_bytes": 361851720,
+        "duration_sec": 319.8195,
+        "owner_confirmed": true,
+        "owner_truth_ref": "Tom-owner-truth-export-flightsim-2026-09-08",
+        "coverage_tags": ["sustained_appearance"],
+        "truth": [
+          {"modality": "voice", "person_id": "b67708d8-0262-404d-a230-2cc99900cea4", "start_sec": 26.3, "end_sec": 34.78, "annotation_id": "3eb88a19-7249-4ce6-b976-e3066daf205a"},
+          {"modality": "voice", "person_id": "b67708d8-0262-404d-a230-2cc99900cea4", "start_sec": 86.42, "end_sec": 105.44, "annotation_id": "5d87a6ac-d512-4504-857e-ec8589e8bd78"}
+        ]
+      }
+    ]
+  },
+  "person_ids": [
+    "b67708d8-0262-404d-a230-2cc99900cea4",
+    "33509a4c-0869-458a-b0b9-35a669aace16"
+  ],
+  "lanes": ["face"],
+  "max_work_items": 100,
+  "max_attempts_per_item": 2,
+  "budget_note": "Preview expects 10 face work units (5 sources x 2 People). N1 no-match source participates in inventory truth but does not add a Person target."
+}

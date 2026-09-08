@@ -95,3 +95,46 @@ Tom confirmed after in-browser review on `20111105_1532.MP4`:
 Reference: `Tom-confirmed-overlap-pilot-intervals-2026-09-08`. Interval-specific waiver for `bbceb696` on excluded 1532 is **approved** for this bounded pilot only.
 
 Execution package: [DEPLOYMENT-READINESS-OVERLAP-POOR-AUDIO-VOICE-PILOT.md](DEPLOYMENT-READINESS-OVERLAP-POOR-AUDIO-VOICE-PILOT.md). Run approval: `Tom-approved-overlap-poor-audio-voice-pilot-run-2026-09-08` (Tom chat 2026-09-08).
+
+
+## Overlap / poor-audio voice pilot completed — 2026-09-08
+
+FlightSim execution completed on release `de9cc726f713da9fc1405c13f1aa68fedc8c8b44`. Admission `339b3a14-5069-4554-846f-dc84d6745c00` registered, ran four spans (T-gs2-reuse training plus three held-outs), and stopped. All held-outs matched expected decisions: E2 Eugene overlap match `0.584`, O2 off-camera Tom no-match `0.093`, N1 TV announcer no-match `-0.020`. Prior Tom, N1, Patio, and reprocessing pilot results remained **current**; legacy counts unchanged; automatic retry false.
+
+| Field | Value |
+|---|---|
+| Backup | `C:\MemoryBox-backups\i13-final-pre-overlap-poor-audio-2498b6a8ce1241ecbc5dad9993ce1733\memorybox.dump` |
+| Backup SHA-256 | `c5fd749b0a5987d16211c70f50ff6f94cf9380a11fc665538d1a1fedcafc9f3f` |
+| Plan SHA-256 | `42a3ffcc303fe9bfe23c7bdf6d133e5b634ff902d7de0d3b4f4d6f4983ba7d4c` |
+
+Recorded in [overlap-poor-audio-voice-pilot-report.json](overlap-poor-audio-voice-pilot-report.json). E2 is narrow overlap/poor-audio evidence for interval `bbceb696` only — not approval of Eugene matching across all of 1532. Gate 4, Learn, recognition drains, face/voice corroboration, and full I13 acceptance remain separate founder decisions. **Do not retry** admission `339b3a14-5069-4554-846f-dc84d6745c00`.
+
+
+## Gate 4 Outcome A — defer — 2026-09-08
+
+Tom chose **Outcome A** in [GATE-4-DECISION-PRD.md](GATE-4-DECISION-PRD.md): defer archive register/unlock/start until bounded acceptance prerequisites are clearer.
+
+| Field | Value |
+|---|---|
+| Decision | A — defer Gate 4 execution |
+| Review reference | `Tom-deferred-gate-4-archive-until-acceptance-prerequisites-2026-09-08` |
+
+**Not authorized:** archive plan register, `unlock`, `start`, drains, or P2-I14 product build.
+
+**Resume Gate 4 when:** face/voice corroboration scope is decided; owner truth is exported/reviewed for an `acceptance_learning` or archive plan; or Tom issues an explicit narrow acceptance waiver with a defined `--acceptance-ref`. Next step is then Outcome **B** (plan-only preview) at minimum, with fresh sign-off before any register/unlock/start.
+
+
+## Narrow bounded voice acceptance waiver — 2026-09-08
+
+Tom chose option **2**: narrow acceptance waiver plus Gate 4 Outcome **B** (archive plan preview only).
+
+| Field | Value |
+|---|---|
+| Waiver reference (`--acceptance-ref` when unlock is authorized) | `Tom-narrow-bounded-voice-acceptance-waiver-2026-09-08` |
+| Owner-truth export reference | `Tom-owner-truth-export-flightsim-2026-09-08` |
+| Archive plan | [archive-manifest-proposal.json](archive-manifest-proposal.json) — 5 sources, 10 face work units |
+| Plan SHA-256 | `f36cdb19c51abe13234b80c08b746901d5d195c5e8be621e10e5f2a85f46316c` |
+
+See [NARROW-ACCEPTANCE-WAIVER.md](NARROW-ACCEPTANCE-WAIVER.md) and [DEPLOYMENT-READINESS-GATE-4-ARCHIVE-PLAN-PREVIEW.md](DEPLOYMENT-READINESS-GATE-4-ARCHIVE-PLAN-PREVIEW.md).
+
+**Not authorized:** `register`, `unlock`, `start`, drains, full 22-source acceptance, full I13 sign-off, or P2-I14.

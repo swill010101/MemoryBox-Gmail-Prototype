@@ -1,5 +1,7 @@
 # FlightSim readiness: overlap / poor-audio Eugene voice pilot
 
+**Status:** **Completed** on FlightSim 2026-09-08 — admission `339b3a14-5069-4554-846f-dc84d6745c00` (stopped). Report: [overlap-poor-audio-voice-pilot-report.json](overlap-poor-audio-voice-pilot-report.json). **Do not rerun.**
+
 ## Founder authorization
 
 Tom confirmed both pilot intervals on 2026-09-08 after in-browser review:

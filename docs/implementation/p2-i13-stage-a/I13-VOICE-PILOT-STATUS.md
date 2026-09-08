@@ -1,6 +1,6 @@
 # I13 voice pilot evidence inventory
 
-Read-only status as of 2026-09-08 after the Eugene reprocessing lifecycle run. Recheck on FlightSim with [inspect-voice-pilot-status.py](inspect-voice-pilot-status.py).
+Read-only status as of 2026-09-08 after the overlap / poor-audio voice pilot. Recheck on FlightSim with [inspect-voice-pilot-status.py](inspect-voice-pilot-status.py).
 
 ## Stopped admissions
 
@@ -11,6 +11,7 @@ Read-only status as of 2026-09-08 after the Eugene reprocessing lifecycle run. R
 | `46cb1d21-b464-4bc4-bf7c-7d0de0202ca6` | T2 | no | N1 Unknown no-match pilot |
 | `f59050d5-cb4b-4ff7-beee-609b28f7af61` | T3-patio | no | Eugene Patio held-out pilot |
 | `66fb93af-92a9-4ef1-b3e6-c0f700e89276` | R1-gs2-fresh | no | Eugene reprocessing lifecycle pilot |
+| `339b3a14-5069-4554-846f-dc84d6745c00` | T-gs2-reuse | no | Overlap / poor-audio Eugene pilot |
 | `f9aa45bc-d5b1-4608-bca1-61cfe9993aeb` | T3-patio | no | Stopped Patio failure admission (do not retry) |
 
 ## Owner annotations added this session
@@ -22,12 +23,16 @@ Read-only status as of 2026-09-08 after the Eugene reprocessing lifecycle run. R
 
 Playable copy for `vid-34df63e61b949890` published to `browser_proxies/7cb205f4b99419be11e3d3f5.mp4`.
 
+## Overlap / poor-audio pilot (completed 2026-09-08)
+
+Admission `339b3a14-5069-4554-846f-dc84d6745c00` used T-gs2-reuse training and three held-outs. E2 overlap Eugene match `0.584`; O2 off-camera Tom no-match `0.093`; N1 TV announcer no-match `-0.020`. See [overlap-poor-audio-voice-pilot-report.json](overlap-poor-audio-voice-pilot-report.json). Do not retry.
+
 ## Remaining voice gaps (no run authorized)
 
-1. **Overlap / poor-audio** — Q1 listening-only; U1 remainder unreviewed; `vid-c57dbd21f993f6d1` excluded from Eugene evidence.
-2. **Face/voice corroboration** — separate acceptance matrix.
-3. **Generalized accuracy** — not claimed by any pilot.
-4. **Gate 3 bounded processing** — **complete** 2026-09-08; admission `458d1a76-4ecb-4722-bd76-20125b14c1d3` (stopped). See [gate-3-evidence-generation-report.json](gate-3-evidence-generation-report.json). Do not retry.
-5. **Gate 4 archive unlock** — separate founder decision.
+1. **Q1 listening-only** — no saved annotation; excluded from evidence.
+2. **U1 remainder** — unreviewed portion of prior Eugene interval.
+3. **Face/voice corroboration** — separate acceptance matrix.
+4. **Generalized accuracy** — not claimed by any pilot (E2 is interval-specific on 1532 only).
+5. **Gate 4 archive unlock** — **deferred** 2026-09-08 (Outcome A); resume after acceptance prerequisites — see [GATE-4-DECISION-PRD.md](GATE-4-DECISION-PRD.md).
 
 See [POST-PILOT-VOICE-GAP-PLAN.md](POST-PILOT-VOICE-GAP-PLAN.md).

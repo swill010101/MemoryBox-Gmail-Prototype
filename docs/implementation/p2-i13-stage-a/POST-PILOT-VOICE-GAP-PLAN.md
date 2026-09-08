@@ -59,3 +59,7 @@ FlightSim read-only verification confirms that retired T1 admission `1039c733-21
 ## Completed Eugene reprocessing lifecycle pilot
 
 FlightSim admission `66fb93af-92a9-4ef1-b3e6-c0f700e89276` completed once and stopped on 2026-09-08. It trained on fresh `R1-gs2-fresh` (`3eb88a19…`) and held out `H1-gs2-held-out` (`5d87a6ac…`), Tom T2, and Unknown N1. H1 matched Eugene at `0.7410769454`; T2 and N1 were correctly `no_match`. Legacy counts were unchanged; Tom, N1, and Patio results remained current; automatic retry was false. See [DEPLOYMENT-READINESS-EUGENE-REPROCESSING-VOICE-PILOT.md](DEPLOYMENT-READINESS-EUGENE-REPROCESSING-VOICE-PILOT.md).
+
+## Completed overlap / poor-audio Eugene pilot
+
+FlightSim admission `339b3a14-5069-4554-846f-dc84d6745c00` completed once and stopped on 2026-09-08. It reused T-gs2-reuse training (`3eb88a19…`) and held out overlap Eugene E2 on 1532 (`bbceb696…`), off-camera Tom O2 (`2b013ef8…`), and Unknown N1. E2 matched Eugene at `0.5842550437`; O2 and N1 were correctly `no_match` at `0.0927518648` and `-0.0199960785`. Prior Tom, N1, Patio, and reprocessing results remained current; legacy counts unchanged; automatic retry false. See [overlap-poor-audio-voice-pilot-report.json](overlap-poor-audio-voice-pilot-report.json). E2 is interval-specific overlap evidence only — not generalized 1532 Eugene matching.

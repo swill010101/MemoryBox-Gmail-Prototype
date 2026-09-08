@@ -1,0 +1,26 @@
+{
+  "ok": true,
+  "admission_id": "339b3a14-5069-4554-846f-dc84d6745c00",
+  "release_sha": "de9cc726f713da9fc1405c13f1aa68fedc8c8b44",
+  "plan_sha256": "42a3ffcc303fe9bfe23c7bdf6d133e5b634ff902d7de0d3b4f4d6f4983ba7d4c",
+  "approval_reference": "Tom-approved-overlap-poor-audio-voice-pilot-run-2026-09-08",
+  "interval_confirmation_ref": "Tom-confirmed-overlap-pilot-intervals-2026-09-08",
+  "backup_file": "C:\\MemoryBox-backups\\i13-final-pre-overlap-poor-audio-2498b6a8ce1241ecbc5dad9993ce1733\\memorybox.dump",
+  "backup_sha256": "c5fd749b0a5987d16211c70f50ff6f94cf9380a11fc665538d1a1fedcafc9f3f",
+  "training_key": "T-gs2-reuse",
+  "training_annotation_id": "3eb88a19-7249-4ce6-b976-e3066daf205a",
+  "results": [
+    {"key": "E2-1532-overlap-held-out", "annotation_id": "bbceb696-f8b4-434a-820d-dcb6928cbc5e", "expected_match": true, "score": 0.584255043684099, "decision": "match"},
+    {"key": "O2-tom-offcamera-negative", "annotation_id": "2b013ef8-92f4-4193-9ae1-cd4ed778a40c", "expected_match": false, "score": 0.09275186484265448, "decision": "no_match"},
+    {"key": "N1-TV-announcer-unknown", "annotation_id": "74cc9646-82db-4899-960d-f795f691c524", "expected_match": false, "score": -0.0199960785381607, "decision": "no_match"}
+  ],
+  "legacy_counts_unchanged": true,
+  "tom_result_current": true,
+  "n1_result_current": true,
+  "patio_result_current": true,
+  "reprocessing_result_current": true,
+  "automatic_retry": false,
+  "tool_release": "C:\\MemoryBox-releases\\p2-i13-voice-pilot-6d56da5",
+  "completed": "2026-09-08",
+  "notes": "All three held-outs met expected decisions. E2 match at 0.584 is narrow overlap/poor-audio evidence for annotation bbceb696 on 1532 only; not generalized Eugene matching across 1532. O2 is Eugene negative control for off-camera Tom. Does not authorize Learn, recognition drain, Gate 4, or full I13 acceptance."
+}

@@ -1,8 +1,10 @@
 # Stage A deployment plan - Tom operates FlightSim
 
-**Gate position:** Gate 3 evidence-generation **complete** (2026-09-08). Next: overlap/poor-audio voice pilot planning (Eugene Will first) and separate Gate 4 decision. Learn locked.
+**Gate position:** Gate 3 and overlap voice pilot **complete**. Gate 4 execution **deferred**; narrow acceptance waiver + **Outcome B plan preview** authorized 2026-09-08 — see [DEPLOYMENT-READINESS-GATE-4-ARCHIVE-PLAN-PREVIEW.md](DEPLOYMENT-READINESS-GATE-4-ARCHIVE-PLAN-PREVIEW.md). Learn locked.
 
 **Gate 3 admission (stopped, do not retry):** `458d1a76-4ecb-4722-bd76-20125b14c1d3` — [gate-3-evidence-generation-report.json](gate-3-evidence-generation-report.json).
+
+**Overlap pilot (stopped, do not retry):** `339b3a14-5069-4554-846f-dc84d6745c00` — [overlap-poor-audio-voice-pilot-report.json](overlap-poor-audio-voice-pilot-report.json).
 
 ## Current status - voice-result playback accepted by Tom
 

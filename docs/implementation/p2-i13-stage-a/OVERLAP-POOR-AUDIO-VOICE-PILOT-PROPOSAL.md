@@ -1,6 +1,6 @@
 # Overlap / poor-audio voice pilot proposal
 
-**Status:** intervals confirmed by Tom 2026-09-08 — run pending explicit production approval  
+**Status:** **completed** on FlightSim 2026-09-08 — admission `339b3a14-5069-4554-846f-dc84d6745c00`; see [overlap-poor-audio-voice-pilot-report.json](overlap-poor-audio-voice-pilot-report.json)  
 **Proposal:** [overlap-poor-audio-voice-pilot-proposal.json](overlap-poor-audio-voice-pilot-proposal.json)  
 **Readiness:** [DEPLOYMENT-READINESS-OVERLAP-POOR-AUDIO-VOICE-PILOT.md](DEPLOYMENT-READINESS-OVERLAP-POOR-AUDIO-VOICE-PILOT.md)
 

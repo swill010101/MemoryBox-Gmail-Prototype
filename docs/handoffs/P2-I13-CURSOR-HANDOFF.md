@@ -4,7 +4,7 @@
 
 - Repository: `E:\MemoryBox-dev\p2-i13-stage-a`
 - Branch: `codex/p2-i13-stage-a`
-- Handoff HEAD: `1b60e79`+ (after Gate 3 evidence-generation recorded)
+- Handoff HEAD: `de9cc72`+ (after overlap voice pilot recorded)
 - Remote: `origin/codex/p2-i13-stage-a`
 - Working tree: clean unless noted below.
 
@@ -31,10 +31,11 @@ This handoff contains source and documentation state only. Do not add database d
   - N1 Unknown — `46cb1d21…` **current**
   - Eugene Patio — `f59050d5…` **current**
   - Eugene reprocessing lifecycle — `66fb93af…` **current**
+  - Overlap / poor-audio Eugene — `339b3a14…` **current**
 - T1 lifecycle retirement completed; stale cascade verified.
 - Playable copy published for `vid-34df63e61b949890` (`grandpa sessions 2 002.MP4`).
 
-## Owner voice annotations (ten reviewed + overlap track in progress)
+## Owner voice annotations (ten reviewed + overlap track complete)
 
 | Key | Person | Status |
 |---|---|---|
@@ -48,24 +49,26 @@ This handoff contains source and documentation state only. Do not add database d
 | E3-patio-held-out | Eugene | Patio held-out |
 | R1-gs2-fresh | Eugene | Lifecycle training |
 | H1-gs2-held-out | Eugene | Lifecycle held-out |
+| E2-1532-overlap | Eugene | Overlap/poor-audio held-out match (`339b3a14…`) |
+| O2-tom-offcamera | Tom off-camera | Overlap pilot Eugene negative control |
 
-Tom reports new Eugene Will and off-camera Tom Will evidence for overlap/poor-audio pilot planning. Run inspector on FlightSim to capture IDs. Q1 on 1532 remains listening-only. `vid-c57dbd21f993f6d1` excluded from Eugene voice match evidence.
+Q1 on 1532 remains listening-only. `vid-c57dbd21f993f6d1` remains excluded from generalized Eugene voice evidence; E2 used interval-specific waiver for `bbceb696` only.
 
 ## Gate position and locks
 
-**Between Gate 3 and Gate 4.** Gate 3 transcription evidence-generation is **complete**. Gate 4 archive unlock/start is **not** authorized. Learn and recognition drains stay locked.
+**Gate 4 deferred (Outcome A, 2026-09-08).** Gate 3 and overlap voice pilot are **complete**. Archive unlock/start is **not** authorized. See [GATE-4-DECISION-PRD.md](docs/implementation/p2-i13-stage-a/GATE-4-DECISION-PRD.md). **P2-I14** remains blocked until full I13 acceptance. Learn and recognition drains stay locked.
 
 Keep `MEMORYBOX_RECOGNITION_DRAIN=0`, `MEMORYBOX_SPEECH_DRAIN=0`, and no `MEMORYBOX_I13_ADMISSION_ID` outside a separately approved bounded operation.
 
 ## Exact next action
 
-1. **Overlap voice pilot run** — Tom authorizes execution (`Tom-approved-overlap-poor-audio-voice-pilot-run-2026-09-08` or explicit “approved run”). Steps in [DEPLOYMENT-READINESS-OVERLAP-POOR-AUDIO-VOICE-PILOT.md](docs/implementation/p2-i13-stage-a/DEPLOYMENT-READINESS-OVERLAP-POOR-AUDIO-VOICE-PILOT.md).
+1. **Gate 4 Outcome B** — Run plan preview on FlightSim: [DEPLOYMENT-READINESS-GATE-4-ARCHIVE-PLAN-PREVIEW.md](docs/implementation/p2-i13-stage-a/DEPLOYMENT-READINESS-GATE-4-ARCHIVE-PLAN-PREVIEW.md). Narrow acceptance waiver recorded: [NARROW-ACCEPTANCE-WAIVER.md](docs/implementation/p2-i13-stage-a/NARROW-ACCEPTANCE-WAIVER.md).
 
-2. **Separate track:** Gate 4 decision; face/voice corroboration; full I13 acceptance.
+2. **Separate track:** face/voice corroboration; full I13 acceptance; P2-I14 only after I13 closeout.
 
 ## Actions that must not be repeated
 
-- Migrations 030–032, T1 retirement, completed voice pilot reruns, Patio failure admission retry, grandpa 002 playable-copy staging, Eugene reprocessing lifecycle (`66fb93af…`), **Gate 3 evidence-generation run (`458d1a76…`)**.
+- Migrations 030–032, T1 retirement, completed voice pilot reruns, Patio failure admission retry, grandpa 002 playable-copy staging, Eugene reprocessing lifecycle (`66fb93af…`), **Gate 3 evidence-generation run (`458d1a76…`)**, **overlap/poor-audio voice pilot (`339b3a14…`)**.
 - Bare `python` on FlightSim for I13 helpers; use `.titanet-venv` under `p2-i13-voice-pilot-6d56da5`.
 
 ## Known paths
@@ -74,9 +77,12 @@ Keep `MEMORYBOX_RECOGNITION_DRAIN=0`, `MEMORYBOX_SPEECH_DRAIN=0`, and no `MEMORY
 - FlightSim checkout: `C:\MemoryBox`
 - Verified TitaNet tool release: `C:\MemoryBox-releases\p2-i13-voice-pilot-6d56da5`
 - Gate 3 backup: `C:\MemoryBox-backups\i13-final-pre-gate-3-evidence-2bc4a542025249d2ab62886aa84cf4a5\memorybox.dump`
+- Overlap pilot backup: `C:\MemoryBox-backups\i13-final-pre-overlap-poor-audio-2498b6a8ce1241ecbc5dad9993ce1733\memorybox.dump`
 
 ## Key evidence files
 
 - [gate-3-evidence-generation-report.json](docs/implementation/p2-i13-stage-a/gate-3-evidence-generation-report.json)
+- [overlap-poor-audio-voice-pilot-report.json](docs/implementation/p2-i13-stage-a/overlap-poor-audio-voice-pilot-report.json)
+- [GATE-4-DECISION-PRD.md](docs/implementation/p2-i13-stage-a/GATE-4-DECISION-PRD.md)
 - [I13-VOICE-PILOT-STATUS.md](docs/implementation/p2-i13-stage-a/I13-VOICE-PILOT-STATUS.md)
 - [OVERLAP-POOR-AUDIO-VOICE-GAP-PLAN.md](docs/implementation/p2-i13-stage-a/OVERLAP-POOR-AUDIO-VOICE-GAP-PLAN.md)
