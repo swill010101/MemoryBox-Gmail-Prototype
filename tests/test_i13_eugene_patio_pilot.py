@@ -27,6 +27,9 @@ class EugenePatioPilotProposal(unittest.TestCase):
             result.append(row)
         return proposal, result
 
+    def test_bom_encoded_selection_is_loadable(self):
+        self.assertEqual(load_selection()['selections'][0]['key'], 'T3-patio')
+
     def test_exact_bounded_shape(self):
         proposal, rows = self.rows()
         result = validate_rows(proposal, rows)

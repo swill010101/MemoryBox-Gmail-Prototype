@@ -51,7 +51,7 @@ def main(argv=None):
     a=p.parse_args(argv)
     try:
         if a.action=='prepare':
-            plan=prepare(json.loads(Path(a.selection).read_text(encoding='utf-8')),a.model,a.revision,a.match_threshold,a.uncertain_threshold)
+            plan=prepare(json.loads(Path(a.selection).read_text(encoding='utf-8-sig')),a.model,a.revision,a.match_threshold,a.uncertain_threshold)
             with Path(a.output).open('x',encoding='utf-8') as f:json.dump(plan,f,indent=2,allow_nan=False)
             result=validate(plan)
         elif a.action=='retire':
