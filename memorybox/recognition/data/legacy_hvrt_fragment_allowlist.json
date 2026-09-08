@@ -1,0 +1,20 @@
+{
+  "policy": "i13-legacy-hvrt-fragment-v1",
+  "manifest_id": "p2-i13-flightsim-22",
+  "review_reference": "founder-reviewed-two-source-pilot-2026-09-05",
+  "limits": "Manifest-scoped only. Not archive-wide. Expand via preview + publish-fragment-allowlist.py after founder review.",
+  "approved_source_runs": [
+    {
+      "video_external_id": "vid-c57dbd21f993f6d1",
+      "processing_run_id": "7aa4cda7-2d49-456c-a107-9d896cc37b53",
+      "relative_path": "20111105_1532.MP4",
+      "pilot_note": "First one-source pilot; 7 query moments -> 1 source card"
+    },
+    {
+      "video_external_id": "vid-da41273dbd9ac4bb",
+      "processing_run_id": "bd94ab11-fb4f-4b8a-b993-339e535f84e6",
+      "relative_path": "20111105_1530.MP4",
+      "pilot_note": "Second source from Gallery lookup; 8 moments -> 1 source card"
+    }
+  ]
+}

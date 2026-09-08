@@ -69,8 +69,8 @@ Authority: `MBPRD-P2-I13_Video_Face_Speech_Voice_Learning_v0.2.docx`, `MBBS-P2_I
 | I13-FR-017 | Release lock before archive | **passed (policy)** | Intentionally disabled; founder rejected archive C/D/E |
 | I13-FR-018 | Timeline precision | **deferred** | Explore timeline exists; regression deferred |
 | I13-FR-019 | Retrieval on owner truth | **deferred** | Search paths exist; four-mode acceptance deferred |
-| I13-FR-020 | Legacy moment presentation | **deferred** | Clamp defect related to FR-005 |
-| I13-FR-021 | Fragment inventory | **deferred** | Checkpoint aggregates only |
+| I13-FR-020 | Legacy moment presentation | **pending** | [LEGACY-HVRT-FRAGMENT-RECONCILIATION-GATE.md](LEGACY-HVRT-FRAGMENT-RECONCILIATION-GATE.md); two-source pilot ≠ gate complete; live Gallery proof required |
+| I13-FR-021 | Fragment inventory | **pending** | [inventory-legacy-hvrt-fragments.py](inventory-legacy-hvrt-fragments.py) — manifest-scoped; run on FlightSim before acceptance |
 | I13-FR-022 | Fragment migration | **deferred** | Not authorized |
 | I13-FR-023 | Derivative deletion | **deferred** | Not authorized |
 | I13-FR-024 | Admin shell | **failed** | No I13 Admin top-nav destination |
@@ -101,6 +101,26 @@ Authority: `MBPRD-P2-I13_Video_Face_Speech_Voice_Learning_v0.2.docx`, `MBBS-P2_I
 
 ---
 
+## Legacy HVRT fragment reconciliation gate
+
+**Authority:** [LEGACY-HVRT-FRAGMENT-RECONCILIATION-GATE.md](LEGACY-HVRT-FRAGMENT-RECONCILIATION-GATE.md)  
+**Corpus:** accepted **22-video manifest only** — not archive-wide
+
+| # | Checkpoint | Class | Evidence |
+|---|---|---|---|
+| F1 | Inventory 0.5–2 s HVRT observations + lineage | **pending** | `inventory-legacy-hvrt-fragments.py` output on FlightSim |
+| F2 | Read-only preview (grouping, before/after, suppressed dupes) | **pending** | `preview-fragment-reconciliation.py` after inventory |
+| F3 | Apply grouping across manifest population (post-review) | **pending** | `publish-fragment-allowlist.py` + deploy; two-source pilot ≠ complete |
+| F4 | Source videos / observations / provenance preserved | **passed (design)** | Presentation-only; no DB migration |
+| F5 | Duplicate presentations removed; evidence not deleted | **passed (pilot)** | Two-source FlightSim owner report; full manifest pending |
+| F6 | Separate appearances / timing gaps preserved | **passed (pilot)** | 40.5–60.5 s gap tests + owner 1532 pilot |
+| F7 | Pipeline cannot recreate half-second fragment cards | **passed (code)** | `test_i13_fragment_correction.py` + `test_i13_fragment_reconciliation_gate.py` |
+| F8 | Post-correction counts + live Gallery/retrieval proof | **pending** | `verify-fragment-reconciliation.py` + owner FlightSim notes |
+
+**Do not close I13** on FR-005 playback or the one-video/two-source pilot alone.
+
+---
+
 ## Interactive Learn reconciliation (PRD — not voice pilots)
 
 Inspector: [inspect-interactive-learn-reconciliation.py](inspect-interactive-learn-reconciliation.py) — [INTERACTIVE-LEARN-RECONCILIATION.md](INTERACTIVE-LEARN-RECONCILIATION.md)
@@ -127,7 +147,7 @@ Inspector: [inspect-interactive-learn-reconciliation.py](inspect-interactive-lea
 | Voice | **passed (bounded)** | Six current stopped pilots; matrix waiver W |
 | Corroboration | **passed (bounded)** | Read-only report + API + tests |
 | Retrieval | **deferred** | — |
-| Legacy fragment reconciliation | **deferred** | — |
+| Legacy fragment reconciliation | **pending** | Gate F1–F3, F8 open — see fragment reconciliation section |
 | Jobs | **failed** | No I13 Admin Jobs UI |
 | Regression | **deferred** | Automated tests pass; rendered workflow deferred |
 | Safety | **passed (policy)** | Archive/register/unlock/start disabled |
@@ -141,7 +161,8 @@ Inspector: [inspect-interactive-learn-reconciliation.py](inspect-interactive-lea
 |---|---|
 | **passed** | Voice pilots, Gate 3, corroboration, retirement lifecycle, safety locks, FR-005 code fix |
 | **waived** | Additional voice matrix pilot (W) |
-| **deferred** | Archive C/D/E execution, fragments, retrieval, polish |
+| **deferred** | Archive C/D/E execution, retrieval, polish |
+| **pending** | Legacy HVRT fragment reconciliation (full manifest), interactive Learn steady state, Admin live proof |
 | **failed** | Interactive Learn 1–4, Learn enablement (L6), Admin screens |
 | **not tested** | Learn correction/removal live (L5), FR-005 FlightSim Explore render |
 

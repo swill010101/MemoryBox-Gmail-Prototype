@@ -1,40 +1,53 @@
-"""Non-destructive, source-scoped Gallery projection; no DB or model access."""
+"""Non-destructive, manifest-scoped Gallery projection; no DB or model access."""
 from copy import deepcopy
 
-PILOT_SOURCE = "vid-c57dbd21f993f6d1"
-PILOT_RUN = "7aa4cda7-2d49-456c-a107-9d896cc37b53"
-SECOND_SOURCE = "vid-da41273dbd9ac4bb"
-SECOND_RUN = "bd94ab11-fb4f-4b8a-b993-339e535f84e6"
-APPROVED_SOURCE_RUNS = frozenset({(PILOT_SOURCE, PILOT_RUN), (SECOND_SOURCE, SECOND_RUN)})
-POLICY = "i13-source-moments-v1"
+from memorybox.recognition.fragment_reconciliation import (
+    PILOT_RUN,
+    PILOT_SOURCE,
+    POLICY,
+    SECOND_RUN,
+    SECOND_SOURCE,
+    approved_source_runs,
+    is_pilot_evidence,
+    is_reconcilable_fragment,
+)
 
-
-def is_pilot_evidence(source, provider, evidence):
-    e = evidence or {}
-    return (provider == "hvrt"
-            and (source, e.get("processing_run_id")) in APPROVED_SOURCE_RUNS
-            and e.get("method") == "mb_native_i8b"
-            and e.get("status") == "accepted"
-            and e.get("authority") == "ai_inferred"
-            and e.get("confirmation_state") == "system_associated")
+# Backward-compatible test constants.
+APPROVED_SOURCE_RUNS = approved_source_runs()
 
 
 def project_source_cards(items):
     """Retain all query-returned moments inside one card per evidence partition.
 
-    No interval union, full-source fetch or continuous-presence assertion. Unknown,
-    withdrawn, owner evidence and other sources are not regrouped.
+    Legacy HVRT half-second fragments on the accepted manifest collapse to one
+    source card per (source, Person, run, model). No interval union, no archive
+    sweep, and no deletion of underlying moment rows.
     """
     out = []
     groups = {}
     for original in items:
         e = original.get("appearance_evidence") or {}
-        if (original.get("presentation_policy") == POLICY or original.get("spoken_text") or not original.get("mb_person_id")
-                or not is_pilot_evidence(original.get("video_external_id"), original.get("provider_key"), e)):
+        if (
+            original.get("presentation_policy") == POLICY
+            or original.get("spoken_text")
+            or not original.get("mb_person_id")
+            or not is_reconcilable_fragment(
+                original.get("video_external_id"),
+                original.get("provider_key"),
+                e,
+                start_sec=original.get("start_sec"),
+                end_sec=original.get("end_sec"),
+            )
+        ):
             out.append(original)
             continue
-        key = (original["provider_key"], original["video_external_id"],
-               original["mb_person_id"], e.get("processing_run_id"), e.get("model_version"))
+        key = (
+            original["provider_key"],
+            original["video_external_id"],
+            original["mb_person_id"],
+            e.get("processing_run_id"),
+            e.get("model_version"),
+        )
         if key not in groups:
             card = deepcopy(original)
             card["source_moments"] = []
@@ -48,7 +61,7 @@ def project_source_cards(items):
         card["source_moments"] = moments
         card["presentation_policy"] = POLICY
         card["id"] = "video:source:" + first["id"]
-        card["duration_sec"] = None  # evidence length is not source duration
+        card["duration_sec"] = None
         card["preview"] = f"{len(moments)} moments in this result"
         card["detail"] = "One source video. Choose a moment to jump to its evidence."
     return out
