@@ -4,7 +4,7 @@
 
 - Repository: `E:\MemoryBox-dev\p2-i13-stage-a`
 - Branch: `codex/p2-i13-stage-a`
-- Handoff HEAD: `de9cc72`+ (after overlap voice pilot recorded)
+- Handoff HEAD: `a0c4119`+ (voice matrix coverage + Gate 4 plan preview)
 - Remote: `origin/codex/p2-i13-stage-a`
 - Working tree: clean unless noted below.
 
@@ -62,9 +62,11 @@ Keep `MEMORYBOX_RECOGNITION_DRAIN=0`, `MEMORYBOX_SPEECH_DRAIN=0`, and no `MEMORY
 
 ## Exact next action
 
-1. **Gate 4 beyond plan preview** — fresh sign-off required for Outcome C (register only), D (unlock), or E (full start). Waiver and plan SHA recorded in [NARROW-ACCEPTANCE-WAIVER.md](docs/implementation/p2-i13-stage-a/NARROW-ACCEPTANCE-WAIVER.md); FlightSim preview **passed** 2026-09-08.
+1. **Voice pilot matrix** — Tom confirms Outcome **W** (waive additional run) in [CONSOLIDATED-VOICE-PILOT-PRODUCTION-REQUEST.md](docs/implementation/p2-i13-stage-a/CONSOLIDATED-VOICE-PILOT-PRODUCTION-REQUEST.md). Coverage: [VOICE-ASSIGNMENT-COVERAGE.md](docs/implementation/p2-i13-stage-a/VOICE-ASSIGNMENT-COVERAGE.md).
 
-2. **Separate track:** face/voice corroboration; full I13 acceptance; P2-I14 only after I13 closeout.
+2. **Gate 4 beyond plan preview** — fresh sign-off for Outcome C+ if archive work continues.
+
+3. **Separate track:** face/voice corroboration; full I13 acceptance; P2-I14 only after I13 closeout.
 
 ## Actions that must not be repeated
 
@@ -84,5 +86,7 @@ Keep `MEMORYBOX_RECOGNITION_DRAIN=0`, `MEMORYBOX_SPEECH_DRAIN=0`, and no `MEMORY
 - [gate-3-evidence-generation-report.json](docs/implementation/p2-i13-stage-a/gate-3-evidence-generation-report.json)
 - [overlap-poor-audio-voice-pilot-report.json](docs/implementation/p2-i13-stage-a/overlap-poor-audio-voice-pilot-report.json)
 - [GATE-4-DECISION-PRD.md](docs/implementation/p2-i13-stage-a/GATE-4-DECISION-PRD.md)
+- [VOICE-ASSIGNMENT-COVERAGE.md](docs/implementation/p2-i13-stage-a/VOICE-ASSIGNMENT-COVERAGE.md)
+- [CONSOLIDATED-VOICE-PILOT-PRODUCTION-REQUEST.md](docs/implementation/p2-i13-stage-a/CONSOLIDATED-VOICE-PILOT-PRODUCTION-REQUEST.md)
 - [I13-VOICE-PILOT-STATUS.md](docs/implementation/p2-i13-stage-a/I13-VOICE-PILOT-STATUS.md)
 - [OVERLAP-POOR-AUDIO-VOICE-GAP-PLAN.md](docs/implementation/p2-i13-stage-a/OVERLAP-POOR-AUDIO-VOICE-GAP-PLAN.md)
