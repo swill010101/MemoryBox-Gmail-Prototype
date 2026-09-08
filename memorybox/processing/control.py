@@ -40,6 +40,11 @@ def transition(admission_id: str, action: str, reference: str, acceptance_ref: s
         elif action=="stop":
             c.execute("UPDATE i13_processing_admissions SET state='stopped',updated_at=now() WHERE id=%s::uuid",(admission_id,))
             state="stopped"
+        elif action=="enable-interactive-learn":
+            if row["state"] not in {"started","stopped"}: raise ScopeDenied("interactive_learn_requires_stopped_or_started_bounded")
+            if plan.get("purpose")!="acceptance_learning" or plan["scope_kind"]!="bounded": raise ScopeDenied("interactive_learn_requires_bounded_acceptance_learning")
+            c.execute("UPDATE i13_processing_admissions SET interactive_learn_enabled=true,interactive_learn_ref=%s,updated_at=now() WHERE id=%s::uuid",(reference,admission_id))
+            state=row["state"]
         else: raise ScopeDenied("invalid_release_action")
         c.execute("INSERT INTO i13_admission_events(admission_id,action,actor,reference) VALUES(%s::uuid,%s,%s,%s)",(admission_id,action,getpass.getuser(),reference))
     return {"id":admission_id,"state":state,"workers_launched":False,"enqueued":0}
@@ -50,7 +55,7 @@ def main(argv=None):
     for action in ("preview","register"):
         cmd=sub.add_parser(action);cmd.add_argument("--plan",required=True)
         if action=="register": cmd.add_argument("--review-ref",required=True)
-    for action in ("unlock","start","stop"):
+    for action in ("unlock","start","stop","enable-interactive-learn"):
         cmd=sub.add_parser(action);cmd.add_argument("--id",required=True);cmd.add_argument("--reference",required=True)
         if action=="unlock": cmd.add_argument("--acceptance-ref",required=True)
     args=parser.parse_args(argv)

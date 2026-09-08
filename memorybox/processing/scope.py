@@ -90,15 +90,47 @@ class Admission:
     acceptance_ref: str | None = None
     unlock_ref: str | None = None
     start_ref: str | None = None
+    interactive_learn_enabled: bool = False
+    interactive_learn_ref: str | None = None
 
     @property
     def videos(self):
         return [{"video_provider_key":s["provider_key"],"video_external_id":s["video_external_id"],"eligible":True} for s in self.plan["manifest"]["sources"]]
 
-    def check(self, lane: str, videos: list[dict], person_ids: list[str]) -> None:
+    def _preview_and_digest(self) -> None:
         preview(self.plan)
-        if self.plan.get("purpose") == "voice_pilot": raise ScopeDenied("pilot_requires_exact_span_runner")
-        if digest(self.plan) != self.plan_sha256: raise ScopeDenied("scope_plan_changed")
+        if self.plan.get("purpose") == "voice_pilot":
+            raise ScopeDenied("pilot_requires_exact_span_runner")
+        if digest(self.plan) != self.plan_sha256:
+            raise ScopeDenied("scope_plan_changed")
+
+    def interactive_learn_permitted(self) -> bool:
+        if self.plan.get("purpose") != "acceptance_learning":
+            return False
+        if self.plan.get("scope_kind") == "archive":
+            return False
+        if self.state == "started" and self.start_ref:
+            return True
+        return self.state == "stopped" and bool(self.interactive_learn_enabled)
+
+    def check_interactive_learn(self, lane: str, videos: list[dict], person_ids: list[str]) -> None:
+        """Owner-selected Learn on bounded corpus; does not authorize archive sweeps."""
+        self._preview_and_digest()
+        if not self.interactive_learn_permitted():
+            raise ScopeDenied("interactive_learn_locked")
+        if lane not in self.plan["lanes"]:
+            raise ScopeDenied("modality_not_admitted")
+        allowed={(v["video_provider_key"],v["video_external_id"]) for v in self.videos}
+        keys=[(v.get("video_provider_key"),v.get("video_external_id")) for v in videos]
+        if len(set(keys)) != len(keys) or any(k not in allowed for k in keys):
+            raise ScopeDenied("off_manifest_or_duplicate_source")
+        if len(set(person_ids)) != len(person_ids) or any(p not in self.plan["person_ids"] for p in person_ids):
+            raise ScopeDenied("person_not_admitted")
+        if lane != "transcribe" and not person_ids:
+            raise ScopeDenied("person_required")
+
+    def check(self, lane: str, videos: list[dict], person_ids: list[str]) -> None:
+        self._preview_and_digest()
         if self.state != "started" or not self.start_ref: raise ScopeDenied("processing_not_started")
         if self.plan["scope_kind"] == "archive" and not (self.acceptance_ref and self.unlock_ref): raise ScopeDenied("archive_locked")
         if lane not in self.plan["lanes"]: raise ScopeDenied("modality_not_admitted")
@@ -121,7 +153,17 @@ def load_admission() -> Admission:
         if not row: raise ScopeDenied("admission_not_found")
         plan=row["plan_json"]
         if isinstance(plan,str): plan=json.loads(plan)
-        return Admission(raw,plan,row["state"],row["plan_sha256"],row.get("acceptance_ref"),row.get("unlock_ref"),row.get("start_ref"))
+        return Admission(
+            raw,
+            plan,
+            row["state"],
+            row["plan_sha256"],
+            row.get("acceptance_ref"),
+            row.get("unlock_ref"),
+            row.get("start_ref"),
+            bool(row.get("interactive_learn_enabled")),
+            row.get("interactive_learn_ref"),
+        )
     except ScopeDenied: raise
     except Exception: raise ScopeDenied("admission_store_unavailable") from None
 
@@ -131,6 +173,16 @@ def require_admission(lane: str, *, archive: bool = False) -> Admission:
     if archive and a.plan["scope_kind"] != "archive": raise ScopeDenied("archive_locked")
     return a
 
+def require_interactive_learn(lane: str) -> Admission:
+    a=load_admission()
+    a.check_interactive_learn(lane, [], a.plan.get("person_ids", []))
+    return a
+
+def admit_interactive_learn(lane: str, videos: list[dict], person_ids: list[str] | None = None) -> Admission:
+    a=require_interactive_learn(lane)
+    a.check_interactive_learn(lane, videos, list(person_ids or []))
+    return a
+
 def admit(lane: str, videos: list[dict], person_ids: list[str] | None = None) -> Admission:
     a=require_admission(lane)
     a.check(lane,videos,list(person_ids or []))
@@ -138,6 +190,13 @@ def admit(lane: str, videos: list[dict], person_ids: list[str] | None = None) ->
 
 def require_source(lane: str, provider: str, video: str, person: str | None = None) -> Admission:
     return admit(lane,[{"video_provider_key":provider,"video_external_id":video}], [str(person)] if person else [])
+
+def require_interactive_source(lane: str, provider: str, video: str, person: str | None = None) -> Admission:
+    return admit_interactive_learn(
+        lane,
+        [{"video_provider_key": provider, "video_external_id": video}],
+        [str(person)] if person else [],
+    )
 
 def begin_work(lane: str, provider: str, video: str, person: str | None = None) -> Admission:
     """Atomically bound retries across all entry points, processes and enqueue reasons."""

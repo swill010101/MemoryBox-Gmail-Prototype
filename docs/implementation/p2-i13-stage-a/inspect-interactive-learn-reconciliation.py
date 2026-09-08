@@ -73,6 +73,8 @@ def _query_db(conn) -> dict:
     admissions = conn.execute(
         """
         SELECT id::text, state, created_at,
+               interactive_learn_enabled,
+               interactive_learn_ref,
                plan_json->>'purpose' AS purpose,
                plan_json->>'scope_kind' AS scope_kind,
                plan_json->'lanes' AS lanes
@@ -155,14 +157,34 @@ def _query_db(conn) -> dict:
 
 def _classify(*, routes: dict, explore: dict, db: dict | None, env: dict) -> list[dict]:
     admission_id = env.get("MEMORYBOX_I13_ADMISSION_ID", "").strip()
+    active = None
+    if db and admission_id:
+        for row in (db.get("admissions_recent") or []):
+            if row.get("id") == admission_id:
+                active = row
+                break
     started = (db or {}).get("started_admissions") or []
     started_learning = [
         a
         for a in started
         if a.get("purpose") == "acceptance_learning"
+        and a.get("scope_kind") == "bounded"
         and any(lane in (a.get("lanes") or []) for lane in ("face", "voice"))
     ]
-    learn_enabled = bool(started_learning) and bool(admission_id)
+    learn_enabled = bool(
+        admission_id
+        and active
+        and active.get("purpose") == "acceptance_learning"
+        and active.get("scope_kind") == "bounded"
+        and any(lane in (active.get("lanes") or []) for lane in ("face", "voice"))
+        and (
+            (active.get("state") == "started" and bool(started_learning))
+            or (
+                active.get("state") == "stopped"
+                and bool(active.get("interactive_learn_enabled"))
+            )
+        )
+    )
     archive_locked = (db or {}).get("archive_admissions_unlocked_or_started", 0) == 0
 
     face_ex = (db or {}).get("owner_learn_face_exemplars", 0)
@@ -178,8 +200,8 @@ def _classify(*, routes: dict, explore: dict, db: dict | None, env: dict) -> lis
     elif not learn_enabled:
         c, e = (
             "failed",
-            "No started acceptance_learning admission with face lane and MEMORYBOX_I13_ADMISSION_ID. "
-            "Interactive face Learn returns 403 under current locks. "
+            "No interactive Learn authorization: need started bounded acceptance_learning during proof, "
+            "or stopped admission with interactive_learn_enabled and MEMORYBOX_I13_ADMISSION_ID retained. "
             f"DB owner_learn face exemplars={face_ex} (not proof of this bounded session).",
         )
     elif face_ex == 0:
@@ -199,8 +221,7 @@ def _classify(*, routes: dict, explore: dict, db: dict | None, env: dict) -> lis
     elif not learn_enabled:
         c, e = (
             "failed",
-            "No started acceptance_learning admission with voice lane. "
-            "Voice Learn is locked; transcript annotations are separate and do not train. "
+            "No interactive Learn authorization for voice lane (see enable-interactive-learn after stop). "
             f"DB owner_learn voice exemplars={voice_ex}.",
         )
     elif voice_ex == 0:
@@ -251,11 +272,11 @@ def _classify(*, routes: dict, explore: dict, db: dict | None, env: dict) -> lis
     if lock_ok and not learn_enabled:
         c, e = (
             "failed",
-            "Archive register/unlock/start correctly absent and drains off, but interactive Learn is also not enabled "
-            "(no started acceptance_learning face/voice admission). Gate 3 transcribe-only does not authorize Learn.",
+            "Archive register/unlock/start correctly absent and drains off, but interactive Learn is not authorized "
+            "(missing MEMORYBOX_I13_ADMISSION_ID, started proof window, or enable-interactive-learn after stop).",
         )
     elif lock_ok and learn_enabled:
-        c, e = "passed", "Archive locked, drains off, and bounded acceptance_learning admission enables user-selected Learn."
+        c, e = "passed", "Archive locked, drains off, bounded acceptance_learning enables user-selected Learn (started or post-stop interactive flag)."
     elif not lock_ok:
         c, e = "failed", "Archive unlocked/started admission present or drains enabled — violates closeout locks."
     else:

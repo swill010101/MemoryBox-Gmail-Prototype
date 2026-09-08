@@ -2,9 +2,10 @@
 
 **Date:** 2026-09-08  
 **Inspector:** [inspect-interactive-learn-reconciliation.py](inspect-interactive-learn-reconciliation.py)  
+**Operating state:** [INTERACTIVE-LEARN-OPERATING-STATE.md](INTERACTIVE-LEARN-OPERATING-STATE.md)  
 **Read-only:** no Learn, drains, archive register/unlock/start
 
-Voice-pilot annotations and bounded voice pilots **do not** satisfy interactive Learn acceptance. Learn is a separate owner-driven workflow in Explore (`/explore/ui` Learn tab) gated by a **started `acceptance_learning` admission** with face and/or voice lanes.
+Voice-pilot annotations and bounded voice pilots **do not** satisfy interactive Learn acceptance. Learn is a separate owner-driven workflow in Explore (`/explore/ui` Learn tab) gated by a **bounded `acceptance_learning` admission** — **started** during proof, then **`enable-interactive-learn`** on the stopped admission with `MEMORYBOX_I13_ADMISSION_ID` kept in serve env.
 
 ---
 

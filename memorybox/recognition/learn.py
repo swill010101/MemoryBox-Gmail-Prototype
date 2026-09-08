@@ -87,15 +87,21 @@ def owner_learn_from_review(
     embedding: list[float] | None = None,
     provider_key: str | None = None,
 ) -> dict[str, Any]:
-    from memorybox.processing.scope import require_source, require_admission
-    admission = require_admission("face")
-    require_source("face", provider_key or getattr(video_provider,"provider_key",None) or "hvrt", video_external_id or "", person_id)
+    vpk = provider_key or getattr(video_provider, "provider_key", None) or "hvrt"
+    from memorybox.processing.scope import require_interactive_source
+    admission = require_interactive_source("face", vpk, str(video_external_id or ""), person_id)
     pending = take_pending_review_crop(face_external_id) or {}
-    video_external_id = video_external_id or pending.get("video_external_id")
+    resolved = video_external_id or pending.get("video_external_id")
+    if resolved and str(resolved) != str(video_external_id or ""):
+        admission.check_interactive_learn(
+            "face",
+            [{"video_provider_key": vpk, "video_external_id": str(resolved)}],
+            [person_id],
+        )
+    video_external_id = resolved
     t_sec = t_sec if t_sec is not None else pending.get("t_sec")
     bbox = bbox or pending.get("bbox_json")
     crop_jpeg_base64 = crop_jpeg_base64 or pending.get("crop_jpeg_base64")
-    vpk = provider_key or getattr(video_provider, "provider_key", None) or "hvrt"
     parsed = parse_bbox(bbox) if bbox else None
     q = quality_flags(parsed) if parsed else {"usable": True, "reject_reason": None}
     if parsed and not q.get("usable"):
@@ -167,7 +173,7 @@ def owner_learn_from_review(
         )
 
     enqueue = None
-    if video_external_id:
+    if video_external_id and admission.state == "started" and admission.start_ref:
         others = []
         for v in admission.videos:
             veid = str(v.get("video_external_id") or "")
@@ -176,7 +182,7 @@ def owner_learn_from_review(
             item = dict(v)
             item["priority"] = PRIORITY_OTHER_VIDEO
             others.append(item)
-        if others:
+        if others and admission.plan.get("scope_kind") == "archive":
             enqueue = enqueue_full_eligible_archive(
                 person_id=person_id,
                 videos=others,
@@ -191,5 +197,5 @@ def owner_learn_from_review(
         "person": {"id": person_id, "display_name": display_name},
         "current_video_scan": current_scan,
         "enqueue_others": enqueue,
-        "rescan_policy": "current_video_first_then_priority_enqueue",
+        "rescan_policy": "current_source_only_for_bounded_interactive_learn",
     }

@@ -106,9 +106,19 @@ def i13_status() -> dict[str, Any]:
         ).fetchall()
     learn_enabled = bool(
         admission
-        and admission.get("state") == "started"
         and admission.get("plan", {}).get("purpose") == "acceptance_learning"
+        and admission.get("plan", {}).get("scope_kind") != "archive"
         and set(admission.get("plan", {}).get("lanes") or []) & {"face", "voice"}
+        and (
+            (
+                admission.get("state") == "started"
+                and admission.get("start_ref")
+            )
+            or (
+                admission.get("state") == "stopped"
+                and admission.get("interactive_learn_enabled")
+            )
+        )
     )
     archive_locked = not any(
         r.get("scope_kind") == "archive" and r.get("state") in {"unlocked", "started"}

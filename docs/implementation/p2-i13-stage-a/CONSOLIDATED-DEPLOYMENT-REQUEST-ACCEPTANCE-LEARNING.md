@@ -22,7 +22,7 @@
 | Readiness | [DEPLOYMENT-READINESS-ACCEPTANCE-LEARNING.md](DEPLOYMENT-READINESS-ACCEPTANCE-LEARNING.md) |
 | Tests | `tests/test_i13_admin.py` |
 
-Explore Learn (`submitExploreLearn`, `POST /recognition/learn`, `POST /speech/learn`) was already implemented; it activates when a **started** `acceptance_learning` admission is configured in serve env.
+Explore Learn (`submitExploreLearn`, `POST /recognition/learn`, `POST /speech/learn`) activates under a **bounded `acceptance_learning` admission**. During proof the admission is **started**; after proof, run **`enable-interactive-learn`**, keep `MEMORYBOX_I13_ADMISSION_ID` in serve env, and Learn stays authorized while archive processing remains locked. See [INTERACTIVE-LEARN-OPERATING-STATE.md](INTERACTIVE-LEARN-OPERATING-STATE.md).
 
 ---
 
@@ -71,13 +71,20 @@ $env:MEMORYBOX_I13_ADMISSION_ID = $admission
 
 ---
 
-## Stop / cleanup (after proof)
+## Post-proof steady state (required — do not remove admission env)
 
 ```powershell
 & $python -B -m memorybox.processing stop --id $admission --reference Tom-bounded-acceptance-learning-proof-complete-2026-09-08
-Remove-Item Env:MEMORYBOX_I13_ADMISSION_ID -ErrorAction SilentlyContinue
-# Restart serve
+
+& $python -B -m memorybox.processing enable-interactive-learn `
+  --id $admission `
+  --reference Tom-post-i13-interactive-learn-enabled-2026-09-08
+
+# KEEP $env:MEMORYBOX_I13_ADMISSION_ID = $admission in serve config
+# Restart serve; re-run inspect-interactive-learn-reconciliation.py — check 6 must pass
 ```
+
+**Do not** `Remove-Item Env:MEMORYBOX_I13_ADMISSION_ID` after I13 acceptance. That re-disables interactive Learn.
 
 ---
 

@@ -27,7 +27,12 @@ def plan():
 
 def admission(p=None,state="started",**kw):
     p=p or plan()
-    return scope.Admission(ADMISSION,p,state,scope.digest(p),start_ref="synthetic start" if state=="started" else None,**kw)
+    p=deepcopy(p)
+    p.setdefault("purpose","acceptance_learning")
+    return scope.Admission(ADMISSION,p,state,scope.digest(p),start_ref="synthetic start" if state=="started" else None,
+        acceptance_ref=kw.get("acceptance_ref"),unlock_ref=kw.get("unlock_ref"),
+        interactive_learn_enabled=kw.get("interactive_learn_enabled",False),
+        interactive_learn_ref=kw.get("interactive_learn_ref"))
 
 def function(path,name,env=None):
     """Load the complete actual function without module-level provider/DB imports."""
@@ -105,6 +110,17 @@ class ScopeTests(unittest.TestCase):
     def test_registered_unlocked_stopped_do_not_admit_work(self):
         for state in ["registered","unlocked","stopped"]:
             with self.subTest(state=state),self.assertRaises(scope.ScopeDenied):admission(state=state).check("face",[],[PERSON])
+    def test_interactive_learn_after_stop_with_enable_flag(self):
+        a=admission(state="stopped",interactive_learn_enabled=True)
+        a.check_interactive_learn("face",a.videos[:1],[PERSON])
+        a.check_interactive_learn("voice",a.videos[:1],[PERSON])
+        with self.assertRaisesRegex(scope.ScopeDenied,"interactive_learn_locked"):
+            admission(state="stopped",interactive_learn_enabled=False).check_interactive_learn("face",[],[PERSON])
+    def test_interactive_learn_blocked_for_archive_scope(self):
+        p=plan();p["scope_kind"]="archive"
+        a=admission(p,state="stopped",interactive_learn_enabled=True,acceptance_ref="x",unlock_ref="y")
+        with self.assertRaisesRegex(scope.ScopeDenied,"interactive_learn_locked"):
+            a.check_interactive_learn("face",a.videos[:1],[PERSON])
     def test_archive_requires_acceptance_unlock_and_start(self):
         p=plan();p["scope_kind"]="archive"
         with self.assertRaisesRegex(scope.ScopeDenied,"archive_locked"):admission(p).check("face",[],[PERSON])
@@ -140,7 +156,7 @@ class Result:
 
 class FakeConnection:
     def __init__(self,a):
-        self.row={"id":a.id,"plan_json":a.plan,"plan_sha256":a.plan_sha256,"state":a.state,"acceptance_ref":a.acceptance_ref,"unlock_ref":a.unlock_ref,"start_ref":a.start_ref}
+        self.row={"id":a.id,"plan_json":a.plan,"plan_sha256":a.plan_sha256,"state":a.state,"acceptance_ref":a.acceptance_ref,"unlock_ref":a.unlock_ref,"start_ref":a.start_ref,"interactive_learn_enabled":a.interactive_learn_enabled,"interactive_learn_ref":a.interactive_learn_ref}
         self.units={};self.attempts={};self.calls=[]
     def execute(self,sql,args=()):
         self.calls.append((sql,args))
@@ -156,6 +172,7 @@ class FakeConnection:
             if "state='unlocked'" in sql:self.row.update(state="unlocked",acceptance_ref=args[0],unlock_ref=args[1])
             elif "state='started'" in sql:self.row.update(state="started",start_ref=args[0])
             elif "state='stopped'" in sql:self.row.update(state="stopped")
+            elif "interactive_learn_enabled=true" in sql:self.row.update(interactive_learn_enabled=True,interactive_learn_ref=args[0])
             return Result()
         if sql.startswith("INSERT INTO i13_admission_events"):return Result()
         raise AssertionError("Unexpected database operation: "+sql)
@@ -182,6 +199,13 @@ class ReleaseTests(unittest.TestCase):
             with self.assertRaises(scope.ScopeDenied):control.transition(ADMISSION,"start","again")
             control.transition(ADMISSION,"stop","stop review")
             self.assertEqual(c.row["state"],"stopped")
+    def test_enable_interactive_learn_after_stop(self):
+        p=plan();p["purpose"]="acceptance_learning";c=FakeConnection(admission(p,state="stopped"))
+        with fake_db(c):
+            r=control.transition(ADMISSION,"enable-interactive-learn","Tom-post-i13-interactive-learn-2026-09-08")
+            self.assertTrue(c.row["interactive_learn_enabled"])
+            self.assertEqual(r["state"],"stopped")
+            self.assertEqual(r["enqueued"],0)
 
 class EntryTests(unittest.TestCase):
     def test_native_denials_before_any_side_effect(self):
@@ -383,7 +407,7 @@ class MigrationTests(unittest.TestCase):
         self.assertEqual(len(versions),len(set(versions)))
         applied={f"{i:03}" for i in range(1,30)}
         self.assertEqual([p.name for p in paths if p.name.split('_',1)[0] not in applied],
-                         ['030_p2_i13_scope_admission.sql', '031_p2_i13_transcript_annotations.sql', '032_p2_i13_voice_pilot.sql'])
+                         ['030_p2_i13_scope_admission.sql', '031_p2_i13_transcript_annotations.sql', '032_p2_i13_voice_pilot.sql', '033_p2_i13_interactive_learn.sql'])
         old=subprocess.check_output(['git','show','7ac838d76a888aff794eb1c381113e697f3d8e3d:memorybox/migrations/026_p2_i13_scope_admission.sql'],cwd=ROOT)
         new=(ROOT/'memorybox/migrations/030_p2_i13_scope_admission.sql').read_bytes()
         self.assertEqual(new.replace(b'\r\n',b'\n'),old.replace(b'\r\n',b'\n'))

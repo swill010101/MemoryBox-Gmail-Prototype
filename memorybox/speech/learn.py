@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from memorybox.speech.constants import PRIORITY_CURRENT, PRIORITY_OTHER, VOICE_MODEL
+from memorybox.speech.constants import PRIORITY_CURRENT, VOICE_MODEL
 from memorybox.speech.embeddings import embed_video_span
 from memorybox.speech.media import resolve_speech_media_path
 from memorybox.speech.process import persist_transcript, recognize_person_on_video
@@ -37,12 +37,13 @@ def owner_learn_voice(
     embedding: list[float] | None = None,
     other_videos: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    from memorybox.processing.scope import require_source, require_admission
-    admission = require_admission("voice")
-    require_source("voice", video_provider_key or getattr(video_provider,"provider_key",None) or "hvrt", video_external_id, person_id)
-    others = list(other_videos) if other_videos is not None else admission.videos
-    from memorybox.processing.scope import admit
-    admit("voice", others, [person_id])
+    from memorybox.processing.scope import require_interactive_source
+    admission = require_interactive_source(
+        "voice",
+        video_provider_key or getattr(video_provider, "provider_key", None) or "hvrt",
+        video_external_id,
+        person_id,
+    )
     vpk = video_provider_key or getattr(video_provider, "provider_key", None) or "hvrt"
     path = resolve_speech_media_path(video_provider, video_external_id) or None
     injected = embedding
@@ -94,36 +95,20 @@ def owner_learn_voice(
         video_external_id=video_external_id,
         video_provider=video_provider,
     )
-    rest = [
-        r
-        for r in others
-        if str(r.get("video_external_id") or "") not in {"", video_external_id}
-    ]
-    enqueue_videos(
-        videos=[
-            {
-                "video_provider_key": str(r.get("video_provider_key") or vpk),
-                "video_external_id": str(r.get("video_external_id")),
-                "priority": PRIORITY_OTHER,
-            }
-            for r in rest
-        ],
-        enqueue_reason="owner_learn",
-        person_id=person_id,
-        priority=PRIORITY_OTHER,
-    )
-    enqueue_videos(
-        videos=[
-            {
-                "video_provider_key": vpk,
-                "video_external_id": video_external_id,
-                "priority": PRIORITY_CURRENT,
-            }
-        ],
-        enqueue_reason="owner_learn",
-        person_id=person_id,
-        priority=PRIORITY_CURRENT,
-    )
+    rest: list[dict[str, Any]] = []
+    if admission.state == "started" and admission.start_ref:
+        enqueue_videos(
+            videos=[
+                {
+                    "video_provider_key": vpk,
+                    "video_external_id": video_external_id,
+                    "priority": PRIORITY_CURRENT,
+                }
+            ],
+            enqueue_reason="owner_learn",
+            person_id=person_id,
+            priority=PRIORITY_CURRENT,
+        )
     display_name = person_id
     try:
         from memorybox.person import get_person

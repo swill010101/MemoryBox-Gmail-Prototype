@@ -60,9 +60,16 @@ $env:MEMORYBOX_I13_ADMISSION_ID = '<ADMISSION_UUID>'
 
 ```powershell
 & $python -B -m memorybox.processing stop --id <ADMISSION_UUID> --reference Tom-bounded-acceptance-learning-proof-complete-2026-09-08
-Remove-Item Env:MEMORYBOX_I13_ADMISSION_ID -ErrorAction SilentlyContinue
+
+& $python -B -m memorybox.processing enable-interactive-learn `
+  --id <ADMISSION_UUID> `
+  --reference Tom-post-i13-interactive-learn-enabled-2026-09-08
+
+# Keep MEMORYBOX_I13_ADMISSION_ID=<ADMISSION_UUID> in serve env — do NOT unset
 # restart serve
 ```
+
+See [INTERACTIVE-LEARN-OPERATING-STATE.md](INTERACTIVE-LEARN-OPERATING-STATE.md).
 
 Record proof JSON on E: (optional):
 

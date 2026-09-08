@@ -18,7 +18,32 @@ class AdminApiTests(unittest.TestCase):
             self.assertEqual(i13_admin.active_admission_id(), uid)
 
     @patch("memorybox.admin.i13_admin.connection")
-    def test_i13_status_reports_learn_disabled_without_started_admission(self, conn_ctx):
+    def test_i13_status_reports_interactive_learn_when_flag_set(self, conn_ctx):
+        conn = MagicMock()
+        conn_ctx.return_value.__enter__.return_value = conn
+        conn.execute.side_effect = [
+            MagicMock(
+                fetchone=lambda: {
+                    "id": "458d1a76-4ecb-4722-bd76-20125b14c1d3",
+                    "state": "stopped",
+                    "interactive_learn_enabled": True,
+                    "plan_json": {
+                        "purpose": "acceptance_learning",
+                        "scope_kind": "bounded",
+                        "lanes": ["face", "voice"],
+                    },
+                }
+            ),
+            MagicMock(fetchall=lambda: []),
+            MagicMock(fetchall=lambda: []),
+            MagicMock(fetchall=lambda: []),
+            MagicMock(fetchall=lambda: []),
+            MagicMock(fetchall=lambda: []),
+        ]
+        uid = "458d1a76-4ecb-4722-bd76-20125b14c1d3"
+        with patch.dict("os.environ", {"MEMORYBOX_I13_ADMISSION_ID": uid}, clear=False):
+            result = i13_admin.i13_status()
+        self.assertTrue(result["interactive_learn_enabled"])
         conn = MagicMock()
         conn_ctx.return_value.__enter__.return_value = conn
         conn.execute.side_effect = [
