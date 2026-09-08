@@ -51,7 +51,7 @@ Review proposed encode args, free space, and helper hash. No media is written in
 
 ## Step 3 — Staging approval then execute
 
-Founder must approve **one** staging-and-validation attempt for this exact source hash. Execution uses the pinned helper with `--execute --expected-release <sha> --approval-ref <ref>`. The helper stops at `published=false`.
+Tom approved **one** staging-and-validation attempt on 2026-09-08. Approval reference: `Tom-approved-grandpa-sessions-2-002-staging-2026-09-08`. Helper release: `032a113c43de8eae3117b9ae64ebcda1b3229eb2`. Check-only helper SHA-256: `60b73d15db51110e7602c29eb034fb94a2c04fbc212826aaac154cd921351e21`. Execution uses the pinned helper with `--execute --expected-release 032a113c43de8eae3117b9ae64ebcda1b3229eb2 --approval-ref Tom-approved-grandpa-sessions-2-002-staging-2026-09-08`. The helper stops at `published=false`.
 
 ## Step 4 — Owner staged review
 
