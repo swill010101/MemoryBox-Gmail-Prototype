@@ -1,5 +1,7 @@
 # Consolidated deployment request — bounded acceptance_learning + I13 Admin
 
+> **Superseded for final I13 closeout** by [CONSOLIDATED-I13-FINAL-DEPLOYMENT-REQUEST.md](CONSOLIDATED-I13-FINAL-DEPLOYMENT-REQUEST.md) and [CONSOLIDATED-I13-FINAL-DEPLOYMENT-AND-FOUNDER-TEST.md](CONSOLIDATED-I13-FINAL-DEPLOYMENT-AND-FOUNDER-TEST.md).
+
 **Date:** 2026-09-08  
 **Branch:** `codex/p2-i13-stage-a`  
 **Founder decision:** **B — Reject bounded closeout; complete accepted I13 scope**  

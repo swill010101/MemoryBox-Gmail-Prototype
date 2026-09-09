@@ -1,0 +1,41 @@
+{
+  "release_name": "P2-I13-final-consolidated",
+  "branch": "codex/p2-i13-stage-a",
+  "release_sha": "",
+  "release_sha_note": "Set to git rev-parse HEAD after consolidation commit",
+  "baseline_commits": [
+    {
+      "sha": "306c079272f4561b83412576d77e6a44c7cf2fa9",
+      "label": "Learn/Admin implementation baseline"
+    },
+    {
+      "sha": "bd76228a76d5b4b029814a77e82d6c64eafcd7a0",
+      "label": "Interactive Learn lifecycle (two lanes, async follow-on, migration 033)"
+    },
+    {
+      "sha": "8beb1a09f0dc5d44d3a936a6ce040d210b337e7b",
+      "label": "22-video HVRT fragment reconciliation gate"
+    }
+  ],
+  "acceptance_learning_plan_sha256": "edd2ddc39e960992f2479d92578d8b9a870fbdc566386ce52df908495b291ca4",
+  "acceptance_learning_plan_path": "docs/implementation/p2-i13-stage-a/acceptance-learning-bounded-plan.json",
+  "pending_migrations_on_flightsim_through_032": [
+    "030_p2_i13_scope_admission.sql",
+    "031_p2_i13_transcript_annotations.sql",
+    "032_p2_i13_voice_pilot.sql"
+  ],
+  "final_migration_for_this_release": "033_p2_i13_interactive_learn.sql",
+  "deploy_target": "C:\\MemoryBox",
+  "proof_output_root": "E:\\MemoryBox-dev\\p2-i13-stage-a\\docs\\test-output",
+  "backup_root": "E:\\MemoryBox-backups",
+  "not_authorized": [
+    "archive Outcomes C/D/E",
+    "Scan for New Assets (I18)",
+    "continuing archive intake (I18)",
+    "job-progress expansion (I18)",
+    "scheduled/nightly scanning (I18)",
+    "new worktree or release-folder copy",
+    "media copies or conversions",
+    "C: backup or proof output"
+  ]
+}
