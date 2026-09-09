@@ -87,6 +87,18 @@ def extract_wav(video_path: str, t_start: float, t_end: float, dest: Path) -> bo
     return dest.is_file() and dest.stat().st_size > 200
 
 
+def _load_wav_tensor(wav_path: Path) -> tuple[Any, int]:
+    """Load WAV for ECAPA without torchaudio.load (torchcodec not on Py3.14 yet)."""
+    import soundfile as sf  # type: ignore
+    import torch  # type: ignore
+
+    data, fs = sf.read(str(wav_path), dtype="float32", always_2d=True)
+    signal = torch.from_numpy(data.T)
+    if signal.shape[0] > 1:
+        signal = signal.mean(dim=0, keepdim=True)
+    return signal, int(fs)
+
+
 def embed_wav_ecapa(wav_path: Path) -> tuple[list[float] | None, str | None]:
     try:
         from speechbrain.inference.speaker import EncoderClassifier  # type: ignore
@@ -107,11 +119,9 @@ def embed_wav_ecapa(wav_path: Path) -> tuple[list[float] | None, str | None]:
             run_opts={"device": "cpu"},
             local_strategy=local_strategy,
         )
-        signal, fs = torchaudio.load(str(wav_path))
+        signal, fs = _load_wav_tensor(wav_path)
         if fs != 16000:
             signal = torchaudio.functional.resample(signal, fs, 16000)
-        if signal.shape[0] > 1:
-            signal = signal.mean(dim=0, keepdim=True)
         emb = encoder.encode_batch(signal)
         vec = emb.squeeze().detach().cpu().numpy().astype("float32").ravel()
         n = float(np.linalg.norm(vec))
