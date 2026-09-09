@@ -1,8 +1,9 @@
 {
   "release_name": "P2-I13-final-consolidated",
   "branch": "codex/p2-i13-stage-a",
-  "release_sha": "99db60494d9cf09e5cc71c237bf621d903b0131e",
-  "consolidation_commit": "9fedb555b96ead9ca1dad99dd7a75e3692287fba",
+  "release_sha": "9fedb555b96ead9ca1dad99dd7a75e3692287fba",
+  "release_sha_note": "Deploy this exact commit (detached HEAD). Do not deploy branch tip; later commits may adjust documentation only.",
+  "branch_tip_at_packaging": "dd941daab73f56bdc79dc8273f1adb31cc6703fe",
   "baseline_commits": [
     {
       "sha": "306c079272f4561b83412576d77e6a44c7cf2fa9",
@@ -15,6 +16,10 @@
     {
       "sha": "8beb1a09f0dc5d44d3a936a6ce040d210b337e7b",
       "label": "22-video HVRT fragment reconciliation gate"
+    },
+    {
+      "sha": "9fedb555b96ead9ca1dad99dd7a75e3692287fba",
+      "label": "Consolidated deployment runbook and founder test package"
     }
   ],
   "acceptance_learning_plan_sha256": "edd2ddc39e960992f2479d92578d8b9a870fbdc566386ce52df908495b291ca4",
@@ -25,9 +30,11 @@
     "032_p2_i13_voice_pilot.sql"
   ],
   "final_migration_for_this_release": "033_p2_i13_interactive_learn.sql",
+  "automated_tests": "184 passed, 24 skipped (test_i13*.py)",
   "deploy_target": "C:\\MemoryBox",
   "proof_output_root": "E:\\MemoryBox-dev\\p2-i13-stage-a\\docs\\test-output",
   "backup_root": "E:\\MemoryBox-backups",
+  "runbook": "docs/implementation/p2-i13-stage-a/CONSOLIDATED-I13-FINAL-DEPLOYMENT-AND-FOUNDER-TEST.md",
   "not_authorized": [
     "archive Outcomes C/D/E",
     "Scan for New Assets (I18)",
