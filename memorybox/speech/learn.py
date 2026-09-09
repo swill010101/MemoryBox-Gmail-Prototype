@@ -53,14 +53,18 @@ def owner_learn_voice(
     vec, model = embed_video_span(path, float(t_start), float(t_end), injected=injected)
     if not vec:
         reason = model or "no_source_audio"
+        base_reason = reason.split(":", 1)[0]
+        ecapa_detail = reason.split(":", 1)[1] if base_reason == "ecapa_unavailable" and ":" in reason else ""
+        detail = _LEARN_FAIL_DETAIL.get(base_reason) or (
+            "Could not Learn a voice from this highlighted span "
+            f"({reason}). The transcript is text, not a voiceprint."
+        )
+        if ecapa_detail:
+            detail = f"{detail} Detail: {ecapa_detail}"
         return {
             "ok": False,
-            "reason": reason,
-            "detail": _LEARN_FAIL_DETAIL.get(reason)
-            or (
-                "Could not Learn a voice from this highlighted span "
-                f"({reason}). The transcript is text, not a voiceprint."
-            ),
+            "reason": base_reason,
+            "detail": detail,
         }
     saved = persist_voice_exemplar(
         person_id=person_id,

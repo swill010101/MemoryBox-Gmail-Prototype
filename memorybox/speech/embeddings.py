@@ -12,8 +12,37 @@ from typing import Any, Sequence
 from memorybox.recognition.embeddings import cosine
 from memorybox.speech.constants import VOICE_MODEL
 
+_ECAPA_REPO = "speechbrain/spkrec-ecapa-voxceleb"
+
 if sys.platform == "win32":
     os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS", "1")
+
+
+def ecapa_model_dir() -> Path:
+    override = (os.environ.get("MEMORYBOX_ECAPA_MODEL_DIR") or "").strip()
+    if override:
+        path = Path(override)
+    else:
+        path = Path(tempfile.gettempdir()) / "mb-spkrec-ecapa-voxceleb"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def materialize_ecapa_model(savedir: Path) -> None:
+    """Copy SpeechBrain ECAPA weights locally without HF/speechbrain symlinks (Windows-safe)."""
+    if (savedir / "hyperparams.yaml").is_file():
+        return
+    os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS", "1")
+    from huggingface_hub import snapshot_download  # type: ignore
+
+    kwargs: dict[str, Any] = {
+        "repo_id": _ECAPA_REPO,
+        "local_dir": str(savedir),
+    }
+    try:
+        snapshot_download(**kwargs, symlinks=False)
+    except TypeError:
+        snapshot_download(**kwargs, local_dir_use_symlinks=False)
 
 
 def embed_injected(vec: Sequence[float] | None) -> list[float] | None:
@@ -58,22 +87,22 @@ def extract_wav(video_path: str, t_start: float, t_end: float, dest: Path) -> bo
     return dest.is_file() and dest.stat().st_size > 200
 
 
-def embed_wav_ecapa(wav_path: Path) -> list[float] | None:
+def embed_wav_ecapa(wav_path: Path) -> tuple[list[float] | None, str | None]:
     try:
         from speechbrain.inference.speaker import EncoderClassifier  # type: ignore
         from speechbrain.utils.fetching import LocalStrategy  # type: ignore
         import torchaudio  # type: ignore
         import numpy as np
-    except ImportError:
-        return None
+    except ImportError as exc:
+        return None, f"import:{exc}"
+    savedir = ecapa_model_dir()
     local_strategy = (
-        LocalStrategy.COPY_SKIP_CACHE if sys.platform == "win32" else LocalStrategy.SYMLINK
+        LocalStrategy.COPY if sys.platform == "win32" else LocalStrategy.SYMLINK
     )
     try:
-        savedir = Path(tempfile.gettempdir()) / "mb-spkrec-ecapa-voxceleb"
-        savedir.mkdir(parents=True, exist_ok=True)
+        materialize_ecapa_model(savedir)
         encoder = EncoderClassifier.from_hparams(
-            source="speechbrain/spkrec-ecapa-voxceleb",
+            source=str(savedir),
             savedir=str(savedir),
             run_opts={"device": "cpu"},
             local_strategy=local_strategy,
@@ -88,9 +117,9 @@ def embed_wav_ecapa(wav_path: Path) -> list[float] | None:
         n = float(np.linalg.norm(vec))
         if n > 1e-9:
             vec = vec / n
-        return [float(x) for x in vec]
-    except Exception:
-        return None
+        return [float(x) for x in vec], None
+    except Exception as exc:
+        return None, f"{type(exc).__name__}:{exc}"
 
 
 def embed_video_span(
@@ -108,9 +137,11 @@ def embed_video_span(
         wav = Path(td) / "span.wav"
         if not extract_wav(video_path, t_start, t_end, wav):
             return None, "ffmpeg_extract_failed"
-        vec = embed_wav_ecapa(wav)
+        vec, err = embed_wav_ecapa(wav)
         if vec:
             return vec, VOICE_MODEL
+        if err:
+            return None, f"ecapa_unavailable:{err}"
     return None, "ecapa_unavailable"
 
 
