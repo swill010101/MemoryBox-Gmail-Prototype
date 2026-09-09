@@ -1,7 +1,8 @@
 {
   "release_name": "P2-I13-final-consolidated",
   "branch": "codex/p2-i13-stage-a",
-  "release_sha": "9fedb555b96ead9ca1dad99dd7a75e3692287fba",
+  "release_sha": "99db60494d9cf09e5cc71c237bf621d903b0131e",
+  "consolidation_commit": "9fedb555b96ead9ca1dad99dd7a75e3692287fba",
   "baseline_commits": [
     {
       "sha": "306c079272f4561b83412576d77e6a44c7cf2fa9",
