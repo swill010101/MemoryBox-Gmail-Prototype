@@ -23,13 +23,38 @@ html { scroll-behavior: smooth; }
 html[data-mb-surface="explore"],
 html[data-mb-surface="people"],
 html[data-mb-surface="story"],
-html[data-mb-surface="artifact"] {
+html[data-mb-surface="artifact"],
+html[data-mb-surface="admin"],
+html[data-mb-surface="admin-jobs"],
+html[data-mb-surface="admin-evidence"],
+html[data-mb-surface="status"] {
   --mb-ink: #e8edf5;
   --mb-ink-soft: #b7c0d0;
   --mb-paper: #141b27;
   --mb-paper-deep: #1a2230;
   --mb-mist: #9aa3b5;
   --mb-voice: #c5d0e0;
+}
+
+/* Admin hub — readable links and tables on dark shell background */
+html[data-mb-surface="admin"] main a:not(.card),
+html[data-mb-surface="admin-jobs"] main a,
+html[data-mb-surface="admin-evidence"] main a {
+  color: #9ec5ff;
+}
+
+html[data-mb-surface="admin-jobs"] table th,
+html[data-mb-surface="admin-jobs"] table td,
+html[data-mb-surface="admin-evidence"] table th,
+html[data-mb-surface="admin-evidence"] table td {
+  color: #e8edf5;
+  border-bottom-color: rgba(255, 255, 255, 0.15);
+}
+
+html[data-mb-surface="admin"] .muted,
+html[data-mb-surface="admin-jobs"] .muted,
+html[data-mb-surface="admin-evidence"] .muted {
+  color: #c5cec8;
 }
 
 html[data-mb-surface="explore"] section.mb-explore-ask-band,

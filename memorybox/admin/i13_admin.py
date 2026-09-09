@@ -26,6 +26,31 @@ def active_admission_id() -> str | None:
     return raw
 
 
+def _queue_counts_by_status(
+    conn: Any, table: str, admission_id: str | None
+) -> dict[str, int]:
+    if admission_id:
+        rows = conn.execute(
+            f"""
+            SELECT status, count(*) AS n
+            FROM {table}
+            WHERE i13_admission_id = %s::uuid
+            GROUP BY status
+            """,
+            (admission_id,),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            f"""
+            SELECT status, count(*) AS n
+            FROM {table}
+            WHERE i13_admission_id IS NULL
+            GROUP BY status
+            """,
+        ).fetchall()
+    return {str(r["status"]): int(r["n"]) for r in rows}
+
+
 def i13_status() -> dict[str, Any]:
     admission_id = active_admission_id()
     env = {
@@ -84,26 +109,8 @@ def i13_status() -> dict[str, Any]:
                 """
             ).fetchall()
         ]
-        rec_q = conn.execute(
-            """
-            SELECT status, count(*) AS n
-            FROM recognition_queue_items
-            WHERE (%s IS NULL AND i13_admission_id IS NULL)
-               OR i13_admission_id = %s::uuid
-            GROUP BY status
-            """,
-            (admission_id, admission_id),
-        ).fetchall()
-        speech_q = conn.execute(
-            """
-            SELECT status, count(*) AS n
-            FROM speech_queue_items
-            WHERE (%s IS NULL AND i13_admission_id IS NULL)
-               OR i13_admission_id = %s::uuid
-            GROUP BY status
-            """,
-            (admission_id, admission_id),
-        ).fetchall()
+        rec_q = _queue_counts_by_status(conn, "recognition_queue_items", admission_id)
+        speech_q = _queue_counts_by_status(conn, "speech_queue_items", admission_id)
     learn_enabled = bool(
         admission
         and admission.get("plan", {}).get("purpose") == "acceptance_learning"
@@ -132,8 +139,8 @@ def i13_status() -> dict[str, Any]:
         "admission_events": events,
         "queue_units": units,
         "recent_admissions": recent,
-        "recognition_queue_by_status": {str(r["status"]): int(r["n"]) for r in rec_q},
-        "speech_queue_by_status": {str(r["status"]): int(r["n"]) for r in speech_q},
+        "recognition_queue_by_status": rec_q,
+        "speech_queue_by_status": speech_q,
         "interactive_learn_enabled": learn_enabled,
         "archive_processing_locked": archive_locked,
     }
@@ -142,33 +149,54 @@ def i13_status() -> dict[str, Any]:
 def list_jobs(*, limit: int = 200) -> dict[str, Any]:
     admission_id = active_admission_id()
     items: list[dict[str, Any]] = []
+    job_cols = """
+            SELECT id::text, person_id::text, video_provider_key, video_external_id,
+                   status, enqueue_reason, attempt_count, priority, reason,
+                   i13_admission_id::text, created_at, updated_at
+    """
     with connection() as conn:
-        rec_rows = conn.execute(
-            """
-            SELECT id::text, person_id::text, video_provider_key, video_external_id,
-                   status, enqueue_reason, attempt_count, priority, reason,
-                   i13_admission_id::text, created_at, updated_at
-            FROM recognition_queue_items
-            WHERE (%s IS NULL AND i13_admission_id IS NOT NULL)
-               OR (%s IS NOT NULL AND i13_admission_id = %s::uuid)
-            ORDER BY updated_at DESC NULLS LAST, created_at DESC
-            LIMIT %s
-            """,
-            (admission_id, admission_id, admission_id, int(limit)),
-        ).fetchall()
-        speech_rows = conn.execute(
-            """
-            SELECT id::text, person_id::text, video_provider_key, video_external_id,
-                   status, enqueue_reason, attempt_count, priority, reason,
-                   i13_admission_id::text, created_at, updated_at
-            FROM speech_queue_items
-            WHERE (%s IS NULL AND i13_admission_id IS NOT NULL)
-               OR (%s IS NOT NULL AND i13_admission_id = %s::uuid)
-            ORDER BY updated_at DESC NULLS LAST, created_at DESC
-            LIMIT %s
-            """,
-            (admission_id, admission_id, admission_id, int(limit)),
-        ).fetchall()
+        if admission_id:
+            rec_rows = conn.execute(
+                f"""
+                {job_cols}
+                FROM recognition_queue_items
+                WHERE i13_admission_id = %s::uuid
+                ORDER BY updated_at DESC NULLS LAST, created_at DESC
+                LIMIT %s
+                """,
+                (admission_id, int(limit)),
+            ).fetchall()
+            speech_rows = conn.execute(
+                f"""
+                {job_cols}
+                FROM speech_queue_items
+                WHERE i13_admission_id = %s::uuid
+                ORDER BY updated_at DESC NULLS LAST, created_at DESC
+                LIMIT %s
+                """,
+                (admission_id, int(limit)),
+            ).fetchall()
+        else:
+            rec_rows = conn.execute(
+                f"""
+                {job_cols}
+                FROM recognition_queue_items
+                WHERE i13_admission_id IS NOT NULL
+                ORDER BY updated_at DESC NULLS LAST, created_at DESC
+                LIMIT %s
+                """,
+                (int(limit),),
+            ).fetchall()
+            speech_rows = conn.execute(
+                f"""
+                {job_cols}
+                FROM speech_queue_items
+                WHERE i13_admission_id IS NOT NULL
+                ORDER BY updated_at DESC NULLS LAST, created_at DESC
+                LIMIT %s
+                """,
+                (int(limit),),
+            ).fetchall()
     for row in rec_rows:
         item = _serialize(dict(row))
         item["lane"] = "face"
@@ -179,12 +207,16 @@ def list_jobs(*, limit: int = 200) -> dict[str, Any]:
         items.append(item)
     items.sort(key=lambda x: str(x.get("updated_at") or x.get("created_at") or ""), reverse=True)
     status = i13_status()
+    learn_enabled = status["interactive_learn_enabled"]
+    archive_locked = status["archive_processing_locked"]
     return {
         "ok": True,
         "admission_id": admission_id,
+        "interactive_learn_enabled": learn_enabled,
+        "archive_processing_locked": archive_locked,
         "scope_lock": {
-            "interactive_learn_enabled": status["interactive_learn_enabled"],
-            "archive_processing_locked": status["archive_processing_locked"],
+            "interactive_learn_enabled": learn_enabled,
+            "archive_processing_locked": archive_locked,
         },
         "items": items[:limit],
         "counts": {
@@ -224,10 +256,10 @@ def list_learned_evidence(*, limit: int = 300) -> dict[str, Any]:
             """
             SELECT id::text, person_id::text, video_provider_key, video_external_id,
                    start_sec, end_sec, method, confidence, authority,
-                   confirmation_state, COALESCE(status, 'accepted') AS status, created_at
+                   confirmation_state, COALESCE(status, 'accepted') AS status
             FROM face_appearance_moments
             WHERE COALESCE(status, 'accepted') <> 'withdrawn'
-            ORDER BY created_at DESC
+            ORDER BY start_sec DESC
             LIMIT %s
             """,
             (int(limit),),
@@ -236,10 +268,10 @@ def list_learned_evidence(*, limit: int = 300) -> dict[str, Any]:
             """
             SELECT id::text, person_id::text, video_provider_key, video_external_id,
                    t_start, t_end, speaker_state, confidence,
-                   COALESCE(status, 'accepted') AS status, created_at
+                   COALESCE(status, 'accepted') AS status
             FROM speech_spoken_moments
             WHERE COALESCE(status, 'accepted') <> 'withdrawn'
-            ORDER BY created_at DESC
+            ORDER BY t_start DESC
             LIMIT %s
             """,
             (int(limit),),
@@ -301,7 +333,6 @@ def list_learned_evidence(*, limit: int = 300) -> dict[str, Any]:
                 "authority": row["authority"],
                 "confirmation_state": row["confirmation_state"],
                 "status": row["status"],
-                "created_at": row["created_at"],
             }
         )
     for row in moment_rows:
@@ -317,10 +348,14 @@ def list_learned_evidence(*, limit: int = 300) -> dict[str, Any]:
                 "speaker_state": row["speaker_state"],
                 "confidence": row["confidence"],
                 "status": row["status"],
-                "created_at": row["created_at"],
             }
         )
-    items.sort(key=lambda x: str(x.get("created_at") or ""), reverse=True)
+    items.sort(
+        key=lambda x: str(
+            x.get("created_at") or x.get("start_sec") or x.get("end_sec") or ""
+        ),
+        reverse=True,
+    )
     return {"ok": True, "items": items[:limit], "count": len(items[:limit])}
 
 

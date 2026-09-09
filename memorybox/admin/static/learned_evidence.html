@@ -1,71 +1,100 @@
-<!DOCTYPE html>
-<html lang="en" data-mb-surface="admin-evidence">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>MemoryBox — Learned Evidence</title>
-  <style>
-    main { max-width: 1100px; margin: 0 auto; padding: 1.25rem; }
-    h1 { font-family: Georgia, serif; margin: 0 0 0.35rem; }
-    table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
-    th, td { border-bottom: 1px solid #ddd; padding: 0.35rem 0.4rem; text-align: left; vertical-align: top; }
-    button { border: 1px solid #8a3b12; background: #8a3b12; color: #fff; padding: 0.28rem 0.5rem; cursor: pointer; font: inherit; }
-    .muted { color: #6a7180; font-size: 0.88rem; }
-  </style>
-</head>
-<body class="mb-shell">
-<main>
-  <h1>Learned Evidence</h1>
-  <p class="muted"><a href="/admin/ui">← Admin</a> · Independent face and voice records with provenance. Withdrawal preserves history.</p>
-  <button type="button" id="refresh">Refresh</button>
-  <p id="msg" class="muted"></p>
-  <table>
-    <thead><tr><th>Kind</th><th>Person</th><th>Source / interval</th><th>Method</th><th>Authority</th><th></th></tr></thead>
-    <tbody id="rows"><tr><td colspan="6" class="muted">Loading…</td></tr></tbody>
-  </table>
-</main>
-<script>
-function interval(item) {
-  if (item.start_sec != null) return Number(item.start_sec).toFixed(1) + "–" + Number(item.end_sec).toFixed(1) + "s";
-  return item.source_id || "—";
-}
-async function withdraw(kind, id) {
-  const reason = prompt("Reason for withdrawal (required):", "owner_review_withdraw");
-  if (!reason) return;
-  const path = kind === "voice_exemplar"
-    ? "/admin/api/learned-evidence/withdraw-voice-exemplar"
-    : "/admin/api/learned-evidence/withdraw-face-exemplar";
-  const r = await fetch(path, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({id, reason})});
-  const d = await r.json();
-  if (!r.ok || !d.ok) throw new Error(d.detail || d.error || "withdraw failed");
-}
-async function load() {
-  const data = await fetch("/admin/api/learned-evidence").then(r => r.json());
-  const tbody = document.getElementById("rows");
-  tbody.replaceChildren();
-  if (!data.items.length) {
-    tbody.innerHTML = '<tr><td colspan="6" class="muted">No learned evidence rows.</td></tr>';
-    return;
-  }
-  data.items.forEach(item => {
-    const tr = document.createElement("tr");
-    const person = item.person_id ? item.person_id.slice(0, 8) + "…" : "—";
-    tr.innerHTML = `<td>${item.kind}</td><td>${person}</td><td>${interval(item)}</td><td>${item.method || item.embedding_model || "—"}</td><td>${item.authority || item.confirmation_state || item.speaker_state || "—"}</td><td></td>`;
-    if (item.kind === "face_exemplar" || item.kind === "voice_exemplar") {
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.textContent = "Withdraw";
-      btn.onclick = async () => {
-        try { await withdraw(item.kind, item.id); await load(); }
-        catch (e) { document.getElementById("msg").textContent = e.message; }
-      };
-      tr.cells[5].appendChild(btn);
-    }
-    tbody.appendChild(tr);
-  });
-}
-document.getElementById("refresh").onclick = () => load().catch(e => document.getElementById("msg").textContent = e.message);
-load().catch(e => document.getElementById("msg").textContent = e.message);
-</script>
-</body>
-</html>
+<!DOCTYPE html>
+<html lang="en" data-mb-surface="admin-evidence">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MemoryBox — Learned Evidence</title>
+  <style>
+    main { max-width: 1100px; margin: 0 auto; padding: 1.25rem; color: #e8edf5; }
+    h1 { font-family: Georgia, serif; margin: 0 0 0.35rem; color: #eef1ef; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.85rem; color: #e8edf5; }
+    th, td { border-bottom: 1px solid rgba(255, 255, 255, 0.15); padding: 0.35rem 0.4rem; text-align: left; vertical-align: top; }
+    main a { color: #9ec5ff; }
+    button {
+      border: 1px solid rgba(166, 139, 75, 0.55); background: #8a3b12; color: #fff;
+      padding: 0.28rem 0.5rem; cursor: pointer; font: inherit;
+    }
+    #refresh {
+      border-color: rgba(166, 139, 75, 0.55); background: #2f6b56; color: #eef1ef;
+      padding: 0.35rem 0.6rem;
+    }
+    .muted { color: #c5cec8; font-size: 0.88rem; }
+    #msg.err { color: #f0a898; }
+  </style>
+</head>
+<body class="mb-shell">
+<main>
+  <h1>Learned Evidence</h1>
+  <p class="muted"><a href="/admin/ui">← Admin</a> · Independent face and voice records with provenance. Withdrawal preserves history.</p>
+  <button type="button" id="refresh">Refresh</button>
+  <p id="msg" class="muted"></p>
+  <table>
+    <thead><tr><th>Kind</th><th>Person</th><th>Source / interval</th><th>Method</th><th>Authority</th><th></th></tr></thead>
+    <tbody id="rows"><tr><td colspan="6" class="muted">Loading…</td></tr></tbody>
+  </table>
+</main>
+<script>
+function interval(item) {
+  if (item.start_sec != null) return Number(item.start_sec).toFixed(1) + "–" + Number(item.end_sec).toFixed(1) + "s";
+  return item.source_id || "—";
+}
+async function withdraw(kind, id) {
+  const reason = prompt("Reason for withdrawal (required):", "owner_review_withdraw");
+  if (!reason) return;
+  const path = kind === "voice_exemplar"
+    ? "/admin/api/learned-evidence/withdraw-voice-exemplar"
+    : "/admin/api/learned-evidence/withdraw-face-exemplar";
+  const r = await fetch(path, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({id, reason})});
+  const d = await r.json();
+  if (!r.ok || !d.ok) throw new Error(d.detail || d.error || "withdraw failed");
+}
+async function load() {
+  const msg = document.getElementById("msg");
+  const tbody = document.getElementById("rows");
+  msg.textContent = "";
+  msg.classList.remove("err");
+  const res = await fetch("/admin/api/learned-evidence");
+  const data = await res.json().catch(() => ({}));
+  tbody.replaceChildren();
+  if (!res.ok || data.ok === false) {
+    tbody.innerHTML = '<tr><td colspan="6" class="muted">Could not load learned evidence.</td></tr>';
+    msg.textContent = data.detail || data.error || ("HTTP " + res.status);
+    msg.classList.add("err");
+    return;
+  }
+  const items = Array.isArray(data.items) ? data.items : [];
+  if (!items.length) {
+    tbody.innerHTML = '<tr><td colspan="6" class="muted">No learned evidence rows.</td></tr>';
+    return;
+  }
+  items.forEach(item => {
+    const tr = document.createElement("tr");
+    const person = item.person_id ? item.person_id.slice(0, 8) + "…" : "—";
+    tr.innerHTML = `<td>${item.kind}</td><td>${person}</td><td>${interval(item)}</td><td>${item.method || item.embedding_model || "—"}</td><td>${item.authority || item.confirmation_state || item.speaker_state || "—"}</td><td></td>`;
+    if (item.kind === "face_exemplar" || item.kind === "voice_exemplar") {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.textContent = "Withdraw";
+      btn.onclick = async () => {
+        try { await withdraw(item.kind, item.id); await load(); }
+        catch (e) {
+          document.getElementById("msg").textContent = e.message;
+          document.getElementById("msg").classList.add("err");
+        }
+      };
+      tr.cells[5].appendChild(btn);
+    }
+    tbody.appendChild(tr);
+  });
+}
+document.getElementById("refresh").onclick = () => load().catch(e => {
+  document.getElementById("msg").textContent = e.message;
+  document.getElementById("msg").classList.add("err");
+});
+load().catch(e => {
+  document.getElementById("msg").textContent = e.message;
+  document.getElementById("msg").classList.add("err");
+});
+</script>
+</body>
+</html>
