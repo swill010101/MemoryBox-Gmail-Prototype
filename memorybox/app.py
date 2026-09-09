@@ -1369,11 +1369,14 @@ def admin_jobs_retry_failed() -> dict[str, Any]:
 
 
 @app.get("/admin/api/learned-evidence")
-def admin_learned_evidence(limit: int = Query(300, ge=1, le=1000)) -> dict[str, Any]:
+def admin_learned_evidence(
+    limit: int = Query(300, ge=1, le=1000),
+    scope: str = Query("exemplars", pattern="^(exemplars|all)$"),
+) -> dict[str, Any]:
     from memorybox.admin import i13_admin
 
     try:
-        return i13_admin.list_learned_evidence(limit=limit)
+        return i13_admin.list_learned_evidence(limit=limit, scope=scope)
     except Exception as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 

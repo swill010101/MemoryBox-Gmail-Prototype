@@ -276,7 +276,28 @@ def list_jobs(*, limit: int = 200) -> dict[str, Any]:
     }
 
 
-def list_learned_evidence(*, limit: int = 300) -> dict[str, Any]:
+def _evidence_sort_key(item: dict[str, Any]) -> float:
+    created = item.get("created_at")
+    if created is not None and hasattr(created, "timestamp"):
+        return float(created.timestamp())
+    if isinstance(created, str) and created.strip():
+        from datetime import datetime
+
+        try:
+            return datetime.fromisoformat(created.replace("Z", "+00:00")).timestamp()
+        except ValueError:
+            pass
+    try:
+        return float(item.get("start_sec") or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def list_learned_evidence(*, limit: int = 300, scope: str = "exemplars") -> dict[str, Any]:
+    """scope=exemplars (default): owner Learn face/voice rows only. scope=all: include scan rows."""
+    view = (scope or "exemplars").strip().lower()
+    if view not in {"exemplars", "all"}:
+        view = "exemplars"
     items: list[dict[str, Any]] = []
     with connection() as conn:
         face_rows = conn.execute(
@@ -302,30 +323,33 @@ def list_learned_evidence(*, limit: int = 300) -> dict[str, Any]:
             """,
             (int(limit),),
         ).fetchall()
-        appearance_rows = conn.execute(
-            """
-            SELECT id::text, person_id::text, video_provider_key, video_external_id,
-                   start_sec, end_sec, method, confidence, authority,
-                   confirmation_state, COALESCE(status, 'accepted') AS status
-            FROM face_appearance_moments
-            WHERE COALESCE(status, 'accepted') <> 'withdrawn'
-            ORDER BY start_sec DESC
-            LIMIT %s
-            """,
-            (int(limit),),
-        ).fetchall()
-        moment_rows = conn.execute(
-            """
-            SELECT id::text, person_id::text, video_provider_key, video_external_id,
-                   t_start, t_end, speaker_state, confidence,
-                   COALESCE(status, 'accepted') AS status
-            FROM speech_spoken_moments
-            WHERE COALESCE(status, 'accepted') <> 'withdrawn'
-            ORDER BY t_start DESC
-            LIMIT %s
-            """,
-            (int(limit),),
-        ).fetchall()
+        appearance_rows: list[Any] = []
+        moment_rows: list[Any] = []
+        if view == "all":
+            appearance_rows = conn.execute(
+                """
+                SELECT id::text, person_id::text, video_provider_key, video_external_id,
+                       start_sec, end_sec, method, confidence, authority,
+                       confirmation_state, COALESCE(status, 'accepted') AS status
+                FROM face_appearance_moments
+                WHERE COALESCE(status, 'accepted') <> 'withdrawn'
+                ORDER BY start_sec DESC
+                LIMIT %s
+                """,
+                (int(limit),),
+            ).fetchall()
+            moment_rows = conn.execute(
+                """
+                SELECT id::text, person_id::text, video_provider_key, video_external_id,
+                       t_start, t_end, speaker_state, confidence,
+                       COALESCE(status, 'accepted') AS status
+                FROM speech_spoken_moments
+                WHERE COALESCE(status, 'accepted') <> 'withdrawn'
+                ORDER BY t_start DESC
+                LIMIT %s
+                """,
+                (int(limit),),
+            ).fetchall()
     for row in face_rows:
         meta = row.get("exemplar_meta_json")
         if isinstance(meta, str):
@@ -344,6 +368,7 @@ def list_learned_evidence(*, limit: int = 300) -> dict[str, Any]:
                 "source_id": row.get("source_asset_id"),
                 "provider_key": row.get("provider_key"),
                 "created_at": row["created_at"],
+                "is_owner_learn": row.get("method") == "owner_learn",
                 "meta": meta or {},
             }
         )
@@ -363,8 +388,10 @@ def list_learned_evidence(*, limit: int = 300) -> dict[str, Any]:
                 "provider_key": row["video_provider_key"],
                 "start_sec": row["t_start"],
                 "end_sec": row["t_end"],
+                "method": "owner_learn",
                 "embedding_model": row["embedding_model"],
                 "created_at": row["created_at"],
+                "is_owner_learn": True,
                 "meta": meta or {},
             }
         )
@@ -400,16 +427,16 @@ def list_learned_evidence(*, limit: int = 300) -> dict[str, Any]:
                 "status": row["status"],
             }
         )
-    items.sort(
-        key=lambda x: str(
-            x.get("created_at") or x.get("start_sec") or x.get("end_sec") or ""
-        ),
-        reverse=True,
-    )
+    items.sort(key=_evidence_sort_key, reverse=True)
     slice_items = items[:limit]
     with connection() as conn:
         _enrich_admin_items(conn, slice_items)
-    return {"ok": True, "items": slice_items, "count": len(slice_items)}
+    return {
+        "ok": True,
+        "scope": view,
+        "items": slice_items,
+        "count": len(slice_items),
+    }
 
 
 def withdraw_face_exemplar(exemplar_id: str, *, reason: str) -> dict[str, Any]:
