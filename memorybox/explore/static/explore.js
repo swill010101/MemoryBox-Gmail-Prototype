@@ -5173,71 +5173,86 @@
         (sel.options[sel.selectedIndex] && sel.options[sel.selectedIndex].getAttribute("data-label")) ||
         "Person";
       const did = [];
-      if (hasSpan) {
-        const res = await fetch("/speech/learn", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            person_id: personId,
-            video_external_id: item.video_external_id || item.external_id,
-            t_start: Number(span.tStart),
-            t_end: Number(span.tEnd),
-            video_provider_key: item.video_provider_key || item.provider_key || "hvrt",
-          }),
-        });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok || data.ok === false) {
-          throw new Error(data.detail || data.reason || res.statusText);
-        }
-        const n = Number(data.queued_other_videos || 0);
-        did.push(
-          "voice on this video" +
-            (n
-              ? "; scoring " + learnedLabel + " on " + n + " other videos (this Person only)"
-              : "")
-        );
-      }
+      const errors = [];
       if (state.modal.learnCrop && state.modal.learnPix) {
-        const media = learnMediaEl();
-        const tSec =
-          media && media.currentTime != null ? Number(media.currentTime) : Number(item.t || 0);
-        const pix = state.modal.learnPix;
-        const faceId = "explore-learn-" + String(Date.now());
-        const res = await fetch("/recognition/learn", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            person_id: personId,
-            face_external_id: faceId,
-            video_external_id: item.video_external_id || item.external_id || null,
-            t_sec: tSec,
-            bbox: {
-              x: pix.x,
-              y: pix.y,
-              w: pix.w,
-              h: pix.h,
-              frame_w: pix.vw,
-              frame_h: pix.vh,
-            },
-            crop_jpeg_base64: state.modal.learnCrop,
-            provider_key: item.video_provider_key || item.provider_key || "immich",
-          }),
-        });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok || data.ok === false) {
-          throw new Error(data.detail || data.reason || res.statusText);
+        try {
+          const media = learnMediaEl();
+          const tSec =
+            media && media.currentTime != null ? Number(media.currentTime) : Number(item.t || 0);
+          const pix = state.modal.learnPix;
+          const faceId = "explore-learn-" + String(Date.now());
+          const res = await fetch("/recognition/learn", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              person_id: personId,
+              face_external_id: faceId,
+              video_external_id: item.video_external_id || item.external_id || null,
+              t_sec: tSec,
+              bbox: {
+                x: pix.x,
+                y: pix.y,
+                w: pix.w,
+                h: pix.h,
+                frame_w: pix.vw,
+                frame_h: pix.vh,
+              },
+              crop_jpeg_base64: state.modal.learnCrop,
+              provider_key: item.video_provider_key || item.provider_key || "hvrt",
+            }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok || data.ok === false) {
+            throw new Error(data.detail || data.reason || res.statusText);
+          }
+          did.push("face on this video");
+          if (!Array.isArray(item.people)) item.people = [];
+          if (!item.people.includes(learnedLabel)) item.people.push(learnedLabel);
+        } catch (faceErr) {
+          errors.push(String(faceErr.message || faceErr));
         }
-        did.push("face on this video");
-        if (!Array.isArray(item.people)) item.people = [];
-        if (!item.people.includes(learnedLabel)) item.people.push(learnedLabel);
+      }
+      if (hasSpan) {
+        try {
+          const res = await fetch("/speech/learn", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              person_id: personId,
+              video_external_id: item.video_external_id || item.external_id,
+              t_start: Number(span.tStart),
+              t_end: Number(span.tEnd),
+              video_provider_key: item.video_provider_key || item.provider_key || "hvrt",
+            }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok || data.ok === false) {
+            throw new Error(data.detail || data.reason || res.statusText);
+          }
+          const n = Number(data.queued_other_videos || 0);
+          did.push(
+            "voice on this video" +
+              (n
+                ? "; scoring " + learnedLabel + " on " + n + " other videos (this Person only)"
+                : "")
+          );
+        } catch (voiceErr) {
+          errors.push(String(voiceErr.message || voiceErr));
+        }
+      }
+      if (!did.length) {
+        throw new Error(errors.join(" ") || "Learn did not save anything.");
       }
       rememberLearnPerson(item, {
         id: personId,
         label: learnedLabel,
         crop: state.modal.learnCrop || null,
       });
-      if (status)
-        status.textContent = "Learned " + learnedLabel + " — " + did.join("; ") + ".";
+      if (status) {
+        let msg = "Learned " + learnedLabel + " — " + did.join("; ") + ".";
+        if (errors.length) msg += " Voice note: " + errors.join(" ");
+        status.textContent = msg;
+      }
       renderLearnRail(item);
       return;
     } catch (err) {
@@ -7192,6 +7207,7 @@
     const q = params.get("q") || "";
     const videoId = (params.get("video") || "").trim();
     const photoId = (params.get("photo") || "").trim();
+    const adminReturn = (params.get("mb_admin_return") || "").trim();
     sessionId =
       params.get("session_id") ||
       localStorage.getItem("mb_ask_session") ||
@@ -7219,6 +7235,17 @@
         if (state && state.domain) state.domain.galleryLocked = false;
         openModal(item.id);
         state.modal.transcriptOn = true;
+        if (adminReturn && adminReturn.startsWith("/")) {
+          let bar = document.getElementById("mb-admin-return-bar");
+          if (!bar) {
+            bar = document.createElement("div");
+            bar.id = "mb-admin-return-bar";
+            bar.style.cssText = "padding:0.45rem 0.75rem;background:#1a2230;border-bottom:1px solid rgba(255,255,255,0.15);font-size:0.88rem";
+            const modalInner = document.querySelector("#mb-modal .mb-modal-inner") || document.getElementById("mb-modal");
+            if (modalInner) modalInner.insertBefore(bar, modalInner.firstChild);
+          }
+          bar.innerHTML = '<a href="' + adminReturn.replace(/"/g, "&quot;") + '" style="color:#9ec5ff;text-decoration:none">← Back to Admin</a>';
+        }
         const box = document.getElementById("mb-ev-transcript");
         if (box) box.classList.add("is-on");
         const tr = document.getElementById("mb-transcript-toggle");

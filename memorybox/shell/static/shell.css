@@ -57,6 +57,51 @@ html[data-mb-surface="admin-evidence"] .muted {
   color: #c5cec8;
 }
 
+html[data-mb-surface="admin"] .mb-site-bar,
+html[data-mb-surface="admin-jobs"] .mb-site-bar,
+html[data-mb-surface="admin-evidence"] .mb-site-bar {
+  background: rgba(8, 12, 10, 0.95);
+  border-bottom-color: rgba(255, 255, 255, 0.22);
+}
+
+html[data-mb-surface="admin"] .mb-nav-family a,
+html[data-mb-surface="admin-jobs"] .mb-nav-family a,
+html[data-mb-surface="admin-evidence"] .mb-nav-family a {
+  color: #dfe5e1;
+}
+
+html[data-mb-surface="admin"] .mb-nav-system,
+html[data-mb-surface="admin-jobs"] .mb-nav-system,
+html[data-mb-surface="admin-evidence"] .mb-nav-system {
+  opacity: 1;
+}
+
+html[data-mb-surface="admin"] .mb-nav-system a,
+html[data-mb-surface="admin-jobs"] .mb-nav-system a,
+html[data-mb-surface="admin-evidence"] .mb-nav-system a {
+  color: #eef1ef;
+}
+
+html[data-mb-surface="admin"] a.card,
+html[data-mb-surface="admin-jobs"] a.card,
+html[data-mb-surface="admin-evidence"] a.card {
+  background: #f7f8fb !important;
+  color: #1a1f2a !important;
+  border-color: #c5c9d1 !important;
+}
+
+html[data-mb-surface="admin"] a.card .muted,
+html[data-mb-surface="admin-jobs"] a.card .muted,
+html[data-mb-surface="admin-evidence"] a.card .muted {
+  color: #5a6170 !important;
+}
+
+html[data-mb-surface="admin"] a.card strong,
+html[data-mb-surface="admin-jobs"] a.card strong,
+html[data-mb-surface="admin-evidence"] a.card strong {
+  color: #1a1f2a !important;
+}
+
 html[data-mb-surface="explore"] section.mb-explore-ask-band,
 html[data-mb-surface="explore"] section.mb-explore-curator,
 html[data-mb-surface="explore"] section.mb-explore-timeline,

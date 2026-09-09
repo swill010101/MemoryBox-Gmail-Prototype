@@ -5,10 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>MemoryBox — Learned Evidence</title>
   <style>
-    main { max-width: 1100px; margin: 0 auto; padding: 1.25rem; color: #e8edf5; }
+    main { max-width: 1200px; margin: 0 auto; padding: 1.25rem; color: #e8edf5; }
     h1 { font-family: Georgia, serif; margin: 0 0 0.35rem; color: #eef1ef; }
     table { width: 100%; border-collapse: collapse; font-size: 0.85rem; color: #e8edf5; }
     th, td { border-bottom: 1px solid rgba(255, 255, 255, 0.15); padding: 0.35rem 0.4rem; text-align: left; vertical-align: top; }
+    tr.is-owner-learn { background: rgba(47, 107, 86, 0.18); }
     main a { color: #9ec5ff; }
     button {
       border: 1px solid rgba(166, 139, 75, 0.55); background: #8a3b12; color: #fff;
@@ -19,6 +20,8 @@
       padding: 0.35rem 0.6rem;
     }
     .muted { color: #c5cec8; font-size: 0.88rem; }
+    .note { max-width: 52rem; margin: 0.5rem 0 0.75rem; line-height: 1.45; }
+    .mono { font-family: ui-monospace, Consolas, monospace; font-size: 0.78rem; color: #b7c0d0; }
     #msg.err { color: #f0a898; }
   </style>
 </head>
@@ -26,17 +29,38 @@
 <main>
   <h1>Learned Evidence</h1>
   <p class="muted"><a href="/admin/ui">← Admin</a> · Independent face and voice records with provenance. Withdrawal preserves history.</p>
+  <p class="note muted"><strong>Your I13 Learn rows</strong> are highlighted: type <em>Face/Voice exemplar (Learn)</em>, method <code>owner_learn</code>. Other rows are bulk scan appearances/moments — not from today’s Learn clicks.</p>
   <button type="button" id="refresh">Refresh</button>
   <p id="msg" class="muted"></p>
   <table>
-    <thead><tr><th>Kind</th><th>Person</th><th>Source / interval</th><th>Method</th><th>Authority</th><th></th></tr></thead>
-    <tbody id="rows"><tr><td colspan="6" class="muted">Loading…</td></tr></tbody>
+    <thead><tr><th>When</th><th>Type</th><th>Person</th><th>Video</th><th>Span</th><th>Method</th><th></th></tr></thead>
+    <tbody id="rows"><tr><td colspan="7" class="muted">Loading…</td></tr></tbody>
   </table>
 </main>
 <script>
+const KIND_LABEL = {
+  face_exemplar: "Face exemplar (Learn)",
+  voice_exemplar: "Voice exemplar (Learn)",
+  face_appearance: "Face appearance (scan)",
+  spoken_moment: "Spoken moment (scan)",
+};
+function formatWhen(iso) {
+  if (!iso) return "—";
+  try {
+    return new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+  } catch (_) {
+    return String(iso);
+  }
+}
 function interval(item) {
-  if (item.start_sec != null) return Number(item.start_sec).toFixed(1) + "–" + Number(item.end_sec).toFixed(1) + "s";
-  return item.source_id || "—";
+  if (item.start_sec != null) {
+    return Number(item.start_sec).toFixed(1) + "–" + Number(item.end_sec).toFixed(1) + " s";
+  }
+  return "—";
+}
+function isOwnerLearnRow(item) {
+  return item.kind === "face_exemplar" || item.kind === "voice_exemplar"
+    || item.method === "owner_learn";
 }
 async function withdraw(kind, id) {
   const reason = prompt("Reason for withdrawal (required):", "owner_review_withdraw");
@@ -57,24 +81,29 @@ async function load() {
   const data = await res.json().catch(() => ({}));
   tbody.replaceChildren();
   if (!res.ok || data.ok === false) {
-    tbody.innerHTML = '<tr><td colspan="6" class="muted">Could not load learned evidence.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" class="muted">Could not load learned evidence.</td></tr>';
     msg.textContent = data.detail || data.error || ("HTTP " + res.status);
     msg.classList.add("err");
     return;
   }
   const items = Array.isArray(data.items) ? data.items : [];
   if (!items.length) {
-    tbody.innerHTML = '<tr><td colspan="6" class="muted">No learned evidence rows.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" class="muted">No learned evidence rows.</td></tr>';
     return;
   }
   items.forEach(item => {
     const tr = document.createElement("tr");
-    const person = item.person_id ? item.person_id.slice(0, 8) + "…" : "—";
-    tr.innerHTML = `<td>${item.kind}</td><td>${person}</td><td>${interval(item)}</td><td>${item.method || item.embedding_model || "—"}</td><td>${item.authority || item.confirmation_state || item.speaker_state || "—"}</td><td></td>`;
+    if (isOwnerLearnRow(item)) tr.classList.add("is-owner-learn");
+    const person = item.person_display_name || item.person_id || "—";
+    const video = item.source_label || item.source_id || "—";
+    const kind = KIND_LABEL[item.kind] || item.kind || "—";
+    const method = item.method || item.embedding_model || "—";
+    tr.innerHTML = `<td>${formatWhen(item.created_at)}</td><td>${kind}</td><td>${person}</td><td>${video}</td><td>${interval(item)}</td><td>${method}</td><td></td>`;
     if (item.kind === "face_exemplar" || item.kind === "voice_exemplar") {
       const btn = document.createElement("button");
       btn.type = "button";
       btn.textContent = "Withdraw";
+      btn.title = "Phase 4 item 6: withdraw here with a reason";
       btn.onclick = async () => {
         try { await withdraw(item.kind, item.id); await load(); }
         catch (e) {
@@ -82,7 +111,7 @@ async function load() {
           document.getElementById("msg").classList.add("err");
         }
       };
-      tr.cells[5].appendChild(btn);
+      tr.cells[6].appendChild(btn);
     }
     tbody.appendChild(tr);
   });

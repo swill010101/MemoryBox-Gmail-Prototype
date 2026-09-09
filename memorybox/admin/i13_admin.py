@@ -26,6 +26,54 @@ def active_admission_id() -> str | None:
     return raw
 
 
+def _person_display_names(conn: Any, person_ids: set[str]) -> dict[str, str]:
+    ids = sorted({pid for pid in person_ids if pid})
+    if not ids:
+        return {}
+    rows = conn.execute(
+        "SELECT id::text AS id, display_name FROM people WHERE id = ANY(%s::uuid[])",
+        (ids,),
+    ).fetchall()
+    return {str(r["id"]): (r["display_name"] or str(r["id"])) for r in rows}
+
+
+def _video_source_labels(video_ids: set[str]) -> dict[str, str]:
+    labels = {vid: vid for vid in video_ids if vid}
+    if not video_ids:
+        return labels
+    try:
+        from pathlib import Path
+
+        from memorybox.app import build_video
+
+        for video in build_video().list_videos(limit=5000) or []:
+            vid = str(getattr(video, "external_id", "") or "")
+            if vid not in video_ids:
+                continue
+            hint = getattr(video, "path_hint", None) or getattr(video, "title", None)
+            if hint:
+                labels[vid] = Path(str(hint)).name
+    except Exception:
+        pass
+    return labels
+
+
+def _enrich_admin_items(conn: Any, items: list[dict[str, Any]]) -> None:
+    person_ids = {str(i.get("person_id") or "") for i in items if i.get("person_id")}
+    source_ids: set[str] = set()
+    for item in items:
+        sid = str(item.get("video_external_id") or item.get("source_id") or "")
+        if sid:
+            source_ids.add(sid)
+    names = _person_display_names(conn, person_ids)
+    labels = _video_source_labels(source_ids)
+    for item in items:
+        pid = str(item.get("person_id") or "")
+        sid = str(item.get("video_external_id") or item.get("source_id") or "")
+        item["person_display_name"] = names.get(pid) or ""
+        item["source_label"] = labels.get(sid) or sid
+
+
 def _queue_counts_by_status(
     conn: Any, table: str, admission_id: str | None
 ) -> dict[str, int]:
@@ -206,6 +254,8 @@ def list_jobs(*, limit: int = 200) -> dict[str, Any]:
         item["lane"] = "voice" if item.get("person_id") else "transcribe"
         items.append(item)
     items.sort(key=lambda x: str(x.get("updated_at") or x.get("created_at") or ""), reverse=True)
+    with connection() as conn:
+        _enrich_admin_items(conn, items[:limit])
     status = i13_status()
     learn_enabled = status["interactive_learn_enabled"]
     archive_locked = status["archive_processing_locked"]
@@ -356,7 +406,10 @@ def list_learned_evidence(*, limit: int = 300) -> dict[str, Any]:
         ),
         reverse=True,
     )
-    return {"ok": True, "items": items[:limit], "count": len(items[:limit])}
+    slice_items = items[:limit]
+    with connection() as conn:
+        _enrich_admin_items(conn, slice_items)
+    return {"ok": True, "items": slice_items, "count": len(slice_items)}
 
 
 def withdraw_face_exemplar(exemplar_id: str, *, reason: str) -> dict[str, Any]:

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>MemoryBox — Admin Jobs</title>
   <style>
-    main { max-width: 1100px; margin: 0 auto; padding: 1.25rem; color: #e8edf5; }
+    main { max-width: 1200px; margin: 0 auto; padding: 1.25rem; color: #e8edf5; }
     h1 { font-family: Georgia, serif; margin: 0 0 0.35rem; color: #eef1ef; }
     table { width: 100%; border-collapse: collapse; font-size: 0.88rem; color: #e8edf5; }
     th, td { border-bottom: 1px solid rgba(255, 255, 255, 0.15); padding: 0.35rem 0.4rem; text-align: left; vertical-align: top; }
@@ -36,11 +36,19 @@
   <button type="button" class="secondary" id="retry">Retry failed (scoped)</button>
   <p id="msg" class="muted"></p>
   <table>
-    <thead><tr><th>Lane</th><th>Source</th><th>Person</th><th>Status</th><th>Reason</th><th>Attempts</th><th></th></tr></thead>
-    <tbody id="rows"><tr><td colspan="7" class="muted">Loading…</td></tr></tbody>
+    <thead><tr><th>When</th><th>Lane</th><th>Video</th><th>Person</th><th>Status</th><th>Reason</th><th>Attempts</th><th></th></tr></thead>
+    <tbody id="rows"><tr><td colspan="8" class="muted">Loading…</td></tr></tbody>
   </table>
 </main>
 <script>
+function formatWhen(iso) {
+  if (!iso) return "—";
+  try {
+    return new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+  } catch (_) {
+    return String(iso);
+  }
+}
 function scopeFromPayload(data) {
   if (data.scope_lock && typeof data.scope_lock === "object") return data.scope_lock;
   return {
@@ -48,7 +56,6 @@ function scopeFromPayload(data) {
     archive_processing_locked: data.archive_processing_locked,
   };
 }
-
 async function loadScopeFallback() {
   const res = await fetch("/admin/api/i13/status");
   const data = await res.json().catch(() => ({}));
@@ -58,7 +65,6 @@ async function loadScopeFallback() {
     archive_processing_locked: data.archive_processing_locked,
   };
 }
-
 async function load() {
   const msg = document.getElementById("msg");
   msg.textContent = "";
@@ -72,7 +78,7 @@ async function load() {
     lock.textContent = "Scope lock unavailable.";
     msg.textContent = data.detail || data.error || ("HTTP " + res.status);
     msg.classList.add("err");
-    tbody.innerHTML = '<tr><td colspan="7" class="muted">Could not load jobs.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" class="muted">Could not load jobs.</td></tr>';
     return;
   }
   let scope = scopeFromPayload(data);
@@ -86,13 +92,15 @@ async function load() {
   const items = Array.isArray(data.items) ? data.items : [];
   if (!items.length) {
     const tr = document.createElement("tr");
-    tr.innerHTML = '<td colspan="7" class="muted">No I13-scoped queue items yet (face/voice Learn enqueues one row per source).</td>';
+    tr.innerHTML = '<td colspan="8" class="muted">No I13-scoped queue items yet (face/voice Learn enqueues one row per source).</td>';
     tbody.appendChild(tr);
     return;
   }
   items.forEach(item => {
     const tr = document.createElement("tr");
-    const person = item.person_id ? item.person_id.slice(0, 8) + "…" : "—";
+    const person = item.person_display_name || item.person_id || "—";
+    const video = item.source_label || item.video_external_id || "—";
+    const when = formatWhen(item.updated_at || item.created_at);
     const open = document.createElement("button");
     open.type = "button";
     open.className = "secondary";
@@ -100,17 +108,17 @@ async function load() {
     open.onclick = () => {
       const url = new URL("/explore/ui", location.origin);
       url.searchParams.set("video", item.video_external_id || "");
+      url.searchParams.set("mb_admin_return", "/admin/jobs/ui");
       location.assign(url.pathname + url.search);
     };
-    tr.innerHTML = `<td>${item.lane || "—"}</td><td>${item.video_external_id || ""}</td><td>${person}</td><td>${item.status || "—"}</td><td>${item.enqueue_reason || ""}</td><td>${item.attempt_count || 0}</td><td></td>`;
-    tr.cells[6].appendChild(open);
+    tr.innerHTML = `<td>${when}</td><td>${item.lane || "—"}</td><td>${video}</td><td>${person}</td><td>${item.status || "—"}</td><td>${item.enqueue_reason || ""}</td><td>${item.attempt_count || 0}</td><td></td>`;
+    tr.cells[7].appendChild(open);
     tbody.appendChild(tr);
   });
 }
 document.getElementById("refresh").onclick = () => load().catch(e => {
-  const msg = document.getElementById("msg");
-  msg.textContent = e.message;
-  msg.classList.add("err");
+  document.getElementById("msg").textContent = e.message;
+  document.getElementById("msg").classList.add("err");
 });
 document.getElementById("retry").onclick = async () => {
   const msg = document.getElementById("msg");
