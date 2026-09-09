@@ -1,14 +1,19 @@
 """Voice embeddings from original video audio (HVRT ECAPA path). Harness may inject vectors."""
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 from typing import Any, Sequence
 
 from memorybox.recognition.embeddings import cosine
 from memorybox.speech.constants import VOICE_MODEL
+
+if sys.platform == "win32":
+    os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS", "1")
 
 
 def embed_injected(vec: Sequence[float] | None) -> list[float] | None:
@@ -56,10 +61,14 @@ def extract_wav(video_path: str, t_start: float, t_end: float, dest: Path) -> bo
 def embed_wav_ecapa(wav_path: Path) -> list[float] | None:
     try:
         from speechbrain.inference.speaker import EncoderClassifier  # type: ignore
+        from speechbrain.utils.fetching import LocalStrategy  # type: ignore
         import torchaudio  # type: ignore
         import numpy as np
     except ImportError:
         return None
+    local_strategy = (
+        LocalStrategy.COPY_SKIP_CACHE if sys.platform == "win32" else LocalStrategy.SYMLINK
+    )
     try:
         savedir = Path(tempfile.gettempdir()) / "mb-spkrec-ecapa-voxceleb"
         savedir.mkdir(parents=True, exist_ok=True)
@@ -67,6 +76,7 @@ def embed_wav_ecapa(wav_path: Path) -> list[float] | None:
             source="speechbrain/spkrec-ecapa-voxceleb",
             savedir=str(savedir),
             run_opts={"device": "cpu"},
+            local_strategy=local_strategy,
         )
         signal, fs = torchaudio.load(str(wav_path))
         if fs != 16000:
