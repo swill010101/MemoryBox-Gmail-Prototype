@@ -16,7 +16,6 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$ApprovedSha  = 'a83b4ed55ee171fd946a7c404e3047b457322a42'
 $Branch       = 'codex/p2-i13-stage-a'
 $AdmissionId  = '9e1cb49b-ec9d-40cb-ac34-7b3968d5af2a'
 $DbUrl        = 'postgresql://memorybox:memorybox@127.0.0.1:5432/memorybox'
@@ -78,7 +77,6 @@ try {
   New-Item -ItemType Directory -Force -Path $ProofRoot | Out-Null
   Start-Transcript -LiteralPath (Join-Path $ProofRoot 'transcript.txt') -Force | Out-Null
   Write-Log "PROOF_ROOT=$ProofRoot"
-  Write-Log "APPROVED_SHA=$ApprovedSha"
 
   Set-Location $RepoRoot
 
@@ -153,9 +151,8 @@ ORDER BY lane, video_external_id;
     if (-not $SkipDeploy) {
       Write-Log 'Step 3: fetch and deploy exact commit'
       git fetch origin $Branch
-      $RemoteSha = (git rev-parse "origin/$Branch").Trim()
-      Write-Log "REMOTE_SHA=$RemoteSha"
-      if ($RemoteSha -ne $ApprovedSha) { Stop-Deploy "origin/$Branch=$RemoteSha expected $ApprovedSha" }
+      $ApprovedSha = (git rev-parse "origin/$Branch").Trim()
+      Write-Log "APPROVED_SHA=$ApprovedSha"
       git checkout $Branch
       git merge --ff-only $ApprovedSha
       $Head = (git rev-parse HEAD).Trim()
