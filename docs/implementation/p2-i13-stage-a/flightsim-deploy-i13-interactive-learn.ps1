@@ -6,7 +6,10 @@
   Run on FlightSim ONLY (C:\MemoryBox). Window stays open; logs under proof root.
   Proof/backup root: E:\MemoryBox-backups if E: exists, else C:\MemoryBox-backups.
   Example:
-    powershell -NoProfile -ExecutionPolicy Bypass -File C:\MemoryBox\flightsim-deploy-i13-interactive-learn.ps1
+    git fetch origin codex/p2-i13-stage-a
+    git show origin/codex/p2-i13-stage-a:docs/implementation/p2-i13-stage-a/flightsim-deploy-i13-interactive-learn.ps1 |
+      Set-Content -Encoding utf8 docs\implementation\p2-i13-stage-a\flightsim-deploy-i13-interactive-learn.ps1
+    powershell -NoProfile -ExecutionPolicy Bypass -File docs\implementation\p2-i13-stage-a\flightsim-deploy-i13-interactive-learn.ps1
 #>
 param(
   [switch]$ProofOnly,
@@ -20,6 +23,7 @@ $Branch       = 'codex/p2-i13-stage-a'
 $AdmissionId  = '9e1cb49b-ec9d-40cb-ac34-7b3968d5af2a'
 $DbUrl        = 'postgresql://memorybox:memorybox@127.0.0.1:5432/memorybox'
 $RepoRoot     = 'C:\MemoryBox'
+$DeployScriptRel = 'docs/implementation/p2-i13-stage-a/flightsim-deploy-i13-interactive-learn.ps1'
 $PreDeploySha = $null
 $BackupFile   = $null
 $script:Failed = $false
@@ -84,8 +88,11 @@ try {
   $PreDeploySha = (git rev-parse HEAD).Trim()
   Write-Log "PRE_DEPLOY_SHA=$PreDeploySha"
   $PreDeploySha | Out-File -Encoding utf8 (Join-Path $ProofRoot 'PRE_DEPLOY_SHA.txt')
+  # Bootstrap via `git checkout origin/... -- script` stages this file; unstage so preflight stays clean.
+  git reset HEAD -- $DeployScriptRel 2>$null | Out-Null
   $Dirty = git status --porcelain | Where-Object { $_ -match '^[ MADRCU]' }
-  if ($Dirty) {
+  $Dirty = @($Dirty | Where-Object { $_ -notmatch [regex]::Escape($DeployScriptRel) })
+  if ($Dirty.Count -gt 0) {
     $Dirty | Out-File -Encoding utf8 (Join-Path $ProofRoot 'git_dirty_before.txt')
     Stop-Deploy @"
 tracked FlightSim changes exist (see git_dirty_before.txt):
