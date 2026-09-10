@@ -152,9 +152,13 @@ ORDER BY lane, video_external_id;
     Invoke-Docker -Args @('exec', 'memorybox-pg', 'rm', '-f', '/tmp/pre-i13.dump') | Out-Null
     $info = Get-Item -LiteralPath $BackupFile
     Write-Log "BACKUP_PATH=$($info.FullName) SIZE=$($info.Length) TIME=$($info.LastWriteTime)"
-    $verify = & pg_restore -l $BackupFile 2>&1
+    if ($info.Length -lt 1000000) { Stop-Deploy "backup file too small: $($info.Length) bytes" }
+    & docker cp $BackupFile memorybox-pg:/tmp/pre-i13-verify.dump
+    if ($LASTEXITCODE -ne 0) { Stop-Deploy 'docker cp backup verify failed' }
+    $verify = Invoke-Docker -Args @('exec', 'memorybox-pg', 'pg_restore', '-l', '/tmp/pre-i13-verify.dump')
     $verify | Select-Object -First 5 | Out-File (Join-Path $ProofRoot 'backup_verify.txt')
-    if ($LASTEXITCODE -ne 0) { Stop-Deploy "pg_restore -l verification failed:`n$verify" }
+    Invoke-Docker -Args @('exec', 'memorybox-pg', 'rm', '-f', '/tmp/pre-i13-verify.dump') | Out-Null
+    Write-Log 'backup verified via docker exec pg_restore -l'
 
     if (-not $SkipDeploy) {
       Write-Log 'Step 3: fetch and deploy exact commit'
