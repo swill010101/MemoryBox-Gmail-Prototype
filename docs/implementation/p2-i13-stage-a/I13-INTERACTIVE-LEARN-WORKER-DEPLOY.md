@@ -2,8 +2,9 @@
 
 **Status:** Engineering checkpoint complete — **not deploy-authorized until Tom approves**  
 **Branch:** `codex/p2-i13-stage-a`  
-**Approved commit:** `93f5105776fd5cabacb536f3935585b969ee5c5d`  
-**Parent commit:** `c6aedcdb2f03a0d0ec76ced134301b8df0112cef` (19-file implementation)  
+**Approved commit:** resolve after fetch — engineering freeze: `8270911d638544f1e73a00a221fcb2c60b398c59`  
+**Parent commit:** `93f5105776fd5cabacb536f3935585b969ee5c5d` (runbook correction)  
+**19-file implementation:** `c6aedcdb2f03a0d0ec76ced134301b8df0112cef`  
 **Implementation parent:** `c21ff43166ea7a3ebdb6c6d1ef9964f24bbef176`
 
 Do **not** deploy, restart FlightSim serve, stop admission, enable bulk drains, or start Phase 6 without explicit founder authorization.
@@ -28,10 +29,11 @@ Do **not** deploy, restart FlightSim serve, stop admission, enable bulk drains, 
 
 | Check | Result |
 |-------|--------|
-| Approved commit | `93f5105776fd5cabacb536f3935585b969ee5c5d` |
-| Parent | `c6aedcdb2f03a0d0ec76ced134301b8df0112cef` |
+| Approved commit (frozen) | `8270911d638544f1e73a00a221fcb2c60b398c59` |
+| Parent | `93f5105776fd5cabacb536f3935585b969ee5c5d` |
+| 19-file implementation | `c6aedcdb2f03a0d0ec76ced134301b8df0112cef` |
 | Implementation parent | `c21ff43166ea7a3ebdb6c6d1ef9964f24bbef176` |
-| Remote branch | `origin/codex/p2-i13-stage-a` → `93f5105776fd5cabacb536f3935585b969ee5c5d` |
+| Remote branch | `origin/codex/p2-i13-stage-a` |
 | Tests | **Ran 200 tests** — OK (failures=0, errors=0, skipped=24) |
 | Tracked worktree | Clean (only unrelated untracked docs under `docs/`) |
 
@@ -58,8 +60,7 @@ Deploy the **exact reviewed commit** — not a path cherry-pick.
 ### Constants
 
 ```powershell
-$ApprovedSha = '93f5105776fd5cabacb536f3935585b969ee5c5d'
-$Branch      = 'codex/p2-i13-stage-a'
+$Branch = 'codex/p2-i13-stage-a'
 ```
 
 ### Step 0 — Record baseline and verify clean tree
@@ -83,6 +84,8 @@ if ($Dirty) {
 
 ```powershell
 git fetch origin $Branch
+$ApprovedSha = (git rev-parse "origin/$Branch").Trim()
+Write-Host "Resolved approved SHA: $ApprovedSha (verify against engineering sign-off before proceeding)"
 git cat-file -t $ApprovedSha   # must print: commit
 git merge-base --is-ancestor $PreDeploySha $ApprovedSha; if ($LASTEXITCODE -ne 0) { Write-Warning "Approved commit is not a descendant of PRE_DEPLOY_SHA; review history before proceeding." }
 ```
