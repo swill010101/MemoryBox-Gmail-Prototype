@@ -110,8 +110,9 @@ If you need to keep staged WIP (e.g. marvin_capture), stash first:
 
   Write-Log 'Checking Docker'
   $names = Invoke-Docker -Args @('ps', '--format', '{{.Names}}')
-  Write-Log "docker ps: $names"
-  if ($names -notmatch 'memorybox-pg') { Stop-Deploy 'memorybox-pg container not running' }
+  $nameList = @($names | ForEach-Object { "$_".Trim() } | Where-Object { $_ })
+  Write-Log ("docker ps: " + ($nameList -join ', '))
+  if ($nameList -notcontains 'memorybox-pg') { Stop-Deploy 'memorybox-pg container not running' }
 
   $env:MEMORYBOX_DATABASE_URL = $DbUrl
 
