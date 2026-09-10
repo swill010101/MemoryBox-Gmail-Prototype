@@ -208,9 +208,14 @@ def process_one(
     *,
     video_provider: Any,
     person_id: str | None = None,
+    interactive: bool = False,
 ) -> dict[str, Any] | None:
     """Claim one queued item and process via MB-native I8B scan or I1 HVRT search."""
-    item = claim_next_item(person_id=person_id)
+    if interactive:
+        from memorybox.recognition.queue import claim_next_interactive_item
+        item = claim_next_interactive_item(person_id=person_id)
+    else:
+        item = claim_next_item(person_id=person_id)
     if not item:
         return None
     pid = item["person_id"]
@@ -263,6 +268,7 @@ def process_one(
                         video_provider_key=vpk,
                         run_kind=mapped_kind,
                         trigger=run_kind,
+                        interactive=interactive,
                     )
                     complete_item(
                         item["id"],
@@ -308,6 +314,7 @@ def process_one(
                 video_provider_key=vpk,
                 run_kind=mapped_kind,
                 trigger=run_kind,
+                interactive=interactive,
             )
             complete_item(
                 item["id"],
@@ -334,8 +341,12 @@ def process_one(
                 "video_external_id": veid,
             }
 
-        from memorybox.processing.scope import begin_work
-        begin_work("face", item["video_provider_key"], veid, pid)
+        if interactive:
+            from memorybox.processing.scope import begin_interactive_work
+            begin_interactive_work("face", item["video_provider_key"], veid, pid)
+        else:
+            from memorybox.processing.scope import begin_work
+            begin_work("face", item["video_provider_key"], veid, pid)
         face_ids: list[str] = []
         for pk in {vpk, "fake_video", "hvrt", "immich", "fake_photo"}:
             try:

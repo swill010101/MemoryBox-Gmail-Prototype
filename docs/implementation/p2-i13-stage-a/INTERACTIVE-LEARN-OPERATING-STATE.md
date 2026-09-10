@@ -44,7 +44,7 @@ The Learn request must return promptly after saving the owner-selected evidence.
 | Save face/voice exemplar (+ span turn assignment for voice) | **Synchronous** in `POST /recognition/learn` or `POST /speech/learn` | Learned Evidence (exemplar row) |
 | Rescan / recognize on **that source only** | **Asynchronous** — `owner_learn` queue row on current video | Jobs (`enqueue_reason=owner_learn`, same admission) |
 
-Implementation: `enqueue_interactive_owner_learn` + `reserve_interactive_queue_item` (interactive lane). Workers run only when drains are separately enabled; the queue row is still created and listed in Admin → Jobs.
+Implementation: `enqueue_interactive_owner_learn` + `reserve_interactive_queue_item` (interactive lane). Follow-on is processed by the **dedicated Interactive Learn worker** (`memorybox/processing/interactive_drain.py`), which starts automatically when interactive Learn is authorized. It claims **only** `enqueue_reason=owner_learn` rows for the active admission. **`MEMORYBOX_RECOGNITION_DRAIN` and `MEMORYBOX_SPEECH_DRAIN` remain `0`.** Set `MEMORYBOX_INTERACTIVE_LEARN_WORKER=0` only to disable the dedicated worker during diagnosis.
 
 This is **not** “inline” synchronous recognition — follow-on is **queued**, strictly scoped to the selected source.
 

@@ -5,22 +5,29 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>MemoryBox — Admin</title>
   <style>
-    main { max-width: 920px; margin: 0 auto; padding: 1.25rem; }
-    h1 { font-family: Georgia, serif; margin: 0 0 0.35rem; }
-    main { color: #e8edf5; }
-    h1 { color: #eef1ef; }
-    .sub { color: #c5cec8; margin-bottom: 1rem; }
+    main { max-width: 920px; margin: 0 auto; padding: 1.25rem; color: #e8edf5; }
+    h1 { font-family: Georgia, serif; margin: 0 0 0.35rem; color: #eef1ef; }
+    .sub { color: #c5cec8; margin-bottom: 1rem; line-height: 1.45; }
     main > p.muted a { color: #9ec5ff; }
     .grid { display: grid; gap: 0.75rem; }
     a.card {
-      display: block; padding: 1rem; border: 1px solid #c5c9d1;
-      background: #f7f8fb !important; color: #1a1f2a !important; text-decoration: none;
+      display: block; padding: 1rem;
+      border: 1px solid rgba(166, 139, 75, 0.55);
+      background: rgba(255, 255, 255, 0.08);
+      color: #e8edf5 !important; text-decoration: none;
     }
-    a.card strong { display: block; margin-bottom: 0.25rem; color: #1a1f2a; }
-    a.card .muted { color: #5a6170 !important; }
+    a.card strong { display: block; margin-bottom: 0.25rem; color: #eef1ef; }
+    a.card .muted { color: #c5cec8 !important; }
     .muted { color: #c5cec8; font-size: 0.9rem; }
-    #status { color: #b7c0d0; }
-    ul.links { margin: 0.5rem 0 0; padding-left: 1.1rem; }
+    #status {
+      margin-top: 1rem; padding: 0.75rem;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      background: rgba(255, 255, 255, 0.06);
+      line-height: 1.5;
+    }
+    #status dl { margin: 0; display: grid; grid-template-columns: 12rem 1fr; gap: 0.25rem 0.75rem; }
+    #status dt { color: #a68b4b; font-weight: 600; }
+    #status dd { margin: 0; color: #e8edf5; }
   </style>
 </head>
 <body class="mb-shell">
@@ -28,27 +35,35 @@
   <h1>Admin</h1>
   <p class="sub">Owner-only I13 administration. Interactive Learn uses Explore; this hub tracks scoped jobs and learned evidence.</p>
   <div class="grid">
-    <a class="card" href="/admin/jobs/ui"><strong>Processing Jobs</strong><span class="muted">I13-scoped queue work, admission lock, retry and view.</span></a>
-    <a class="card" href="/admin/learned-evidence/ui"><strong>Learned Evidence</strong><span class="muted">Face and voice exemplars, appearances, spoken moments; withdraw or correct.</span></a>
-    <a class="card" href="/explore/ui"><strong>Explore — Learn</strong><span class="muted">Face box and transcript selection Learn (requires started acceptance_learning admission).</span></a>
+    <a class="card" href="/admin/jobs/ui"><strong>Processing Jobs</strong><span class="muted">Scoped owner_learn follow-on work for the active admission. Interactive Learn worker runs automatically.</span></a>
+    <a class="card" href="/admin/learned-evidence/ui"><strong>Learned Evidence</strong><span class="muted">Face and voice exemplars from Explore Learn; withdraw with a reason.</span></a>
+    <a class="card" href="/explore/ui"><strong>Explore — Learn</strong><span class="muted">Face box and transcript selection Learn on manifest sources (started proof or post-I13 interactive Learn).</span></a>
   </div>
   <p class="muted" style="margin-top:1rem">Related: <a href="/status/ui">Archive Health</a> · <a href="/settings/ui">Settings</a> · <a href="/historian-capture/ui">Historian Capture</a></p>
-  <pre id="status" class="muted" style="white-space:pre-wrap;margin-top:1rem">Loading admission status…</pre>
+  <div id="status" class="muted">Loading admission status…</div>
 </main>
 <script>
+function yesNo(v) { return v ? "Yes" : "No"; }
 async function load() {
   const root = document.getElementById("status");
   try {
     const data = await fetch("/admin/api/i13/status").then(r => r.json());
-    root.textContent = JSON.stringify({
-      interactive_learn_enabled: data.interactive_learn_enabled,
-      archive_processing_locked: data.archive_processing_locked,
-      admission_state: data.admission && data.admission.state,
-      purpose: data.admission && data.admission.plan && data.admission.plan.purpose,
-      lanes: data.admission && data.admission.plan && data.admission.plan.lanes
-    }, null, 2);
+    if (!data.ok) throw new Error(data.detail || data.error || "status unavailable");
+    const admission = data.admission || {};
+    const plan = admission.plan || {};
+    root.innerHTML = `
+      <dl>
+        <dt>Interactive Learn</dt><dd>${yesNo(data.interactive_learn_enabled)}</dd>
+        <dt>Interactive worker</dt><dd>${yesNo(data.interactive_learn_worker_enabled)}</dd>
+        <dt>Archive locked</dt><dd>${yesNo(data.archive_processing_locked)}</dd>
+        <dt>Admission state</dt><dd>${admission.state || "—"}</dd>
+        <dt>Purpose</dt><dd>${plan.purpose || "—"}</dd>
+        <dt>Lanes</dt><dd>${Array.isArray(plan.lanes) ? plan.lanes.join(", ") : "—"}</dd>
+        <dt>Recognition drain</dt><dd>${(data.env && data.env.MEMORYBOX_RECOGNITION_DRAIN) || "0"}</dd>
+        <dt>Speech drain</dt><dd>${(data.env && data.env.MEMORYBOX_SPEECH_DRAIN) || "0"}</dd>
+      </dl>`;
   } catch (e) {
-    root.textContent = "Status unavailable.";
+    root.textContent = "Status unavailable: " + e.message;
   }
 }
 load();

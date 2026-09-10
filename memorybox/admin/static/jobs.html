@@ -1,144 +1,157 @@
-<!DOCTYPE html>
-<html lang="en" data-mb-surface="admin-jobs">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>MemoryBox — Admin Jobs</title>
-  <style>
-    main { max-width: 1200px; margin: 0 auto; padding: 1.25rem; color: #e8edf5; }
-    h1 { font-family: Georgia, serif; margin: 0 0 0.35rem; color: #eef1ef; }
-    table { width: 100%; border-collapse: collapse; font-size: 0.88rem; color: #e8edf5; }
-    th, td { border-bottom: 1px solid rgba(255, 255, 255, 0.15); padding: 0.35rem 0.4rem; text-align: left; vertical-align: top; }
-    main a { color: #9ec5ff; }
-    button, .btn {
-      border: 1px solid rgba(166, 139, 75, 0.55); background: #2f6b56; color: #eef1ef;
-      padding: 0.35rem 0.6rem; cursor: pointer; font: inherit; margin-right: 0.35rem;
-    }
-    button.secondary {
-      background: rgba(255, 255, 255, 0.08); color: #e8edf5;
-      border-color: rgba(255, 255, 255, 0.22);
-    }
-    .muted { color: #c5cec8; font-size: 0.88rem; }
-    #lock {
-      margin: 0.75rem 0; padding: 0.65rem;
-      background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.15);
-      color: #e8edf5;
-    }
-    #msg.err { color: #f0a898; }
-  </style>
-</head>
-<body class="mb-shell">
-<main>
-  <h1>Processing Jobs</h1>
-  <p class="muted"><a href="/admin/ui">← Admin</a> · Scoped I13 queue items stamped with the active admission.</p>
-  <div id="lock" class="muted">Loading scope lock…</div>
-  <button type="button" id="refresh">Refresh</button>
-  <button type="button" class="secondary" id="retry">Retry failed (scoped)</button>
-  <p id="msg" class="muted"></p>
-  <table>
-    <thead><tr><th>When</th><th>Lane</th><th>Video</th><th>Person</th><th>Status</th><th>Reason</th><th>Attempts</th><th></th></tr></thead>
-    <tbody id="rows"><tr><td colspan="8" class="muted">Loading…</td></tr></tbody>
-  </table>
-</main>
-<script>
-function formatWhen(iso) {
-  if (!iso) return "—";
-  try {
-    return new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
-  } catch (_) {
-    return String(iso);
-  }
-}
-function scopeFromPayload(data) {
-  if (data.scope_lock && typeof data.scope_lock === "object") return data.scope_lock;
-  return {
-    interactive_learn_enabled: data.interactive_learn_enabled,
-    archive_processing_locked: data.archive_processing_locked,
-  };
-}
-async function loadScopeFallback() {
-  const res = await fetch("/admin/api/i13/status");
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok || data.ok === false) return null;
-  return {
-    interactive_learn_enabled: data.interactive_learn_enabled,
-    archive_processing_locked: data.archive_processing_locked,
-  };
-}
-async function load() {
-  const msg = document.getElementById("msg");
-  msg.textContent = "";
-  msg.classList.remove("err");
-  const lock = document.getElementById("lock");
-  const tbody = document.getElementById("rows");
-  tbody.replaceChildren();
-  const res = await fetch("/admin/api/jobs");
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok || data.ok === false) {
-    lock.textContent = "Scope lock unavailable.";
-    msg.textContent = data.detail || data.error || ("HTTP " + res.status);
-    msg.classList.add("err");
-    tbody.innerHTML = '<tr><td colspan="8" class="muted">Could not load jobs.</td></tr>';
-    return;
-  }
-  let scope = scopeFromPayload(data);
-  if (scope.interactive_learn_enabled == null && scope.archive_processing_locked == null) {
-    scope = (await loadScopeFallback()) || scope;
-  }
-  lock.textContent = "Interactive Learn enabled: " + Boolean(scope.interactive_learn_enabled)
-    + " · Archive processing locked: " + Boolean(scope.archive_processing_locked)
-    + " · Admission: " + (data.admission_id || "(none in env)")
-    + " · Note: status stays queued until recognition/speech drain runs on worker.";
-  const items = Array.isArray(data.items) ? data.items : [];
-  if (!items.length) {
-    const tr = document.createElement("tr");
-    tr.innerHTML = '<td colspan="8" class="muted">No I13-scoped queue items yet (face/voice Learn enqueues one row per source).</td>';
-    tbody.appendChild(tr);
-    return;
-  }
-  items.forEach(item => {
-    const tr = document.createElement("tr");
-    const person = item.person_display_name || item.person_id || "—";
-    const video = item.source_label || item.video_external_id || "—";
-    const when = formatWhen(item.updated_at || item.created_at);
-    const open = document.createElement("button");
-    open.type = "button";
-    open.className = "secondary";
-    open.textContent = "View source";
-    open.onclick = () => {
-      const url = new URL("/explore/ui", location.origin);
-      url.searchParams.set("video", item.video_external_id || "");
-      url.searchParams.set("mb_admin_return", "/admin/jobs/ui");
-      location.assign(url.pathname + url.search);
-    };
-    tr.innerHTML = `<td>${when}</td><td>${item.lane || "—"}</td><td>${video}</td><td>${person}</td><td>${item.status || "—"}</td><td>${item.enqueue_reason || ""}</td><td>${item.attempt_count || 0}</td><td></td>`;
-    tr.cells[7].appendChild(open);
-    tbody.appendChild(tr);
-  });
-}
-document.getElementById("refresh").onclick = () => load().catch(e => {
-  document.getElementById("msg").textContent = e.message;
-  document.getElementById("msg").classList.add("err");
-});
-document.getElementById("retry").onclick = async () => {
-  const msg = document.getElementById("msg");
-  msg.textContent = "Retrying failed scoped items…";
-  msg.classList.remove("err");
-  try {
-    const r = await fetch("/admin/api/jobs/retry-failed", {method: "POST"});
-    const d = await r.json();
-    if (!r.ok || !d.ok) throw new Error(d.detail || d.error || "retry failed");
-    msg.textContent = "Retried " + (d.retried || 0) + " item(s).";
-    await load();
-  } catch (e) {
-    msg.textContent = e.message;
-    msg.classList.add("err");
-  }
-};
-load().catch(e => {
-  document.getElementById("msg").textContent = e.message;
-  document.getElementById("msg").classList.add("err");
-});
-</script>
-</body>
-</html>
+<!DOCTYPE html>
+<html lang="en" data-mb-surface="admin-jobs">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MemoryBox — Admin Jobs</title>
+  <style>
+    main { max-width: 1200px; margin: 0 auto; padding: 1.25rem; color: #e8edf5; }
+    h1 { font-family: Georgia, serif; margin: 0 0 0.35rem; color: #eef1ef; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.88rem; color: #e8edf5; }
+    th, td { border-bottom: 1px solid rgba(255, 255, 255, 0.15); padding: 0.35rem 0.4rem; text-align: left; vertical-align: top; }
+    thead th { color: #eef1ef; font-weight: 600; background: rgba(255,255,255,0.06); }
+    tr.status-completed td { color: #b8e6c8; }
+    tr.status-failed td { color: #f0a898; }
+    tr.status-running td { color: #ffe6a8; }
+    main a { color: #9ec5ff; }
+    button, .btn {
+      border: 1px solid rgba(166, 139, 75, 0.55); background: #2f6b56; color: #eef1ef;
+      padding: 0.35rem 0.6rem; cursor: pointer; font: inherit; margin-right: 0.35rem;
+    }
+    button.secondary {
+      background: rgba(255, 255, 255, 0.08); color: #e8edf5;
+      border-color: rgba(255, 255, 255, 0.22);
+    }
+    .muted { color: #c5cec8; font-size: 0.88rem; }
+    #lock {
+      margin: 0.75rem 0; padding: 0.65rem;
+      background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.15);
+      color: #e8edf5; line-height: 1.45;
+    }
+    #msg.err { color: #f0a898; }
+  </style>
+</head>
+<body class="mb-shell">
+<main>
+  <h1>Processing Jobs</h1>
+  <p class="muted"><a href="/admin/ui">← Admin</a> · Scoped I13 queue items stamped with the active admission.</p>
+  <div id="lock" class="muted">Loading scope lock…</div>
+  <button type="button" id="refresh">Refresh</button>
+  <button type="button" class="secondary" id="retry">Retry failed owner_learn</button>
+  <p id="msg" class="muted"></p>
+  <table>
+    <thead><tr><th>When</th><th>Lane</th><th>Video</th><th>Person</th><th>Status</th><th>Reason</th><th>Attempts</th><th></th></tr></thead>
+    <tbody id="rows"><tr><td colspan="8" class="muted">Loading…</td></tr></tbody>
+  </table>
+</main>
+<script>
+function formatWhen(iso) {
+  if (!iso) return "—";
+  try {
+    return new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+  } catch (_) {
+    return String(iso);
+  }
+}
+function scopeFromPayload(data) {
+  if (data.scope_lock && typeof data.scope_lock === "object") return data.scope_lock;
+  return {
+    interactive_learn_enabled: data.interactive_learn_enabled,
+    interactive_learn_worker_enabled: data.interactive_learn_worker_enabled,
+    archive_processing_locked: data.archive_processing_locked,
+  };
+}
+async function loadScopeFallback() {
+  const res = await fetch("/admin/api/i13/status");
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data.ok === false) return null;
+  return {
+    interactive_learn_enabled: data.interactive_learn_enabled,
+    interactive_learn_worker_enabled: data.interactive_learn_worker_enabled,
+    archive_processing_locked: data.archive_processing_locked,
+  };
+}
+async function load() {
+  const msg = document.getElementById("msg");
+  msg.textContent = "";
+  msg.classList.remove("err");
+  const lock = document.getElementById("lock");
+  const tbody = document.getElementById("rows");
+  tbody.replaceChildren();
+  const res = await fetch("/admin/api/jobs");
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data.ok === false) {
+    lock.textContent = "Scope lock unavailable.";
+    msg.textContent = data.detail || data.error || ("HTTP " + res.status);
+    msg.classList.add("err");
+    tbody.innerHTML = '<tr><td colspan="8" class="muted">Could not load jobs.</td></tr>';
+    return;
+  }
+  let scope = scopeFromPayload(data);
+  if (scope.interactive_learn_enabled == null && scope.archive_processing_locked == null) {
+    scope = (await loadScopeFallback()) || scope;
+  }
+  const summary = data.owner_learn_summary || {};
+  lock.textContent = [
+    "Interactive Learn: " + Boolean(scope.interactive_learn_enabled),
+    "Interactive worker: " + Boolean(scope.interactive_learn_worker_enabled),
+    "Archive locked: " + Boolean(scope.archive_processing_locked),
+    "Admission: " + (data.admission_id || "(none in env)"),
+    "owner_learn queued: " + (summary.queued != null ? summary.queued : "—"),
+    "owner_learn completed: " + (summary.completed != null ? summary.completed : "—"),
+    "Bulk recognition/speech drains stay off; follow-on runs on the dedicated Interactive Learn worker only.",
+  ].join(" · ");
+  const items = Array.isArray(data.items) ? data.items : [];
+  if (!items.length) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = '<td colspan="8" class="muted">No I13-scoped queue items yet (face/voice Learn enqueues one owner_learn row per source).</td>';
+    tbody.appendChild(tr);
+    return;
+  }
+  items.forEach(item => {
+    const tr = document.createElement("tr");
+    tr.classList.add("status-" + String(item.status || "unknown"));
+    const person = item.person_display_name || item.person_id || "—";
+    const video = item.source_label || item.video_external_id || "—";
+    const when = formatWhen(item.updated_at || item.created_at);
+    const open = document.createElement("button");
+    open.type = "button";
+    open.className = "secondary";
+    open.textContent = "View source";
+    open.onclick = () => {
+      const url = new URL("/explore/ui", location.origin);
+      url.searchParams.set("video", item.video_external_id || "");
+      url.searchParams.set("mb_admin_return", "/admin/jobs/ui");
+      location.assign(url.pathname + url.search);
+    };
+    tr.innerHTML = `<td>${when}</td><td>${item.lane || "—"}</td><td>${video}</td><td>${person}</td><td>${item.status || "—"}</td><td>${item.enqueue_reason || ""}</td><td>${item.attempt_count || 0}</td><td></td>`;
+    tr.cells[7].appendChild(open);
+    tbody.appendChild(tr);
+  });
+}
+document.getElementById("refresh").onclick = () => load().catch(e => {
+  document.getElementById("msg").textContent = e.message;
+  document.getElementById("msg").classList.add("err");
+});
+document.getElementById("retry").onclick = async () => {
+  const msg = document.getElementById("msg");
+  msg.textContent = "Retrying failed owner_learn items…";
+  msg.classList.remove("err");
+  try {
+    const r = await fetch("/admin/api/jobs/retry-failed", {method: "POST"});
+    const d = await r.json();
+    if (!r.ok || !d.ok) throw new Error(d.detail || d.error || "retry failed");
+    msg.textContent = "Retried " + (d.retried || 0) + " owner_learn item(s).";
+    await load();
+  } catch (e) {
+    msg.textContent = e.message;
+    msg.classList.add("err");
+  }
+};
+load().catch(e => {
+  document.getElementById("msg").textContent = e.message;
+  document.getElementById("msg").classList.add("err");
+});
+</script>
+</body>
+</html>

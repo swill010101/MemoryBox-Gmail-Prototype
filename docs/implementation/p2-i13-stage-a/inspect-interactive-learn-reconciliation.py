@@ -26,6 +26,7 @@ CHECKS = (
     "admin_jobs",
     "learned_evidence_correction_removal",
     "interactive_learn_enabled_while_archive_locked",
+    "owner_learn_follow_on_complete",
 )
 
 
@@ -69,7 +70,7 @@ def _playback_binder_note() -> dict:
     }
 
 
-def _query_db(conn) -> dict:
+def _query_db(conn, *, admission_id: str = "") -> dict:
     admissions = conn.execute(
         """
         SELECT id::text, state, created_at,
@@ -95,7 +96,7 @@ def _query_db(conn) -> dict:
         """
         SELECT count(*) AS n
         FROM speech_voice_exemplars
-        WHERE method = 'owner_learn'
+        WHERE withdrawn IS NOT TRUE
         """
     ).fetchone()["n"]
     rec_owner_learn_q = conn.execute(
@@ -141,6 +142,75 @@ def _query_db(conn) -> dict:
           AND state IN ('unlocked', 'started')
         """
     ).fetchone()["n"]
+    scoped_stranded_face = 0
+    scoped_stranded_voice = 0
+    scoped_completed_face = 0
+    scoped_completed_voice = 0
+    scoped_owner_learn_total = 0
+    if admission_id:
+        scoped_stranded_face = int(
+            conn.execute(
+                """
+                SELECT count(*) AS n
+                FROM recognition_queue_items
+                WHERE i13_admission_id = %s::uuid
+                  AND enqueue_reason = 'owner_learn'
+                  AND status IN ('queued', 'running')
+                """,
+                (admission_id,),
+            ).fetchone()["n"]
+        )
+        scoped_stranded_voice = int(
+            conn.execute(
+                """
+                SELECT count(*) AS n
+                FROM speech_queue_items
+                WHERE i13_admission_id = %s::uuid
+                  AND enqueue_reason = 'owner_learn'
+                  AND status IN ('queued', 'running')
+                """,
+                (admission_id,),
+            ).fetchone()["n"]
+        )
+        scoped_completed_face = int(
+            conn.execute(
+                """
+                SELECT count(*) AS n
+                FROM recognition_queue_items
+                WHERE i13_admission_id = %s::uuid
+                  AND enqueue_reason = 'owner_learn'
+                  AND status = 'completed'
+                """,
+                (admission_id,),
+            ).fetchone()["n"]
+        )
+        scoped_completed_voice = int(
+            conn.execute(
+                """
+                SELECT count(*) AS n
+                FROM speech_queue_items
+                WHERE i13_admission_id = %s::uuid
+                  AND enqueue_reason = 'owner_learn'
+                  AND status = 'completed'
+                """,
+                (admission_id,),
+            ).fetchone()["n"]
+        )
+        scoped_owner_learn_total = int(
+            conn.execute(
+                """
+                SELECT count(*) AS n
+                FROM (
+                    SELECT id FROM recognition_queue_items
+                    WHERE i13_admission_id = %s::uuid AND enqueue_reason = 'owner_learn'
+                    UNION ALL
+                    SELECT id FROM speech_queue_items
+                    WHERE i13_admission_id = %s::uuid AND enqueue_reason = 'owner_learn'
+                ) q
+                """,
+                (admission_id, admission_id),
+            ).fetchone()["n"]
+        )
     return {
         "admissions_recent": [dict(r) for r in admissions],
         "started_admissions": started,
@@ -152,6 +222,12 @@ def _query_db(conn) -> dict:
         "speech_moments_withdrawn": int(speech_withdrawn),
         "annotation_withdrawals": int(annotation_withdrawn),
         "archive_admissions_unlocked_or_started": int(archive_unlocked),
+        "scoped_owner_learn_stranded_face": scoped_stranded_face,
+        "scoped_owner_learn_stranded_voice": scoped_stranded_voice,
+        "scoped_owner_learn_stranded_total": scoped_stranded_face + scoped_stranded_voice,
+        "scoped_owner_learn_completed_face": scoped_completed_face,
+        "scoped_owner_learn_completed_voice": scoped_completed_voice,
+        "scoped_owner_learn_total": scoped_owner_learn_total,
     }
 
 
@@ -283,6 +359,47 @@ def _classify(*, routes: dict, explore: dict, db: dict | None, env: dict) -> lis
         c, e = "failed", "Lock state could not be confirmed."
     items.append({"id": 6, "key": CHECKS[5], "classification": c, "evidence": e})
 
+    # 7 owner_learn follow-on must not remain stranded when Learn is authorized
+    stranded = (db or {}).get("scoped_owner_learn_stranded_total", 0) if db else 0
+    completed_face = (db or {}).get("scoped_owner_learn_completed_face", 0) if db else 0
+    completed_voice = (db or {}).get("scoped_owner_learn_completed_voice", 0) if db else 0
+    scoped_total = (db or {}).get("scoped_owner_learn_total", 0) if db else 0
+    if not learn_enabled:
+        c, e = (
+            "not tested",
+            "Interactive Learn not authorized; owner_learn follow-on completion not evaluated.",
+        )
+    elif not admission_id:
+        c, e = "not tested", "MEMORYBOX_I13_ADMISSION_ID absent; cannot evaluate scoped owner_learn jobs."
+    elif db is None:
+        c, e = "failed", "Database unavailable; cannot verify owner_learn follow-on completion."
+    elif stranded > 0:
+        c, e = (
+            "failed",
+            f"{stranded} scoped owner_learn job(s) still queued/running for admission {admission_id} "
+            f"(face={ (db or {}).get('scoped_owner_learn_stranded_face', 0) }, "
+            f"voice={ (db or {}).get('scoped_owner_learn_stranded_voice', 0) }). "
+            "Dedicated Interactive Learn worker must drain these before closeout.",
+        )
+    elif scoped_total == 0:
+        c, e = (
+            "not tested",
+            "No scoped owner_learn queue rows for this admission yet (Learn follow-on not exercised).",
+        )
+    elif completed_face + completed_voice >= scoped_total:
+        c, e = (
+            "passed",
+            f"All {scoped_total} scoped owner_learn job(s) completed "
+            f"(face={completed_face}, voice={completed_voice}).",
+        )
+    else:
+        c, e = (
+            "failed",
+            f"Incomplete owner_learn follow-on: {scoped_total} row(s) but only "
+            f"{completed_face + completed_voice} completed (face={completed_face}, voice={completed_voice}).",
+        )
+    items.append({"id": 7, "key": CHECKS[6], "classification": c, "evidence": e})
+
     return items
 
 
@@ -301,7 +418,7 @@ def build_report() -> dict:
 
         with connection() as conn:
             conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
-            db = _query_db(conn)
+            db = _query_db(conn, admission_id=os.environ.get("MEMORYBOX_I13_ADMISSION_ID", "").strip())
     except Exception as exc:
         db_error = f"{type(exc).__name__}: {exc}"
 
@@ -309,11 +426,13 @@ def build_report() -> dict:
     counts: dict[str, int] = {}
     for row in items:
         counts[row["classification"]] = counts.get(row["classification"], 0) + 1
+    gate_passed = counts.get("failed", 0) == 0
 
     return {
         "ok": True,
         "read_only": True,
         "processing_started": False,
+        "gate_passed": gate_passed,
         "limits": (
             "Static route/UI inventory plus read-only DB aggregates. "
             "Does not exercise Explore UI or infer voice-pilot annotations as interactive Learn."
@@ -368,6 +487,8 @@ def main() -> int:
         report["output_file"] = str(path)
 
     print(json.dumps(report, indent=2, default=str))
+    if not report.get("gate_passed", True):
+        return 1
     return 0
 
 

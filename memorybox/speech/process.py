@@ -48,9 +48,14 @@ def persist_transcript(
     video_external_id: str,
     video_provider: Any | None = None,
     trigger: str = "transcribe",
+    interactive: bool = False,
 ) -> dict[str, Any]:
-    from memorybox.processing.scope import begin_work
-    begin_work("transcribe", video_provider_key, video_external_id)
+    if interactive:
+        from memorybox.processing.scope import begin_interactive_work
+        begin_interactive_work("transcribe", video_provider_key, video_external_id)
+    else:
+        from memorybox.processing.scope import begin_work
+        begin_work("transcribe", video_provider_key, video_external_id)
     raw = transcribe_video_id(video_external_id, video_provider=video_provider)
     if not raw.get("ok"):
         return {"ok": False, **raw}
@@ -124,10 +129,15 @@ def recognize_person_on_video(
     video_provider_key: str,
     video_external_id: str,
     video_provider: Any | None = None,
+    interactive: bool = False,
 ) -> dict[str, Any]:
     """Score anonymous turns against that Person's voice exemplars. Face ranges are not proof."""
-    from memorybox.processing.scope import begin_work
-    begin_work("voice", video_provider_key, video_external_id, person_id)
+    if interactive:
+        from memorybox.processing.scope import begin_interactive_work
+        begin_interactive_work("voice", video_provider_key, video_external_id, person_id)
+    else:
+        from memorybox.processing.scope import begin_work
+        begin_work("voice", video_provider_key, video_external_id, person_id)
     exemplars = list_voice_exemplars(person_id)
     if not exemplars:
         return {"ok": False, "reason": "no_voice_exemplars"}
@@ -137,6 +147,7 @@ def recognize_person_on_video(
             video_external_id=video_external_id,
             video_provider=video_provider,
             trigger="owner_learn",
+            interactive=interactive,
         )
         if not tr.get("ok"):
             return tr
@@ -179,8 +190,12 @@ def recognize_person_on_video(
     }
 
 
-def process_one(*, video_provider: Any | None = None) -> dict[str, Any] | None:
-    item = claim_next_item()
+def process_one(*, video_provider: Any | None = None, interactive: bool = False) -> dict[str, Any] | None:
+    if interactive:
+        from memorybox.speech.queue import claim_next_interactive_item
+        item = claim_next_interactive_item()
+    else:
+        item = claim_next_item()
     if not item:
         return None
     vpk = str(item.get("video_provider_key") or "hvrt")
@@ -194,6 +209,7 @@ def process_one(*, video_provider: Any | None = None) -> dict[str, Any] | None:
                 video_provider_key=vpk,
                 video_external_id=veid,
                 video_provider=video_provider,
+                interactive=interactive,
             )
             if not rec.get("ok") and rec.get("reason") == "no_voice_exemplars":
                 complete_item(item["id"], status=STATUS_EXCLUDED, reason="no_voice_exemplars", result=rec)

@@ -198,6 +198,20 @@ def require_interactive_source(lane: str, provider: str, video: str, person: str
         [str(person)] if person else [],
     )
 
+def _assert_interactive_admission_state(conn, admission: Admission) -> None:
+    state = conn.execute(
+        "SELECT state,plan_sha256,interactive_learn_enabled FROM i13_processing_admissions WHERE id=%s::uuid FOR SHARE",
+        (admission.id,),
+    ).fetchone()
+    if not state or state["plan_sha256"] != admission.plan_sha256:
+        raise ScopeDenied("admission_changed")
+    if state["state"] == "started" and admission.start_ref:
+        return
+    if state["state"] == "stopped" and state["interactive_learn_enabled"]:
+        return
+    raise ScopeDenied("interactive_learn_locked")
+
+
 def begin_work(lane: str, provider: str, video: str, person: str | None = None) -> Admission:
     """Atomically bound retries across all entry points, processes and enqueue reasons."""
     a=require_source(lane,provider,video,person)
@@ -215,6 +229,25 @@ def begin_work(lane: str, provider: str, video: str, person: str | None = None) 
         if not row: raise ScopeDenied("work_attempt_limit_exceeded")
     return a
 
+
+def begin_interactive_work(lane: str, provider: str, video: str, person: str | None = None) -> Admission:
+    """Reserve attempt budget for owner_learn follow-on under the interactive lane."""
+    a = require_interactive_source(lane, provider, video, person)
+    from memorybox.db import connection
+    with connection() as conn:
+        _assert_interactive_admission_state(conn, a)
+        row = conn.execute(
+            """INSERT INTO i13_work_attempts(admission_id,lane,provider_key,video_external_id,person_key,attempts)
+            VALUES(%s::uuid,%s,%s,%s,%s,1)
+            ON CONFLICT(admission_id,lane,provider_key,video_external_id,person_key)
+            DO UPDATE SET attempts=i13_work_attempts.attempts+1
+            WHERE i13_work_attempts.attempts < %s RETURNING attempts""",
+            (a.id, lane, provider, video, str(person or ""), a.plan["max_attempts_per_item"]),
+        ).fetchone()
+        if not row:
+            raise ScopeDenied("work_attempt_limit_exceeded")
+    return a
+
 def deny_legacy() -> None:
     raise ScopeDenied("legacy_processing_has_no_reviewed_source_mapping")
 
@@ -230,18 +263,7 @@ def reserve_queue_item(conn, admission: Admission, lane: str, video: dict, perso
 def reserve_interactive_queue_item(conn, admission: Admission, lane: str, video: dict, person: str | None, reason: str) -> None:
     """Reserve one owner-Learn follow-on unit without starting bulk processing."""
     admission.check_interactive_learn(lane, [video], [str(person)] if person else [])
-    state=conn.execute(
-        "SELECT state,plan_sha256,interactive_learn_enabled FROM i13_processing_admissions WHERE id=%s::uuid FOR SHARE",
-        (admission.id,),
-    ).fetchone()
-    if not state or state["plan_sha256"]!=admission.plan_sha256:
-        raise ScopeDenied("admission_changed")
-    if state["state"]=="started" and admission.start_ref:
-        pass
-    elif state["state"]=="stopped" and state["interactive_learn_enabled"]:
-        pass
-    else:
-        raise ScopeDenied("interactive_learn_locked")
+    _assert_interactive_admission_state(conn, admission)
     _insert_queue_unit(conn, admission, lane, video, person, reason)
 
 def _insert_queue_unit(conn, admission: Admission, lane: str, video: dict, person: str | None, reason: str) -> None:

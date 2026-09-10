@@ -498,4 +498,72 @@ console.log(JSON.stringify({initial,current:el.currentTime,pauses:el.pauses}));
                 a=text.index('  function '+name+'(');b=text.index('\n  function ',a+1);return text[a:b]
             self.assertEqual(segment(original),segment(changed))
 
+class InteractiveWorkerTests(unittest.TestCase):
+    def test_claim_interactive_when_stopped_with_flag(self):
+        a = admission(state="stopped", interactive_learn_enabled=True)
+        queue_row = {
+            "id": str(UUID(int=88)),
+            "person_id": PERSON,
+            "video_provider_key": "synthetic",
+            "video_external_id": "video-0",
+            "enqueue_reason": "owner_learn",
+            "attempt_count": 0,
+        }
+
+        class QConn(FakeConnection):
+            def execute(self, sql, args=()):
+                if "FROM recognition_queue_items" in sql and "owner_learn" in sql:
+                    return Result(queue_row.copy())
+                if "UPDATE recognition_queue_items" in sql:
+                    return Result()
+                return super().execute(sql, args)
+
+        c = QConn(a)
+
+        @contextmanager
+        def connection():
+            yield c
+
+        fn = function(
+            "memorybox/recognition/queue.py",
+            "claim_next_interactive_item",
+            {"connection": connection},
+        )
+        with patch.dict(os.environ, {"MEMORYBOX_I13_ADMISSION_ID": ADMISSION}, clear=False), patch.object(
+            scope, "load_admission", return_value=a
+        ), patch.object(scope, "require_interactive_source", return_value=a):
+            got = fn()
+        self.assertEqual(got["enqueue_reason"], "owner_learn")
+        self.assertEqual(got["video_external_id"], "video-0")
+
+    def test_claim_interactive_rejects_when_locked(self):
+        a = admission(state="stopped", interactive_learn_enabled=False)
+        fn = function("memorybox/recognition/queue.py", "claim_next_interactive_item")
+        with patch.object(scope, "load_admission", return_value=a):
+            with self.assertRaisesRegex(scope.ScopeDenied, "interactive_learn_locked"):
+                fn()
+
+    def test_interactive_worker_enabled_when_permitted(self):
+        a = admission(state="started")
+        with patch.object(scope, "load_admission", return_value=a):
+            from memorybox.processing.interactive_drain import interactive_learn_worker_enabled
+
+            self.assertTrue(interactive_learn_worker_enabled())
+
+    def test_interactive_worker_disabled_explicit(self):
+        a = admission(state="started")
+        with patch.object(scope, "load_admission", return_value=a), patch.dict(
+            os.environ, {"MEMORYBOX_INTERACTIVE_LEARN_WORKER": "0"}, clear=False
+        ):
+            from memorybox.processing.interactive_drain import interactive_learn_worker_enabled
+
+            self.assertFalse(interactive_learn_worker_enabled())
+
+    def test_begin_interactive_work_when_stopped_with_flag(self):
+        a = admission(state="stopped", interactive_learn_enabled=True)
+        c = FakeConnection(a)
+        with patch.dict(os.environ, {"MEMORYBOX_I13_ADMISSION_ID": ADMISSION}, clear=False), fake_db(c):
+            scope.begin_interactive_work("face", "synthetic", "video-0", PERSON)
+        self.assertEqual(c.attempts[("face", "synthetic", "video-0", PERSON)], 1)
+
 if __name__=='__main__':unittest.main(verbosity=2)

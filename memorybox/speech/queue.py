@@ -140,6 +140,97 @@ def enqueue_interactive_owner_learn(
     }
 
 
+def retry_interactive_failed_items(*, person_id: str | UUID | None = None) -> int:
+    from memorybox.processing.scope import load_admission, require_interactive_source
+
+    admission = load_admission()
+    if not admission.interactive_learn_permitted():
+        from memorybox.processing.scope import ScopeDenied
+        raise ScopeDenied("interactive_learn_locked")
+    with connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT id::text, person_id::text, video_provider_key, video_external_id
+            FROM speech_queue_items
+            WHERE status = 'failed'
+              AND enqueue_reason = 'owner_learn'
+              AND i13_admission_id = %s::uuid
+              AND (%s::uuid IS NULL OR person_id = %s::uuid)
+            FOR UPDATE
+            """,
+            (
+                admission.id,
+                str(person_id) if person_id else None,
+                str(person_id) if person_id else None,
+            ),
+        ).fetchall()
+        for row in rows:
+            require_interactive_source(
+                "voice",
+                row["video_provider_key"],
+                row["video_external_id"],
+                row.get("person_id"),
+            )
+            conn.execute(
+                """
+                UPDATE speech_queue_items
+                SET status = 'queued', updated_at = now(), finished_at = NULL, reason = NULL
+                WHERE id = %s::uuid
+                """,
+                (row["id"],),
+            )
+    return len(rows)
+
+
+def claim_next_interactive_item(*, person_id: str | UUID | None = None) -> dict[str, Any] | None:
+    from memorybox.processing.scope import load_admission, require_interactive_source
+
+    admission = load_admission()
+    if not admission.interactive_learn_permitted():
+        from memorybox.processing.scope import ScopeDenied
+        raise ScopeDenied("interactive_learn_locked")
+    with connection() as conn:
+        from memorybox.processing.scope import _assert_interactive_admission_state
+
+        _assert_interactive_admission_state(conn, admission)
+        row = conn.execute(
+            """
+            SELECT id::text, person_id::text, video_provider_key, video_external_id,
+                   enqueue_reason, attempt_count
+            FROM speech_queue_items
+            WHERE status = 'queued'
+              AND enqueue_reason = 'owner_learn'
+              AND i13_admission_id = %s::uuid
+              AND (%s::uuid IS NULL OR person_id = %s::uuid)
+            ORDER BY priority, created_at
+            FOR UPDATE SKIP LOCKED
+            LIMIT 1
+            """,
+            (
+                admission.id,
+                str(person_id) if person_id else None,
+                str(person_id) if person_id else None,
+            ),
+        ).fetchone()
+        if not row:
+            return None
+        require_interactive_source(
+            "voice",
+            row["video_provider_key"],
+            row["video_external_id"],
+            row.get("person_id"),
+        )
+        conn.execute(
+            """
+            UPDATE speech_queue_items
+            SET status = 'running', started_at = now(), attempt_count = attempt_count + 1, updated_at = now()
+            WHERE id = %s::uuid
+            """,
+            (row["id"],),
+        )
+    return dict(row)
+
+
 def claim_next_item() -> dict[str, Any] | None:
     from memorybox.processing.scope import load_admission, require_source
     admission = load_admission()

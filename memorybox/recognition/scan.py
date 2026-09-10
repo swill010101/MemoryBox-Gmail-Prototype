@@ -71,9 +71,24 @@ def scan_video_for_person(
     trigger: str | None = None,
     max_samples: int | None = None,
     extra_times: list[float] | None = None,
+    interactive: bool = False,
 ) -> dict[str, Any]:
-    from memorybox.processing.scope import begin_work
-    begin_work("face", video_provider_key or getattr(video_provider,"provider_key",None) or "hvrt", video_external_id, person_id)
+    if interactive:
+        from memorybox.processing.scope import begin_interactive_work
+        begin_interactive_work(
+            "face",
+            video_provider_key or getattr(video_provider, "provider_key", None) or "hvrt",
+            video_external_id,
+            person_id,
+        )
+    else:
+        from memorybox.processing.scope import begin_work
+        begin_work(
+            "face",
+            video_provider_key or getattr(video_provider, "provider_key", None) or "hvrt",
+            video_external_id,
+            person_id,
+        )
     vpk = video_provider_key or getattr(video_provider, "provider_key", None) or "hvrt"
     exemplars = list_active_exemplars(person_id)
     if not exemplars:

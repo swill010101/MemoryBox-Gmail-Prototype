@@ -215,6 +215,12 @@ def _ai_trace_schema_on_startup() -> None:
         start_speech_drain()
     except Exception:
         return
+    try:
+        from memorybox.processing.interactive_drain import start_interactive_learn_worker
+
+        start_interactive_learn_worker()
+    except Exception:
+        return
 
 if SHELL_STATIC_DIR.is_dir():
     app.mount("/static/shell", StaticFiles(directory=str(SHELL_STATIC_DIR)), name="shell_static")
@@ -1353,19 +1359,24 @@ def admin_jobs(limit: int = Query(200, ge=1, le=500)) -> dict[str, Any]:
 
 @app.post("/admin/api/jobs/retry-failed")
 def admin_jobs_retry_failed() -> dict[str, Any]:
-    from memorybox.processing.scope import load_admission
-    from memorybox.recognition.queue import retry_failed_items
+    from memorybox.processing.scope import ScopeDenied, load_admission
+    from memorybox.recognition.queue import retry_interactive_failed_items as retry_face_failed
+    from memorybox.speech.queue import retry_interactive_failed_items as retry_voice_failed
 
     try:
         admission = load_admission()
         if admission.plan.get("purpose") != "acceptance_learning":
             raise HTTPException(status_code=403, detail="retry_requires_acceptance_learning_admission")
-        retried = retry_failed_items()
+        if not admission.interactive_learn_permitted():
+            raise HTTPException(status_code=403, detail="interactive_learn_locked")
+        retried = retry_face_failed() + retry_voice_failed()
         return {"ok": True, "retried": retried, "admission_id": admission.id}
     except HTTPException:
         raise
-    except Exception as exc:
+    except ScopeDenied as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @app.get("/admin/api/learned-evidence")

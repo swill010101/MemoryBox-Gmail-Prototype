@@ -85,21 +85,21 @@ html[data-mb-surface="admin-evidence"] .mb-nav-system a {
 html[data-mb-surface="admin"] a.card,
 html[data-mb-surface="admin-jobs"] a.card,
 html[data-mb-surface="admin-evidence"] a.card {
-  background: #f7f8fb !important;
-  color: #1a1f2a !important;
-  border-color: #c5c9d1 !important;
+  background: rgba(255, 255, 255, 0.08) !important;
+  color: #e8edf5 !important;
+  border-color: rgba(166, 139, 75, 0.55) !important;
 }
 
 html[data-mb-surface="admin"] a.card .muted,
 html[data-mb-surface="admin-jobs"] a.card .muted,
 html[data-mb-surface="admin-evidence"] a.card .muted {
-  color: #5a6170 !important;
+  color: #c5cec8 !important;
 }
 
 html[data-mb-surface="admin"] a.card strong,
 html[data-mb-surface="admin-jobs"] a.card strong,
 html[data-mb-surface="admin-evidence"] a.card strong {
-  color: #1a1f2a !important;
+  color: #eef1ef !important;
 }
 
 html[data-mb-surface="explore"] section.mb-explore-ask-band,

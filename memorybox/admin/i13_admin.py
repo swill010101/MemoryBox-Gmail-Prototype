@@ -100,11 +100,14 @@ def _queue_counts_by_status(
 
 
 def i13_status() -> dict[str, Any]:
+    from memorybox.processing.interactive_drain import interactive_learn_worker_enabled
+
     admission_id = active_admission_id()
     env = {
         "MEMORYBOX_I13_ADMISSION_ID": admission_id or "",
         "MEMORYBOX_RECOGNITION_DRAIN": os.environ.get("MEMORYBOX_RECOGNITION_DRAIN", "0"),
         "MEMORYBOX_SPEECH_DRAIN": os.environ.get("MEMORYBOX_SPEECH_DRAIN", "0"),
+        "MEMORYBOX_INTERACTIVE_LEARN_WORKER": os.environ.get("MEMORYBOX_INTERACTIVE_LEARN_WORKER", ""),
     }
     admission = None
     events: list[dict[str, Any]] = []
@@ -190,6 +193,7 @@ def i13_status() -> dict[str, Any]:
         "recognition_queue_by_status": rec_q,
         "speech_queue_by_status": speech_q,
         "interactive_learn_enabled": learn_enabled,
+        "interactive_learn_worker_enabled": interactive_learn_worker_enabled(),
         "archive_processing_locked": archive_locked,
     }
 
@@ -259,14 +263,31 @@ def list_jobs(*, limit: int = 200) -> dict[str, Any]:
     status = i13_status()
     learn_enabled = status["interactive_learn_enabled"]
     archive_locked = status["archive_processing_locked"]
+    worker_enabled = status.get("interactive_learn_worker_enabled")
+    owner_learn_queued = sum(
+        1
+        for item in items
+        if item.get("enqueue_reason") == "owner_learn" and item.get("status") == "queued"
+    )
+    owner_learn_completed = sum(
+        1
+        for item in items
+        if item.get("enqueue_reason") == "owner_learn" and item.get("status") == "completed"
+    )
     return {
         "ok": True,
         "admission_id": admission_id,
         "interactive_learn_enabled": learn_enabled,
+        "interactive_learn_worker_enabled": worker_enabled,
         "archive_processing_locked": archive_locked,
         "scope_lock": {
             "interactive_learn_enabled": learn_enabled,
+            "interactive_learn_worker_enabled": worker_enabled,
             "archive_processing_locked": archive_locked,
+        },
+        "owner_learn_summary": {
+            "queued": owner_learn_queued,
+            "completed": owner_learn_completed,
         },
         "items": items[:limit],
         "counts": {
@@ -300,18 +321,19 @@ def list_learned_evidence(*, limit: int = 300, scope: str = "exemplars") -> dict
         view = "exemplars"
     items: list[dict[str, Any]] = []
     with connection() as conn:
-        face_rows = conn.execute(
-            """
+        face_sql = """
             SELECT id::text, person_id::text, method, authority, confirmation_state,
                    source_asset_id, provider_key, withdrawn, created_at,
                    exemplar_meta_json, quality_json
             FROM face_evidence
             WHERE withdrawn IS NOT TRUE
-            ORDER BY created_at DESC
-            LIMIT %s
-            """,
-            (int(limit),),
-        ).fetchall()
+        """
+        face_args: list[Any] = []
+        if view == "exemplars":
+            face_sql += " AND method = 'owner_learn'"
+        face_sql += " ORDER BY created_at DESC LIMIT %s"
+        face_args.append(int(limit))
+        face_rows = conn.execute(face_sql, tuple(face_args)).fetchall()
         voice_rows = conn.execute(
             """
             SELECT id::text, person_id::text, video_provider_key, video_external_id,

@@ -1,162 +1,162 @@
-<!DOCTYPE html>
-<html lang="en" data-mb-surface="admin-evidence">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>MemoryBox — Learned Evidence</title>
-  <style>
-    main { max-width: 1200px; margin: 0 auto; padding: 1.25rem; color: #e8edf5; }
-    h1 { font-family: Georgia, serif; margin: 0 0 0.35rem; color: #eef1ef; }
-    table { width: 100%; border-collapse: collapse; font-size: 0.85rem; color: #e8edf5; }
-    th, td { border-bottom: 1px solid rgba(255, 255, 255, 0.15); padding: 0.45rem 0.5rem; text-align: left; vertical-align: top; }
-    thead th { color: #eef1ef; font-weight: 600; background: rgba(255,255,255,0.06); }
-    tr.is-owner-learn { background: rgba(47, 107, 86, 0.35); outline: 1px solid rgba(166, 139, 75, 0.55); }
-    tr.is-owner-learn td { color: #f3f6fb; }
-    main a { color: #9ec5ff; }
-    .actions { display: flex; gap: 0.5rem; flex-wrap: wrap; margin: 0.5rem 0; align-items: center; }
-    button {
-      border: 1px solid rgba(166, 139, 75, 0.55); background: #8a3b12; color: #fff;
-      padding: 0.28rem 0.5rem; cursor: pointer; font: inherit;
-    }
-    #refresh, #toggleScope {
-      border-color: rgba(166, 139, 75, 0.55); background: #2f6b56; color: #eef1ef;
-      padding: 0.35rem 0.6rem;
-    }
-    #toggleScope.is-secondary {
-      background: rgba(255, 255, 255, 0.08); color: #e8edf5;
-    }
-    .muted { color: #c5cec8; font-size: 0.88rem; }
-    .note { max-width: 52rem; margin: 0.5rem 0 0.75rem; line-height: 1.45; }
-    #scopeLabel { color: #a68b4b; font-weight: 600; }
-    #msg.err { color: #f0a898; }
-  </style>
-</head>
-<body class="mb-shell">
-<main>
-  <h1>Learned Evidence</h1>
-  <p class="muted"><a href="/admin/ui">← Admin</a> · Independent face and voice records with provenance. Withdrawal preserves history.</p>
-  <p class="note muted">Showing <span id="scopeLabel">Owner Learn exemplars</span> — your face/voice Learn rows from Explore. Use <strong>Withdraw</strong> for Phase 4 item 6. Bulk scan appearances are hidden unless you expand the list.</p>
-  <div class="actions">
-    <button type="button" id="refresh">Refresh</button>
-    <button type="button" id="toggleScope" class="is-secondary">Show all scan evidence</button>
-  </div>
-  <p id="msg" class="muted"></p>
-  <table>
-    <thead><tr><th>When</th><th>Type</th><th>Person</th><th>Video</th><th>Span</th><th>Method</th><th></th></tr></thead>
-    <tbody id="rows"><tr><td colspan="7" class="muted">Loading…</td></tr></tbody>
-  </table>
-</main>
-<script>
-let scope = "exemplars";
-const KIND_LABEL = {
-  face_exemplar: "Face exemplar (Learn)",
-  voice_exemplar: "Voice exemplar (Learn)",
-  face_appearance: "Face appearance (scan)",
-  spoken_moment: "Spoken moment (scan)",
-};
-function formatWhen(iso) {
-  if (!iso) return "—";
-  try {
-    return new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
-  } catch (_) {
-    return String(iso);
-  }
-}
-function interval(item) {
-  if (item.start_sec != null && item.end_sec != null) {
-    return Number(item.start_sec).toFixed(1) + "–" + Number(item.end_sec).toFixed(1) + " s";
-  }
-  return "full clip";
-}
-function isOwnerLearnRow(item) {
-  return item.is_owner_learn || item.kind === "face_exemplar" || item.kind === "voice_exemplar";
-}
-async function withdraw(kind, id) {
-  const reason = prompt("Reason for withdrawal (required):", "owner_review_withdraw");
-  if (!reason) return;
-  const path = kind === "voice_exemplar"
-    ? "/admin/api/learned-evidence/withdraw-voice-exemplar"
-    : "/admin/api/learned-evidence/withdraw-face-exemplar";
-  const r = await fetch(path, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({id, reason})});
-  const d = await r.json();
-  if (!r.ok || !d.ok) throw new Error(d.detail || d.error || "withdraw failed");
-}
-function updateScopeUi() {
-  const label = document.getElementById("scopeLabel");
-  const toggle = document.getElementById("toggleScope");
-  if (scope === "exemplars") {
-    label.textContent = "Owner Learn exemplars";
-    toggle.textContent = "Show all scan evidence";
-    toggle.classList.add("is-secondary");
-  } else {
-    label.textContent = "All evidence (includes bulk scan)";
-    toggle.textContent = "Show Owner Learn only";
-    toggle.classList.remove("is-secondary");
-  }
-}
-async function load() {
-  const msg = document.getElementById("msg");
-  const tbody = document.getElementById("rows");
-  msg.textContent = "";
-  msg.classList.remove("err");
-  updateScopeUi();
-  const res = await fetch("/admin/api/learned-evidence?scope=" + encodeURIComponent(scope));
-  const data = await res.json().catch(() => ({}));
-  tbody.replaceChildren();
-  if (!res.ok || data.ok === false) {
-    tbody.innerHTML = '<tr><td colspan="7" class="muted">Could not load learned evidence.</td></tr>';
-    msg.textContent = data.detail || data.error || ("HTTP " + res.status);
-    msg.classList.add("err");
-    return;
-  }
-  const items = Array.isArray(data.items) ? data.items : [];
-  if (!items.length) {
-    const empty = scope === "exemplars"
-      ? "No Owner Learn exemplars yet. Learn face or voice in Explore first."
-      : "No learned evidence rows.";
-    tbody.innerHTML = '<tr><td colspan="7" class="muted">' + empty + '</td></tr>';
-    return;
-  }
-  items.forEach(item => {
-    const tr = document.createElement("tr");
-    if (isOwnerLearnRow(item)) tr.classList.add("is-owner-learn");
-    const person = item.person_display_name || item.person_id || "—";
-    const video = item.source_label || item.source_id || "—";
-    const kind = KIND_LABEL[item.kind] || item.kind || "—";
-    const method = item.method || item.embedding_model || "—";
-    tr.innerHTML = `<td>${formatWhen(item.created_at)}</td><td>${kind}</td><td>${person}</td><td>${video}</td><td>${interval(item)}</td><td>${method}</td><td></td>`;
-    if (item.kind === "face_exemplar" || item.kind === "voice_exemplar") {
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.textContent = "Withdraw";
-      btn.title = "Phase 4 item 6: withdraw here with a reason";
-      btn.onclick = async () => {
-        try { await withdraw(item.kind, item.id); await load(); }
-        catch (e) {
-          document.getElementById("msg").textContent = e.message;
-          document.getElementById("msg").classList.add("err");
-        }
-      };
-      tr.cells[6].appendChild(btn);
-    }
-    tbody.appendChild(tr);
-  });
-}
-document.getElementById("refresh").onclick = () => load().catch(e => {
-  document.getElementById("msg").textContent = e.message;
-  document.getElementById("msg").classList.add("err");
-});
-document.getElementById("toggleScope").onclick = () => {
-  scope = scope === "exemplars" ? "all" : "exemplars";
-  load().catch(e => {
-    document.getElementById("msg").textContent = e.message;
-    document.getElementById("msg").classList.add("err");
-  });
-};
-load().catch(e => {
-  document.getElementById("msg").textContent = e.message;
-  document.getElementById("msg").classList.add("err");
-});
-</script>
-</body>
-</html>
+<!DOCTYPE html>
+<html lang="en" data-mb-surface="admin-evidence">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MemoryBox — Learned Evidence</title>
+  <style>
+    main { max-width: 1200px; margin: 0 auto; padding: 1.25rem; color: #e8edf5; }
+    h1 { font-family: Georgia, serif; margin: 0 0 0.35rem; color: #eef1ef; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.85rem; color: #e8edf5; }
+    th, td { border-bottom: 1px solid rgba(255, 255, 255, 0.15); padding: 0.45rem 0.5rem; text-align: left; vertical-align: top; }
+    thead th { color: #eef1ef; font-weight: 600; background: rgba(255,255,255,0.06); }
+    tr.is-owner-learn { background: rgba(47, 107, 86, 0.35); outline: 1px solid rgba(166, 139, 75, 0.55); }
+    tr.is-owner-learn td { color: #f3f6fb; }
+    main a { color: #9ec5ff; }
+    .actions { display: flex; gap: 0.5rem; flex-wrap: wrap; margin: 0.5rem 0; align-items: center; }
+    button {
+      border: 1px solid rgba(166, 139, 75, 0.55); background: #8a3b12; color: #fff;
+      padding: 0.28rem 0.5rem; cursor: pointer; font: inherit;
+    }
+    #refresh, #toggleScope {
+      border-color: rgba(166, 139, 75, 0.55); background: #2f6b56; color: #eef1ef;
+      padding: 0.35rem 0.6rem;
+    }
+    #toggleScope.is-secondary {
+      background: rgba(255, 255, 255, 0.08); color: #e8edf5;
+    }
+    .muted { color: #c5cec8; font-size: 0.88rem; }
+    .note { max-width: 52rem; margin: 0.5rem 0 0.75rem; line-height: 1.45; }
+    #scopeLabel { color: #a68b4b; font-weight: 600; }
+    #msg.err { color: #f0a898; }
+  </style>
+</head>
+<body class="mb-shell">
+<main>
+  <h1>Learned Evidence</h1>
+  <p class="muted"><a href="/admin/ui">← Admin</a> · Independent face and voice records with provenance. Withdrawal preserves history.</p>
+  <p class="note muted">Showing <span id="scopeLabel">Owner Learn exemplars</span> — your face/voice Learn rows from Explore. Use <strong>Withdraw</strong> for Phase 4 item 6. Bulk scan appearances are hidden unless you expand the list.</p>
+  <div class="actions">
+    <button type="button" id="refresh">Refresh</button>
+    <button type="button" id="toggleScope" class="is-secondary">Show all scan evidence</button>
+  </div>
+  <p id="msg" class="muted"></p>
+  <table>
+    <thead><tr><th>When</th><th>Type</th><th>Person</th><th>Video</th><th>Span</th><th>Method</th><th></th></tr></thead>
+    <tbody id="rows"><tr><td colspan="7" class="muted">Loading…</td></tr></tbody>
+  </table>
+</main>
+<script>
+let scope = "exemplars";
+const KIND_LABEL = {
+  face_exemplar: "Face exemplar (Learn)",
+  voice_exemplar: "Voice exemplar (Learn)",
+  face_appearance: "Face appearance (scan)",
+  spoken_moment: "Spoken moment (scan)",
+};
+function formatWhen(iso) {
+  if (!iso) return "—";
+  try {
+    return new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+  } catch (_) {
+    return String(iso);
+  }
+}
+function interval(item) {
+  if (item.start_sec != null && item.end_sec != null) {
+    return Number(item.start_sec).toFixed(1) + "–" + Number(item.end_sec).toFixed(1) + " s";
+  }
+  return "full clip";
+}
+function isOwnerLearnRow(item) {
+  return Boolean(item.is_owner_learn);
+}
+async function withdraw(kind, id) {
+  const reason = prompt("Reason for withdrawal (required):", "owner_review_withdraw");
+  if (!reason) return;
+  const path = kind === "voice_exemplar"
+    ? "/admin/api/learned-evidence/withdraw-voice-exemplar"
+    : "/admin/api/learned-evidence/withdraw-face-exemplar";
+  const r = await fetch(path, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({id, reason})});
+  const d = await r.json();
+  if (!r.ok || !d.ok) throw new Error(d.detail || d.error || "withdraw failed");
+}
+function updateScopeUi() {
+  const label = document.getElementById("scopeLabel");
+  const toggle = document.getElementById("toggleScope");
+  if (scope === "exemplars") {
+    label.textContent = "Owner Learn exemplars";
+    toggle.textContent = "Show all scan evidence";
+    toggle.classList.add("is-secondary");
+  } else {
+    label.textContent = "All evidence (includes bulk scan)";
+    toggle.textContent = "Show Owner Learn only";
+    toggle.classList.remove("is-secondary");
+  }
+}
+async function load() {
+  const msg = document.getElementById("msg");
+  const tbody = document.getElementById("rows");
+  msg.textContent = "";
+  msg.classList.remove("err");
+  updateScopeUi();
+  const res = await fetch("/admin/api/learned-evidence?scope=" + encodeURIComponent(scope));
+  const data = await res.json().catch(() => ({}));
+  tbody.replaceChildren();
+  if (!res.ok || data.ok === false) {
+    tbody.innerHTML = '<tr><td colspan="7" class="muted">Could not load learned evidence.</td></tr>';
+    msg.textContent = data.detail || data.error || ("HTTP " + res.status);
+    msg.classList.add("err");
+    return;
+  }
+  const items = Array.isArray(data.items) ? data.items : [];
+  if (!items.length) {
+    const empty = scope === "exemplars"
+      ? "No Owner Learn exemplars yet. Learn face or voice in Explore first."
+      : "No learned evidence rows.";
+    tbody.innerHTML = '<tr><td colspan="7" class="muted">' + empty + '</td></tr>';
+    return;
+  }
+  items.forEach(item => {
+    const tr = document.createElement("tr");
+    if (isOwnerLearnRow(item)) tr.classList.add("is-owner-learn");
+    const person = item.person_display_name || item.person_id || "—";
+    const video = item.source_label || item.source_id || "—";
+    const kind = KIND_LABEL[item.kind] || item.kind || "—";
+    const method = item.method || item.embedding_model || "—";
+    tr.innerHTML = `<td>${formatWhen(item.created_at)}</td><td>${kind}</td><td>${person}</td><td>${video}</td><td>${interval(item)}</td><td>${method}</td><td></td>`;
+    if (item.kind === "face_exemplar" || item.kind === "voice_exemplar") {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.textContent = "Withdraw";
+      btn.title = "Phase 4 item 6: withdraw here with a reason";
+      btn.onclick = async () => {
+        try { await withdraw(item.kind, item.id); await load(); }
+        catch (e) {
+          document.getElementById("msg").textContent = e.message;
+          document.getElementById("msg").classList.add("err");
+        }
+      };
+      tr.cells[6].appendChild(btn);
+    }
+    tbody.appendChild(tr);
+  });
+}
+document.getElementById("refresh").onclick = () => load().catch(e => {
+  document.getElementById("msg").textContent = e.message;
+  document.getElementById("msg").classList.add("err");
+});
+document.getElementById("toggleScope").onclick = () => {
+  scope = scope === "exemplars" ? "all" : "exemplars";
+  load().catch(e => {
+    document.getElementById("msg").textContent = e.message;
+    document.getElementById("msg").classList.add("err");
+  });
+};
+load().catch(e => {
+  document.getElementById("msg").textContent = e.message;
+  document.getElementById("msg").classList.add("err");
+});
+</script>
+</body>
+</html>
