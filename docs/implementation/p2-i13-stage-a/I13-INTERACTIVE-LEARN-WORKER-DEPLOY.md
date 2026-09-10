@@ -2,8 +2,9 @@
 
 **Status:** Engineering checkpoint complete — **not deploy-authorized until Tom approves**  
 **Branch:** `codex/p2-i13-stage-a`  
-**Approved commit:** `c6aedcdb2f03a0d0ec76ced134301b8df0112cef`  
-**Parent commit:** `c21ff43166ea7a3ebdb6c6d1ef9964f24bbef176`
+**Approved commit:** `93f5105776fd5cabacb536f3935585b969ee5c5d`  
+**Parent commit:** `c6aedcdb2f03a0d0ec76ced134301b8df0112cef` (19-file implementation)  
+**Implementation parent:** `c21ff43166ea7a3ebdb6c6d1ef9964f24bbef176`
 
 Do **not** deploy, restart FlightSim serve, stop admission, enable bulk drains, or start Phase 6 without explicit founder authorization.
 
@@ -27,9 +28,10 @@ Do **not** deploy, restart FlightSim serve, stop admission, enable bulk drains, 
 
 | Check | Result |
 |-------|--------|
-| Approved commit | `c6aedcdb2f03a0d0ec76ced134301b8df0112cef` |
-| Parent | `c21ff43166ea7a3ebdb6c6d1ef9964f24bbef176` |
-| Remote branch | `origin/codex/p2-i13-stage-a` → `c6aedcdb2f03a0d0ec76ced134301b8df0112cef` |
+| Approved commit | `93f5105776fd5cabacb536f3935585b969ee5c5d` |
+| Parent | `c6aedcdb2f03a0d0ec76ced134301b8df0112cef` |
+| Implementation parent | `c21ff43166ea7a3ebdb6c6d1ef9964f24bbef176` |
+| Remote branch | `origin/codex/p2-i13-stage-a` → `93f5105776fd5cabacb536f3935585b969ee5c5d` |
 | Tests | **Ran 200 tests** — OK (failures=0, errors=0, skipped=24) |
 | Tracked worktree | Clean (only unrelated untracked docs under `docs/`) |
 
@@ -56,7 +58,7 @@ Deploy the **exact reviewed commit** — not a path cherry-pick.
 ### Constants
 
 ```powershell
-$ApprovedSha = 'c6aedcdb2f03a0d0ec76ced134301b8df0112cef'
+$ApprovedSha = '93f5105776fd5cabacb536f3935585b969ee5c5d'
 $Branch      = 'codex/p2-i13-stage-a'
 ```
 
