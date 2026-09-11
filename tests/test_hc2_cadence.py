@@ -200,7 +200,8 @@ class Hc2CadenceDbTests(unittest.TestCase):
         fake.inject_reply(
             correlation_token=token,
             from_addr=to_email,
-            text="Here is the memory.",
+            text=f"Here is the memory {camp['_tag']}.",
+            inbound_message_id=f"in-{uuid4().hex}",
         )
         fake.calls.clear()
         result = tick_scheduler(now=self.t0 + timedelta(seconds=5), adapter=fake)
@@ -285,8 +286,9 @@ class Hc2CadenceDbTests(unittest.TestCase):
         token = started["deliveries"][0]["correlation_token"]
         fake.inject_reply(
             correlation_token=token,
-            from_addr="pat@example.com",
-            text="Answered.",
+            from_addr=camp["_to"],
+            text=f"Answered {camp['_tag']}.",
+            inbound_message_id=f"in-{uuid4().hex}",
         )
         tick_scheduler(now=self.t0 + timedelta(seconds=1), adapter=fake)
         with hc_tick_lock() as held:

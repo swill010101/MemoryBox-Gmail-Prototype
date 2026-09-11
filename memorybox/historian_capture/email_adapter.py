@@ -224,7 +224,7 @@ class FakeHistorianEmailAdapter:
 
     def _next_id(self, prefix: str) -> str:
         self._seq += 1
-        return f"{prefix}{self._seq:04d}"
+        return f"{prefix}-{self._seq:04d}-{uuid4().hex}"
 
     def send_question(
         self,
