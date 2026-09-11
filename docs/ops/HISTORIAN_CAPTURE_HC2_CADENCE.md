@@ -157,6 +157,7 @@ Register uses:
 - absolute repo and `.venv\Scripts\python.exe`
 - working directory = repo root
 - `config\memorybox_app.env` loaded by the launcher (no passwords in task arguments)
+- same FlightSim defaults as `startmb` when unset: Postgres URL, `MEMORYBOX_QDRANT_URL=http://127.0.0.1:6333`, capture mailbox
 - 5-minute repetition
 - Interactive Limited principal (the MemoryBox Windows user)
 - MultipleInstances = IgnoreNew

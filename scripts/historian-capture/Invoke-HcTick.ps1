@@ -37,6 +37,12 @@ Import-DotEnvFile (Join-Path $RepoRoot "config\memorybox_app.env")
 if (-not $env:MEMORYBOX_DATABASE_URL) {
   $env:MEMORYBOX_DATABASE_URL = "postgresql://memorybox:memorybox@127.0.0.1:5432/memorybox"
 }
+if (-not $env:MEMORYBOX_QDRANT_URL) {
+  $env:MEMORYBOX_QDRANT_URL = "http://127.0.0.1:6333"
+}
+if (-not $env:MEMORYBOX_QDRANT_COLLECTION) {
+  $env:MEMORYBOX_QDRANT_COLLECTION = "memorybox_evidence"
+}
 if (-not $env:MEMORYBOX_P1_RUNTIME_HOST) { $env:MEMORYBOX_P1_RUNTIME_HOST = "1" }
 if (-not $env:MEMORYBOX_HC_EMAIL_PROVIDER) { $env:MEMORYBOX_HC_EMAIL_PROVIDER = "privateemail" }
 if (-not $env:MEMORYBOX_HC_USER_EMAIL) { $env:MEMORYBOX_HC_USER_EMAIL = "memorybox@marvinbot.net" }
