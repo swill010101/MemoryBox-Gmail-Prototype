@@ -1,14 +1,15 @@
 # P2-I14 — Communications and Unified Gallery
 
-**Status:** Phase A PRD — founder review **passed** 2026-09-11 (documentation). Implementation still unauthorized.  
+**Status:** Phase A complete (founder review + documentation commit `067e27dfa1493fa3274f9c0d662bda4442f3bbc3`). **Implementation remains unauthorized** until explicit **Phase B** authorization.  
 **Date:** 2026-09-11  
 **Owner:** Tom (founder)  
-**Branch (local, unpushed):** `codex/p2-i14-communications`  
-**Base HEAD:** `673676bacf74e213b2d5c866518105a79b959b84` (HC-2 acceptance record)  
+**Branch:** `codex/p2-i14-communications` (pushed: `origin/codex/p2-i14-communications`)  
+**Phase A commit:** `067e27dfa1493fa3274f9c0d662bda4442f3bbc3`  
+**Base HEAD (HC-2 acceptance record):** `673676bacf74e213b2d5c866518105a79b959b84`  
 **HC-2 runtime SHA:** `743c76712cb286ccdae3ad1108fb260dbd04770d`  
 **HC-1 accepted SHA:** `f777832cb4581344b294fcbd961eea5a0ecc4e10`
 
-This Markdown file is the controlling I14 product request. Implementation, migrations, ingest, Peggy reconstruction, and deploy are **forbidden** until founder review and explicit authorization.
+This Markdown file is the controlling I14 product request. Implementation, migrations, ingest, Peggy reconstruction, and deploy are **forbidden** until explicit Phase B authorization.
 
 ---
 
@@ -19,9 +20,9 @@ This Markdown file is the controlling I14 product request. Implementation, migra
 | Increment | P2-I14 |
 | This document | `docs/prd/P2-I14-COMMUNICATIONS-AND-UNIFIED-GALLERY-PRD.md` |
 | Assets | `docs/prd/p2-i14/assets/` |
-| Phase | A — repository assessment + PRD. Stop for founder review. |
-| Code changes | None authorized |
-| Commit | Documentation commit authorized; no implementation |
+| Phase | A complete — assessment + PRD committed |
+| Code / implementation | Unauthorized pending explicit Phase B authorization |
+| Phase A commit | `067e27dfa1493fa3274f9c0d662bda4442f3bbc3` |
 
 **Controlling later-document rule:** If this I14 brief conflicts with an older roadmap row, **this I14 brief wins for I14 scope** and the conflict is recorded in §30. Do not silently drop either statement.
 
@@ -112,7 +113,7 @@ Explicitly out of I14:
 - Measure **cold** (first Person Ask after application restart) and **warm** separately.
 - If complete mixed-media cannot meet 10 seconds: show photos/videos first; continue loading **only valid prepared** communication/calendar results while that Ask remains active; **visibly** indicate communications still loading; cancel/ignore obsolete work when a new Ask begins.
 - Photo-first is an **honest fallback**, not a substitute for the complete-Gallery objective and **not** an unconditional performance pass (§15, §25).
-- **I14-REQ-PERF-FALLBACK-MAX-MS = 30000.** Approximately **10 seconds** remains the complete-Gallery target. If communications are unfinished at 10 seconds, show the visible photo-first loading state. At **30 seconds total**, stop that Ask’s unfinished source retrieval, **omit** the unfinished source, mark it **unavailable for that Ask**, record a **performance failure**, and **ignore** any late result from that cancelled/timed-out retrieval. Photos/videos and other **successfully loaded current** sources remain visible.
+- **I14-REQ-PERF-FALLBACK-MAX-MS = 30000.** Approximately **10 seconds** remains the complete-Gallery target. If communications are unfinished at 10 seconds, show the visible photo-first loading state. At **30 seconds total**, stop that Ask’s unfinished source retrieval, **omit** the unfinished source, mark it **unavailable for that Ask**, record **`gallery_settled_ms`**, leave **`gallery_complete_ms` null**, record a **performance failure**, and **ignore** any late result. Photos/videos and other **successfully loaded current** sources remain visible.
 - **Never** reconstruct raw email threads during Ask.
 - **Never** silently omit communications while presenting the Gallery as complete.
 - Instrument cold-start and warm performance separately.
@@ -203,7 +204,7 @@ Landing locations today (`config/memorybox_sources.env.example`; production valu
 
 **I14-REQ-SRC-7. Validation before ingest:** readable file; non-zero size; parse probe (mbox magic / ICS `BEGIN:VCALENDAR` / SMS header aliases); reject truncated tails (mbox: last message parse; ICS: balanced VEVENT; SMS: CSV row count vs header). Failure = do not ingest, do not advance checkpoint, do not publish.
 
-**I14-REQ-SRC-8. Idempotent rerun:** stable identity = existing `content_hash` on `evidence` for that `source_id` (current ingest). Prepared rows key by `generation_id` + evidence ids. Rerunning the same extract must not duplicate `evidence` rows.
+**I14-REQ-SRC-8. Idempotent rerun:** must not duplicate `evidence` rows. **Phase B deduplication gate (before schema implementation):** verify whether successive full exports share one stable **logical** `source_id`. Today `store.upsert_source` keys `sources` by `(uri, source_kind)` and `evidence_exists_by_hash(source_id, content_hash)` is **scoped to that `source_id`**. If `source_id` is an individual extract/import (new path/filename/run) rather than the logical mailbox/calendar/SMS source, **do not** uniqueness-scope solely to `source_id`. Define a **stable logical source lineage** (mailbox/calendar/SMS identity that survives changed filenames, paths, import runs, and export timestamps) **plus** record identity/`content_hash` **before** implementing I14 schema. Cross-extract dedupe must survive those filename/path/run/timestamp changes. Prepared rows key by `generation_id` + evidence ids.
 
 **I14-REQ-SRC-9. Failure/recovery:** sanitized category on checkpoint + operational card. Next nightly retries. Do not roll back another source’s published generation.
 
@@ -218,7 +219,7 @@ Each delivery is a **full extract**. A date checkpoint must **not** be the only 
 **I14-REQ-ING-2. Preferred subsequent ingest (complete-extract scan).** Receive another full extract. After validation:
 
 1. If the **fingerprint is unchanged**, short-circuit: no evidence insert, no new generation, record “checked, unchanged” (§9 ING-4).
-2. Otherwise **scan the complete validated extract**. For every record, compute stable source identity (`content_hash` per `source_id`, existing ingest). Insert if absent. Skip if present (do not duplicate). **A late record dated on or before `last_closed_source_date` is still ingested if its stable identity is absent.**
+2. Otherwise **scan the complete validated extract**. For every record, compute record identity (`content_hash` and any RFC/UID/stable ids) against the **logical source lineage** (§8 SRC-8 / ING-9), not solely against an extract-specific `source_id`. Insert if absent. Skip if present (do not duplicate). **A late record dated on or before `last_closed_source_date` is still ingested if its stable identity is absent.**
 3. Rebuild/publish the prepared generation for that source from the resulting evidence set when new identities were inserted or `algo_version` requires it.
 4. Advance `last_closed_source_date` only through dates that are fully closed **in this extract** (boundary rules in ING-3). Never use the checkpoint as a skip-filter over the extract.
 
@@ -234,6 +235,8 @@ Each delivery is a **full extract**. A date checkpoint must **not** be the only 
 
 **I14-REQ-ING-7. Interrupted rebuild:** leave `building_generation_id` unpromoted; next run discards or resumes that generation; Gallery continues to use previous **published** generation **only if it is still valid**; if the previous generation is stale/corrupt, Gallery omits that source (no false memories). Default after crash: previous published remains valid unless validation now fails.
 
+**I14-REQ-ING-9. Logical source lineage (Phase B gate, before schema).** Confirm how `sources.id` behaves across Takeout replacements. If each new file URI creates a new `source_id`, uniqueness must be **lineage + content_hash** (and/or RFC Message-ID / calendar UID as recorded in payload), not `(source_id, content_hash)` alone.
+
 **I14-REQ-ING-8. Required ingest tests** (in addition to §28):
 
 | Case | Expected |
@@ -242,6 +245,7 @@ Each delivery is a **full extract**. A date checkpoint must **not** be the only 
 | Changed extract containing only one historical addition | Exactly one new evidence row; no duplicates of prior hashes |
 | Unchanged extract short-circuit | Zero inserts; no new generation |
 | Duplicate historical record in extract | Not reinserted |
+| Same historical record in two different full-extract files / import runs (different path, filename, or export timestamp) | **One** immutable `evidence` record |
 
 ---
 
@@ -367,7 +371,7 @@ Email payload already has `vendor_thread_id`, `thread_id`, `thread_status`, `rfc
 
 **I14-REQ-ASK-5.** Cold = first Person Ask after process start (no prepared rows in process memory; DB allowed). Warm = subsequent Ask.
 
-**I14-REQ-ASK-6.** Photo-first fallback only if complete assembly exceeds the 10-second target; communications stream in with a visible “Communications still loading” state; each attached source still uses its **published valid** generation (never a partial rebuild). **I14-REQ-PERF-FALLBACK-MAX-MS = 30000.** At 30 seconds total, stop unfinished source retrieval for that Ask, omit those sources, mark them unavailable **for that Ask**, record a performance failure, and ignore late results. Photos/videos and other successfully loaded current sources remain visible. Never set `complete=true` while a configured current source was omitted without an unavailable mark.
+**I14-REQ-ASK-6.** Photo-first fallback only if complete assembly exceeds the 10-second target; communications stream in with a visible “Communications still loading” state; each attached source still uses its **published valid** generation (never a partial rebuild). **I14-REQ-PERF-FALLBACK-MAX-MS = 30000.** At 30 seconds total, stop unfinished source retrieval for that Ask, omit those sources, mark them unavailable **for that Ask**, record **`gallery_settled_ms`**, set **`gallery_complete_ms` null**, record a performance failure, and ignore late results. Photos/videos and other successfully loaded current sources remain visible. Never set `complete=true` while a configured current source was omitted without an unavailable mark.
 
 **I14-REQ-ASK-7.** New Ask cancels in-flight communication fetch for the previous Ask id. Instrument cancellation latency.
 
@@ -481,11 +485,11 @@ Email payload already has `vendor_thread_id`, `thread_id`, `thread_status`, `rfc
 | Layer | What |
 | --- | --- |
 | Unit | Checkpoint closed-date; generation promote transaction; stale exclusion; multi-day calendar count; Ask cancel token |
-| Ingest | Late record before checkpoint; one historical addition; unchanged fingerprint short-circuit; duplicate historical not reinserted |
+| Ingest | Late record before checkpoint; one historical addition; unchanged fingerprint short-circuit; duplicate historical not reinserted; **same record in two full-extract files → one evidence row** |
 | Reuse | Existing I8/I8A/I11A/identity/L1 `no_llm` proves still pass |
 | Contract | Planner Person Ask requests comms; find payload per-source `generation_id` / freshness / status; `gallery_complete` vs `comms_loading` vs `comms_unavailable` |
 | Gate | Peggy reconstruction report (authorized later) |
-| Perf | Cold/warm timers; fallback max (founder value); cancellation time |
+| Perf | Cold/warm timers; `gallery_complete_ms` only on full complete-Gallery; `gallery_settled_ms` on honest settle including 30s timeout; cancellation time |
 | UX | Explore return snapshot; Save as Story memories = all thread evidence ids, zero attachments |
 
 Do not use live production extracts during definition.
@@ -501,7 +505,8 @@ Instrument **cold** and **warm** separately.
 | Metric | Meaning |
 | --- | --- |
 | `ttfa_visual_ms` | Time to first applicable visual result (photo or video) |
-| `gallery_complete_ms` | Time until Gallery includes every configured source that is `current` (or until fallback path finishes attaching those sources) |
+| `gallery_complete_ms` | Set **only** when every configured **current** source is included under the complete-Gallery contract. Otherwise **null**. |
+| `gallery_settled_ms` | Time when the UI finishes in an honest complete-or-unavailable state (no further source attach expected for this Ask) |
 | `source_attached_ms.email` / `.sms` / `.calendar` | Time each prepared source was attached to the active Ask |
 | `ask_cancel_ms` | Time from new Ask start until prior communication work is cancelled/ignored |
 
@@ -509,11 +514,11 @@ Also record `item_counts` by type and per-source `generation_id` / status.
 
 **I14-REQ-PERF-2.** Cold: bounce serve, first `Show me Peggy`. Warm: immediate second Ask.
 
-**I14-REQ-PERF-3. Complete-Gallery pass:** `gallery_complete_ms <= 10000` **and** all configured current sources present **without** relying on fallback as the pass condition.
+**I14-REQ-PERF-3. Complete-Gallery pass:** `gallery_complete_ms` is **not null**, `gallery_complete_ms <= 10000`, and all configured current sources are included **without** timeout omission.
 
-**I14-REQ-PERF-4. Fallback:** allowed for honest UI when 10s is missed. Not an unconditional pass. **I14-REQ-PERF-FALLBACK-MAX-MS = 30000.** If unfinished at 10s, keep loading chrome. At 30s total, stop unfinished source retrieval for that Ask, omit those sources as unavailable, ignore late results, keep photos/videos and any sources already attached. That outcome is a **performance failure** with honest UI.
+**I14-REQ-PERF-4. Fallback / 30s timeout:** If communications are unfinished at 10 seconds, show photo-first loading. At **30 seconds** total: stop unfinished source retrieval for that Ask; omit those sources; mark them unavailable for that Ask; **ignore late results**. Record **`gallery_settled_ms`**. Set **`gallery_complete_ms = null`**. That outcome is a **performance failure** with honest UI. Photos/videos and other successfully loaded current sources remain visible.
 
-**I14-REQ-PERF-5.** Fail if Gallery `complete=true` while a configured current source was omitted. Fail if a superseded Ask’s comms attach after cancel.
+**I14-REQ-PERF-5.** Fail if Gallery `complete=true` while a configured current source was omitted. Fail if a superseded Ask’s comms attach after cancel. Fail if `gallery_complete_ms` is set when any configured current source timed out.
 
 ---
 
@@ -554,6 +559,7 @@ Minimum scenarios (must have explicit tests or prove checks before founder I14 a
 10. Duplicate historical record not reinserted  
 10a. Unchanged extract short-circuit  
 10b. Changed extract containing only one historical addition  
+10c. Same historical record in two different full-extract files/import runs → one immutable evidence record  
 11. One-source failure (other sources’ published generations intact)  
 12. Interrupted rebuild (no mixed generation **within** a source)  
 13. Rerun after failure  
@@ -563,7 +569,7 @@ Minimum scenarios (must have explicit tests or prove checks before founder I14 a
 17. Cold-start `Show me Peggy`  
 18. Warm `Show me Peggy`  
 19. Complete Gallery within approximately 10 seconds (primary pass)  
-20. Photo-first fallback with active loading indicator (honest UI); unfinished sources omitted at 30s; performance fail if fallback max hit  
+20. Photo-first fallback with active loading indicator (honest UI); at 30s omitted sources unavailable, `gallery_settled_ms` recorded, `gallery_complete_ms` null, late results ignored; performance fail  
 21. New Ask cancels prior communication loading (measure `ask_cancel_ms`)  
 22. Year/month/day aggregation  
 23. Multi-day calendar event (once, full range)  
@@ -578,30 +584,22 @@ Plus: no new top-level screen; HC-2 Scheduled Services still healthy; I13 jobs u
 
 ## 29. Proposed build phases
 
-All phases **blocked** until founder authorizes implementation.
+All implementation phases **blocked** until founder authorizes **Phase B**.
 
 | Phase | Work | Founder gate |
 | --- | --- | --- |
-| **A** | This PRD + assessment | **You are here.** Review/authorize docs commit and later build. |
-| **B** | **Entry gate:** reconcile FlightSim 026–029 vs git; then I14 migration number TBD; derived tables; checkpoint; no Ask change | Schema review after reconciliation |
+| **A** | Assessment + PRD | **Complete.** Commit `067e27d` on `origin/codex/p2-i14-communications`. |
+| **B** | **Entry gates:** (1) reconcile FlightSim 026–029 vs git; (2) **logical source lineage / cross-extract dedupe** (§8 SRC-8, §9 ING-9) before schema. Then I14 migration number TBD; derived tables; checkpoint; no Ask change | Schema review after both gates |
 | **C** | Complete-extract scan ingest; closed-date progress; three-source nightly CLI; disabled Windows task | No live ingest until authorized |
 | **D** | Shared prep service (move compaction/grouping off Ask path); persist **per-source** generation; atomic per-source publish | — |
 | **E** | Peggy reconstruction report | **Peggy gate — stop** |
 | **F** | Second Person proof (Person named after Peggy) | **Stop** |
 | **G** | Explore planner/find/UI: unified Gallery, per-source status in payload, loading/unavailable, return snapshot, thread Save as Story | UX review |
-| **H** | Perf cold/warm; 10s complete target; 30s fallback max; cancel | Performance evidence |
+| **H** | Perf cold/warm; `gallery_complete_ms` vs `gallery_settled_ms`; 10s complete; 30s timeout | Performance evidence |
 | **I** | Scheduled Services card; Archive Health freshness | Ops |
 | **J** | Founder I14 acceptance | Enable nightly task only after accept |
 
-Suggested documentation commit (when authorized, not now):
-
-```text
-docs(p2-i14): add Communications and Unified Gallery Phase A PRD
-
-Record repository-backed I14 definition, I11A reuse map, and founder gates. No implementation.
-```
-
-Suggested implementation branch (already created locally, not pushed): `codex/p2-i14-communications` from `673676b`.
+Implementation branch: `codex/p2-i14-communications` (pushed). No further documentation-commit proposal for Phase A.
 
 ---
 
@@ -612,6 +610,7 @@ Suggested implementation branch (already created locally, not pushed): `codex/p2
 | T1 | **MBRM-001C I14** is “everything MemoryBox knows” (Stories, Artifacts, Journal, spoken). **This brief** is the communications/calendar slice of Unified Person Evidence and Gallery. | I14 **this PRD**. Broader Stories/Artifacts/Journal/spoken expansion is **post-I14** unless separately authorized. |
 | T2 | **2026-09-03 §4** wants one assembled result. **This brief** allows visible photo-first if ~10s is missed. | Complete Gallery remains the objective. Photo-first is an honest fallback, not a contradiction. Silent omit remains forbidden. |
 | T3 | FlightSim health listed migrations **026–029**. **This clone has 025 then 030.** | **Phase B entry gate.** I14 migration number TBD. No I14 migration file until 026–029 are recovered, represented, or explicitly retired. |
+| T7 | Today’s `evidence_exists_by_hash` is `(source_id, content_hash)` and `sources` uniqueness is `(uri, source_kind)`. Successive full exports may **not** share one logical `source_id`. | **Phase B entry gate before schema.** Define stable logical source lineage + record identity/`content_hash`. Cross-extract dedupe must survive changed filenames, paths, import runs, and export timestamps. Do not uniqueness-scope solely to extract `source_id`. |
 | T4 | `Show me Peggy` **hides** comms today. I14 **includes** them in the coordinated Gallery. | Intentional. Old hidden-comms Person Ask tests **must be replaced**, not preserved as regressions. |
 | T5 | Save as Story today is Ask-pack-wide, not entire thread. | Thread entry point is new behavior on existing control. |
 | T6 | Bundle vs per-source generations. | **Locked here:** independent per-source generations and timestamps; no mixed N/N+1 **within** a source; Gallery names each source’s generation/status. |
@@ -620,23 +619,22 @@ Suggested implementation branch (already created locally, not pushed): `codex/p2
 | Q3 | Exact second Person for §27. | **Open — founder selection after Peggy.** |
 | Q4 | Nightly task identity. | **Locked:** same Windows account and execution pattern as accepted HC-2. **Verify on FlightSim at deploy** (account, permissions, working directory, interpreter, state path). Do not assume values from docs alone. |
 | Q5 | `MEMORYBOX_ICS_URI` | **Locked for I14 source contract:** first-class env (alongside smoke ICS). Example file update is implementation-phase docs, not this commit’s runtime change. |
-| Q6 | **I14-REQ-PERF-FALLBACK-MAX-MS** | **Locked = 30000.** 10s complete-Gallery target; at 30s omit unfinished sources for that Ask and fail performance. |
+| Q6 | **I14-REQ-PERF-FALLBACK-MAX-MS** | **Locked = 30000.** On timeout: `gallery_complete_ms` is null; `gallery_settled_ms` is recorded; omitted sources unavailable; late results ignored. |
 
 ---
 
-## Appendix A — Repository / git checkpoint (Phase A start)
+## Appendix A — Repository / git checkpoint
 
 | Item | Value |
 | --- | --- |
 | Path | `E:\MemoryBox-dev\p2-i13-stage-a` |
-| Branch | `codex/p2-i14-communications` (from I13/HC-2 HEAD `673676b`) |
-| Status at branch create | clean, matched `origin/codex/p2-i13-stage-a` |
-| HEAD | `673676bacf74e213b2d5c866518105a79b959b84` |
-| Remote `origin/codex/p2-i13-stage-a` | same SHA |
+| Branch | `codex/p2-i14-communications` (**pushed** `origin/codex/p2-i14-communications`) |
+| Phase A commit | `067e27dfa1493fa3274f9c0d662bda4442f3bbc3` |
+| Base (HC-2 acceptance record) | `673676bacf74e213b2d5c866518105a79b959b84` |
 | HC-1 accepted | `f777832cb4581344b294fcbd961eea5a0ecc4e10` |
-| HC-2 | **ACCEPTED 2026-09-11**, runtime `743c76712cb286ccdae3ad1108fb260dbd04770d`, docs `673676b` |
+| HC-2 | **ACCEPTED 2026-09-11**, runtime `743c76712cb286ccdae3ad1108fb260dbd04770d` |
 
-No worktree. No second clone.
+No worktree. No second clone. Implementation unauthorized pending Phase B.
 
 ---
 
@@ -644,7 +642,7 @@ No worktree. No second clone.
 
 Authoritative capture rules: [`p2-i14/assets/README.md`](p2-i14/assets/README.md).
 
-**Baseline (“before”) evidence** — not in git until captured; **does not block** this Phase A documentation commit; **complete before I14 UI changes**. Do not overwrite with acceptance shots. Fixture or sanitized live data only.
+**Baseline (“before”) evidence** — PNG files **not** in git until captured; **complete before I14 UI changes**. Planned Markdown is **literal** (backticks / fenced examples), not rendered images, until each sanitized file is committed. Do not overwrite with acceptance shots. Fixture or sanitized live data only.
 
 | Planned file | PRD reference |
 | --- | --- |

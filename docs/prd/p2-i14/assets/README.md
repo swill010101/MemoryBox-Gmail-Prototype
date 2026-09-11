@@ -1,6 +1,10 @@
 # P2-I14 screen assets
 
-Images in this folder are **separate PNG/JPG repository files**. Reference them from the PRD with **relative** Markdown only:
+Images in this folder are **separate PNG/JPG repository files**. Convert a planned caption to an **active** Markdown image (`![...](...)`) **only when that sanitized PNG is committed** in this folder.
+
+Until then, keep planned references as **literal code** (fenced examples or backtick-wrapped table cells). Do **not** leave active `![...](...)` lines for files that do not exist — they render as broken images.
+
+When a file exists, use a **relative** path from the PRD:
 
 ```markdown
 ![caption](p2-i14/assets/filename.png)
@@ -13,7 +17,7 @@ Images in this folder are **separate PNG/JPG repository files**. Reference them 
 - absolute `C:` / `E:` / FlightSim `C:\MemoryBox` paths
 - upload, Library, or scratch paths
 - I13 Learn / face / voice / transcript screenshots (unless a later implementation dependency is proven)
-- fabricated / mocked “after I14” screenshots during Phase A
+- fabricated / mocked “after I14” screenshots while implementation is unauthorized
 - committed images that expose private family email/SMS **bodies**, email **addresses**, telephone **numbers**, calendar **details**, credentials, tokens, or unrelated personal information
 
 Prefer **controlled fixture/sample data**. If live FlightSim UI must be used, **crop or visibly redact** sensitive content before adding the file. Record **fixture** vs **sanitized live** in the table below.
@@ -25,7 +29,7 @@ Prefer **controlled fixture/sample data**. If live FlightSim UI must be used, **
 | `baseline-*.png` | Accepted HC-2 “before” evidence (current behavior) | Never overwrite with acceptance shots |
 | `acceptance-*.png` | Later I14 implemented behavior | Separate files only |
 
-Absence of baseline PNG files **does not block** the Phase A documentation commit. Capturing them remains an **evidence item to complete before the affected UI is changed**.
+Absence of baseline PNG files does **not** reopen Phase A. Capturing them remains an **evidence item to complete before the affected UI is changed**.
 
 ## Baseline set (accepted HC-2 “before”)
 
@@ -42,25 +46,20 @@ Capture from the accepted HC-2 baseline (runtime SHA `743c767`) on `/explore/ui`
 | `baseline-explore-save-as-story.png` | Save as Story control on Explore | *pending capture — fixture or sanitized live* |
 | `baseline-admin-jobs-scheduled-services.png` | Admin Scheduled Services (HC-2 pattern to extend; not I13 queues) | *pending capture — fixture or sanitized live* |
 
-Planned PRD references (files not in git until captured):
+Planned PRD references (literal until each file is committed):
 
+```markdown
 ![Ask/Gallery baseline](baseline-explore-ask-gallery.png)
-
 ![Communications chip hidden](baseline-explore-comms-chip-hidden.png)
-
 ![Day-stack email](baseline-explore-day-stack-email.png)
-
 ![Email detail modal](baseline-explore-email-detail-modal.png)
-
 ![SMS thread](baseline-explore-sms-thread.png)
-
 ![Calendar card](baseline-explore-calendar-card.png)
-
 ![Save as Story](baseline-explore-save-as-story.png)
-
 ![Admin Scheduled Services](baseline-admin-jobs-scheduled-services.png)
+```
 
-## Later acceptance set (do not capture in Phase A)
+## Later acceptance set (do not capture while implementation is unauthorized)
 
 Separate files, **never** replacing `baseline-*`:
 
