@@ -1,6 +1,6 @@
 {
   "gmail": {
-    "user_email": "memorybox@marvinbot.net",
+    "user_email": "historian-capture@example.invalid",
     "credentials_file": "config/historian_capture_gmail_credentials.json",
     "token_file": "config/historian_capture_gmail_token.json",
     "scopes": [

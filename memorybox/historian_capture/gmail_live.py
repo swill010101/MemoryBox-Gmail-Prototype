@@ -59,15 +59,21 @@ def looks_like_hc_outbound_body(text: str | None) -> bool:
     return HC_OUTBOUND_MARKER in t and len(t) < 800
 
 
+PLACEHOLDER_HC_USER_EMAILS = frozenset({"historian-capture@example.invalid"})
+
+
 def resolve_historian_user_email(cfg: dict[str, Any] | None = None) -> str:
     env = (os.environ.get("MEMORYBOX_HC_USER_EMAIL") or "").strip()
     if env and "@" in env:
-        return env
-    if cfg:
+        candidate = env
+    elif cfg:
         raw = ((cfg.get("gmail") or {}).get("user_email") or "").strip()
-        if raw and "@" in raw:
-            return raw
-    return HC_MAILBOX
+        candidate = raw if raw and "@" in raw else ""
+    else:
+        candidate = ""
+    if not candidate or candidate.lower() in PLACEHOLDER_HC_USER_EMAILS:
+        return ""
+    return candidate
 
 
 def load_historian_gmail_config() -> dict[str, Any]:
@@ -77,15 +83,11 @@ def load_historian_gmail_config() -> dict[str, Any]:
         or str(_REPO_ROOT / "config" / "historian_capture.json")
     )
     gmail: dict[str, Any] = {
-        "credentials_file": os.environ.get(
-            "MEMORYBOX_HC_GMAIL_CREDENTIALS",
-            str(_REPO_ROOT / "config" / "historian_capture_gmail_credentials.json"),
+        "credentials_file": str(
+            _REPO_ROOT / "config" / "historian_capture_gmail_credentials.json"
         ),
-        "token_file": os.environ.get(
-            "MEMORYBOX_HC_GMAIL_TOKEN",
-            str(_REPO_ROOT / "config" / "historian_capture_gmail_token.json"),
-        ),
-        "user_email": resolve_historian_user_email(),
+        "token_file": str(_REPO_ROOT / "config" / "historian_capture_gmail_token.json"),
+        "user_email": "",
         "scopes": [
             "https://www.googleapis.com/auth/gmail.modify",
             "https://www.googleapis.com/auth/gmail.send",
@@ -98,19 +100,21 @@ def load_historian_gmail_config() -> dict[str, Any]:
             gmail.update(data.get("gmail") or {})
         except Exception:
             pass
+    env_creds = (os.environ.get("MEMORYBOX_HC_GMAIL_CREDENTIALS") or "").strip()
+    env_token = (os.environ.get("MEMORYBOX_HC_GMAIL_TOKEN") or "").strip()
+    if env_creds:
+        gmail["credentials_file"] = env_creds
+    if env_token:
+        gmail["token_file"] = env_token
+    gmail["user_email"] = resolve_historian_user_email({"gmail": gmail})
     return {"gmail": gmail}
 
 
 def build_historian_gmail_client(cfg: dict[str, Any] | None = None) -> Any:
     cfg = cfg or load_historian_gmail_config()
-    try:
-        from application.marvin_capture.gmail_client import build_live_gmail_client
+    from application.marvin_capture.gmail_client import build_live_gmail_client
 
-        return build_live_gmail_client(cfg)
-    except ImportError as exc:  # pragma: no cover
-        raise RuntimeError(
-            "application.marvin_capture required for live Historian Gmail on FlightSim"
-        ) from exc
+    return build_live_gmail_client(cfg)
 
 
 class MarvinGmailHistorianEmailAdapter:

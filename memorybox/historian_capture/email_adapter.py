@@ -344,34 +344,104 @@ class UnavailableHistorianEmailAdapter:
         return
 
 
-_ADAPTER: HistorianEmailAdapter | None = None
-_ADAPTER_STATUS: dict[str, Any] = {
-    "provider_key": None,
-    "ok": False,
-    "detail": "not_initialized",
-    "capture_mailbox": HC_MAILBOX,
-    "configured_email": HC_MAILBOX,
-    "transport_email": None,
-    "user_email": HC_MAILBOX,
-    "live": False,
+FAMILY_GMAIL_FILENAMES = frozenset({"gmail_credentials.json", "gmail_token.json"})
+
+PUBLIC_REASON_DETAIL = {
+    "not_initialized": "Historian Capture email status has not been checked yet.",
+    "cleared": "Historian Capture email is not connected on this host.",
+    "fake_ok": "Historian Capture test email provider is connected.",
+    "live_ok": "Historian Capture email is connected.",
+    "missing_user_email": (
+        "The dedicated Historian Capture mailbox address is not configured on this host."
+    ),
+    "missing_credentials": (
+        "Dedicated Historian Capture Gmail credentials are not configured on this host. "
+        "Family Gmail files are not used."
+    ),
+    "missing_token": (
+        "Dedicated Historian Capture Gmail authorization is not configured on this host."
+    ),
+    "missing_transport": (
+        "Historian Capture Gmail transport is not installed on this host."
+    ),
+    "family_gmail_rejected": (
+        "Family Gmail cannot be used for Historian Capture. "
+        "Configure the dedicated capture mailbox instead."
+    ),
+    "unavailable": "Historian Capture email is not connected on this host.",
 }
+
+
+def _is_family_gmail_path(path: Path) -> bool:
+    return path.name.lower() in FAMILY_GMAIL_FILENAMES
+
+
+def _status_payload(
+    *,
+    ok: bool,
+    reason: str,
+    provider_key: str | None,
+    live: bool,
+    configured_email: str | None = None,
+    transport_email: str | None = None,
+    user_email: str | None = None,
+    has_dedicated_credentials: bool | None = None,
+    has_dedicated_token: bool | None = None,
+) -> dict[str, Any]:
+    detail = PUBLIC_REASON_DETAIL.get(reason, PUBLIC_REASON_DETAIL["unavailable"])
+    channel = ""
+    if configured_email and "@" in configured_email:
+        channel = configured_email
+    if ok and reason == "live_ok" and transport_email and "@" in transport_email:
+        if channel and transport_email.lower() != channel.lower():
+            detail = (
+                f"Capture channel {channel} is connected "
+                f"(Gmail account {transport_email})."
+            )
+        else:
+            detail = f"Capture channel {transport_email} is connected."
+            channel = transport_email
+    elif ok and reason == "live_ok" and channel:
+        detail = f"Capture channel {channel} is connected."
+    payload: dict[str, Any] = {
+        "provider_key": provider_key,
+        "ok": ok,
+        "reason": reason,
+        "detail": detail,
+        "capture_mailbox": channel,
+        "configured_email": configured_email,
+        "transport_email": transport_email,
+        "user_email": user_email or channel,
+        "live": live,
+    }
+    if has_dedicated_credentials is not None:
+        payload["has_dedicated_credentials"] = has_dedicated_credentials
+    if has_dedicated_token is not None:
+        payload["has_dedicated_token"] = has_dedicated_token
+    return payload
+
+
+_ADAPTER: HistorianEmailAdapter | None = None
+_ADAPTER_STATUS: dict[str, Any] = _status_payload(
+    ok=False,
+    reason="not_initialized",
+    provider_key=None,
+    live=False,
+)
 
 
 def set_email_adapter(adapter: HistorianEmailAdapter | None) -> None:
     global _ADAPTER
     _ADAPTER = adapter
     if adapter is None:
+        _ADAPTER_STATUS.clear()
         _ADAPTER_STATUS.update(
-            {
-                "provider_key": None,
-                "ok": False,
-                "detail": "cleared",
-                "capture_mailbox": HC_MAILBOX,
-                "configured_email": HC_MAILBOX,
-                "transport_email": None,
-                "user_email": HC_MAILBOX,
-                "live": False,
-            }
+            _status_payload(
+                ok=False,
+                reason="cleared",
+                provider_key=None,
+                live=False,
+            )
         )
 
 
@@ -384,24 +454,29 @@ def get_email_adapter() -> HistorianEmailAdapter:
     global _ADAPTER
     if _ADAPTER is not None:
         return _ADAPTER
-    mode = (os.environ.get("MEMORYBOX_HC_EMAIL_PROVIDER") or os.environ.get("MEMORYBOX_GC_EMAIL_PROVIDER") or "auto").strip().lower()
+    mode = (
+        os.environ.get("MEMORYBOX_HC_EMAIL_PROVIDER")
+        or os.environ.get("MEMORYBOX_GC_EMAIL_PROVIDER")
+        or "auto"
+    ).strip().lower()
     if mode == "fake":
         _ADAPTER = FakeHistorianEmailAdapter()
+        _ADAPTER_STATUS.clear()
         _ADAPTER_STATUS.update(
-            {
-                "provider_key": "fake_historian_email",
-                "ok": True,
-                "detail": f"Historian Capture channel {HC_MAILBOX} (harness fake provider)",
-                "capture_mailbox": HC_MAILBOX,
-                "configured_email": HC_MAILBOX,
-                "transport_email": HC_MAILBOX,
-                "user_email": HC_MAILBOX,
-                "live": False,
-            }
+            _status_payload(
+                ok=True,
+                reason="fake_ok",
+                provider_key="fake_historian_email",
+                live=False,
+                transport_email=HC_MAILBOX,
+            )
         )
         return _ADAPTER
 
-    last_err = ""
+    fail_reason = "unavailable"
+    has_creds = False
+    has_token = False
+    user_email = ""
     if mode in ("auto", "marvin", "gmail", "live"):
         try:
             from memorybox.historian_capture.gmail_live import (
@@ -417,63 +492,62 @@ def get_email_adapter() -> HistorianEmailAdapter:
             token_path = Path(gmail.get("token_file") or "")
             user_email = resolve_historian_user_email(cfg)
             configured_email = user_email
-            has_creds = creds_path.is_file()
-            has_token = token_path.is_file()
+            family = _is_family_gmail_path(creds_path) or _is_family_gmail_path(token_path)
+            if family:
+                fail_reason = "family_gmail_rejected"
+            elif not user_email or "@" not in user_email:
+                fail_reason = "missing_user_email"
+            else:
+                has_creds = creds_path.is_file()
+                has_token = token_path.is_file()
+                if not has_creds:
+                    fail_reason = "missing_credentials"
+                elif not has_token:
+                    fail_reason = "missing_token"
+                else:
+                    client = build_historian_gmail_client(cfg)
+                    transport_email = user_email
+                    try:
+                        profile = client.service.users().getProfile(userId="me").execute()
+                        profile_email = (profile or {}).get("emailAddress") or ""
+                        if profile_email and "@" in profile_email:
+                            transport_email = profile_email
+                            user_email = profile_email
+                    except Exception:
+                        pass
+                    _ADAPTER = MarvinGmailHistorianEmailAdapter(client, user_email=user_email)
+                    _ADAPTER_STATUS.clear()
+                    _ADAPTER_STATUS.update(
+                        _status_payload(
+                            ok=True,
+                            reason="live_ok",
+                            provider_key="marvin_historian_gmail",
+                            live=True,
+                            configured_email=configured_email,
+                            transport_email=transport_email,
+                            user_email=transport_email,
+                            has_dedicated_credentials=True,
+                            has_dedicated_token=True,
+                        )
+                    )
+                    return _ADAPTER
+        except ImportError:
+            fail_reason = "missing_transport"
+        except Exception:
+            fail_reason = "unavailable"
 
-            if has_creds and has_token:
-                client = build_historian_gmail_client(cfg)
-                transport_email = user_email
-                try:
-                    profile = client.service.users().getProfile(userId="me").execute()
-                    profile_email = (profile or {}).get("emailAddress") or ""
-                    if profile_email and "@" in profile_email:
-                        transport_email = profile_email
-                        user_email = profile_email
-                except Exception:
-                    pass
-                _ADAPTER = MarvinGmailHistorianEmailAdapter(client, user_email=user_email)
-                _ADAPTER_STATUS.update(
-                    {
-                        "provider_key": "marvin_historian_gmail",
-                        "ok": True,
-                        "detail": (
-                            f"Historian Capture channel {HC_MAILBOX}; "
-                            f"Gmail API transport {transport_email}"
-                        ),
-                        "capture_mailbox": HC_MAILBOX,
-                        "configured_email": configured_email,
-                        "transport_email": transport_email,
-                        "user_email": transport_email,
-                        "live": True,
-                    }
-                )
-                return _ADAPTER
-            if mode in ("marvin", "gmail", "live"):
-                last_err = (
-                    f"MEMORYBOX_HC_EMAIL_PROVIDER={mode} but credentials/token missing "
-                    f"(creds={has_creds} token={has_token} at {creds_path} / {token_path})"
-                )
-            elif mode == "auto":
-                last_err = (
-                    "No Historian Capture Gmail credentials/token; "
-                    "set MEMORYBOX_HC_GMAIL_CREDENTIALS + MEMORYBOX_HC_GMAIL_TOKEN "
-                    "or MEMORYBOX_HC_EMAIL_PROVIDER=fake for harness."
-                )
-        except Exception as exc:  # noqa: BLE001
-            last_err = f"Historian Gmail adapter failed: {exc}"
-
-    detail = last_err or "Historian Capture email provider unavailable"
-    _ADAPTER = UnavailableHistorianEmailAdapter(detail, user_email=HC_MAILBOX)
+    _ADAPTER = UnavailableHistorianEmailAdapter(
+        PUBLIC_REASON_DETAIL[fail_reason], user_email=user_email or None
+    )
+    _ADAPTER_STATUS.clear()
     _ADAPTER_STATUS.update(
-        {
-            "provider_key": "unavailable",
-            "ok": False,
-            "detail": detail,
-            "capture_mailbox": HC_MAILBOX,
-            "configured_email": HC_MAILBOX,
-            "transport_email": None,
-            "user_email": HC_MAILBOX,
-            "live": False,
-        }
+        _status_payload(
+            ok=False,
+            reason=fail_reason,
+            provider_key="unavailable",
+            live=False,
+            has_dedicated_credentials=has_creds if fail_reason != "family_gmail_rejected" else False,
+            has_dedicated_token=has_token if fail_reason != "family_gmail_rejected" else False,
+        )
     )
     return _ADAPTER

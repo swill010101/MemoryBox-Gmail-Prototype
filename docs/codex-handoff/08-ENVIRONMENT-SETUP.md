@@ -41,7 +41,7 @@ python -m memorybox prove-historian-capture --slice s5
 
 # Historian Capture — live
 $env:MEMORYBOX_HC_EMAIL_PROVIDER = "auto"
-$env:MEMORYBOX_HC_USER_EMAIL = "memorybox@marvinbot.net"
+# Set MEMORYBOX_HC_USER_EMAIL from gitignored host env (dedicated capture mailbox).
 # Credentials (local only, never commit):
 #   config/historian_capture_gmail_credentials.json
 #   config/historian_capture_gmail_token.json
@@ -67,7 +67,8 @@ Call sites:
 
 | Branch | Tip | Path |
 |--------|-----|------|
-| `cursor/marvin-capture-v01-3344` | `fe913a4` | `application/marvin_capture/` (16 files) |
+| `cursor/marvin-capture-v01-3344` | `fe913a4` | Full PoC `application/marvin_capture/` (16 files) |
+| `codex/p2-i13-stage-a` (HC-1) | this line | Vendored subset: `__init__.py`, `gmail_client.py`, `plus_address.py`, `reply_extract.py` |
 
 ### Why absent from I12 integration line
 
@@ -79,21 +80,11 @@ I12 was built as a MemoryBox-native module (`memorybox/historian_capture/`) with
 |------|--------|--------------|
 | `prove-historian-capture` (fake) | **Yes** | Postgres + `MEMORYBOX_HC_EMAIL_PROVIDER=fake` |
 | HC UI (read cached data) | **Yes** | Postgres + serve |
-| Live Gmail send/poll | **No** | PoC package + OAuth creds on FlightSim |
+| Live Gmail send/poll | **Yes** | Vendored `application/marvin_capture` transport + dedicated OAuth files |
 
-### Safest reproducibility path (FlightSim)
+### Vendored transport (HC-1)
 
-**Option A (current, no repo change):** Checkout PoC files alongside integration branch:
-
-```powershell
-git fetch origin cursor/marvin-capture-v01-3344
-git checkout origin/cursor/marvin-capture-v01-3344 -- application/marvin_capture
-# Do NOT commit unless founder authorizes vendor decision
-```
-
-**Option B (future, needs decision):** Vendor minimal transport modules into `memorybox/historian_capture/transport/` and drop PoC import.
-
-**Option C (future):** Git submodule or documented pip path — not implemented.
+The I13/I14 line vendors only `gmail_client.py`, `plus_address.py`, `reply_extract.py`, and `__init__.py` from `fe913a4` under `application/marvin_capture/`. PoC UI/SQLite/`config.py` are not included. `startmb.ps1` defaults `MEMORYBOX_HC_EMAIL_PROVIDER=auto`. Set `MEMORYBOX_HC_USER_EMAIL` in gitignored host env or `config/historian_capture.json` — serve scripts do not default the mailbox address. Restore OAuth files per [HISTORIAN_CAPTURE_GMAIL_RESTORE.md](../ops/HISTORIAN_CAPTURE_GMAIL_RESTORE.md).
 
 ### Config files
 

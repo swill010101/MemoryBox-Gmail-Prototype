@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>MemoryBox — Historian Capture</title>
-  <link rel="stylesheet" href="/static/explore/explore.css?v=hc-i12-3" />
+  <link rel="stylesheet" href="/static/explore/explore.css?v=hc-i12-4" />
   <link rel="stylesheet" href="/static/shell/mb-narrative-field.css?v=i10a2-7" />
   <style>
     :root {
@@ -282,9 +282,12 @@
     function mailboxBanner() {
       const m = state.mailbox || {};
       if (!m.ok) {
-        return `<div class="banner">Email is not connected yet. Historian Capture needs the dedicated capture channel configured on this host.</div>`;
+        const extra = (typeof m.detail === "string" && m.detail.trim())
+          ? ` ${esc(m.detail.trim())}`
+          : " Historian Capture needs the dedicated capture channel configured on this host.";
+        return `<div class="banner">Email is not connected yet.${extra}</div>`;
       }
-      const channel = m.capture_mailbox || "memorybox@marvinbot.net";
+      const channel = m.capture_mailbox || m.configured_email || "the capture channel";
       const transport = m.transport_email || m.user_email || "";
       if (transport && transport.toLowerCase() !== channel.toLowerCase()) {
         return `<div class="banner info">Capture channel <strong>${esc(channel)}</strong> · Gmail connected as <strong>${esc(transport)}</strong> (mail for this channel is received in that inbox).</div>`;
