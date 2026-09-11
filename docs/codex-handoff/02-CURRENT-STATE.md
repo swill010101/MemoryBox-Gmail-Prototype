@@ -7,6 +7,7 @@
 | I1–I8A, MBQL-001 | ACCEPTED | `prove-p2-i1` … `prove-p2-i8a`, `prove-mbql-001` |
 | I10, I10A/B/C, I10A.1, I10A.2 | ACCEPTED | `prove-p2-i10`, `prove-story`, `prove-i10c`, etc. |
 | **I12 Historian Capture** | **ACCEPTED 2026-09-04** | `prove-historian-capture` |
+| **HC-2 five-minute cadence** | **ACCEPTED 2026-09-11** | FlightSim SHA `743c76712cb286ccdae3ad1108fb260dbd04770d`; Windows task **MemoryBox Historian Capture Tick** enabled |
 | **I13 Video / face / STT / voice revalidation** | **ACCEPTED 2026-09-11** | FlightSim SHA `b2dd4a2c4cfd613b0d7cd32d9a4426b25be3ebcb`; [CONSOLIDATED-FINAL-I13-ACCEPTANCE-REVIEW.md](../implementation/p2-i13-stage-a/CONSOLIDATED-FINAL-I13-ACCEPTANCE-REVIEW.md) |
 
 ## Build authorized but not accepted

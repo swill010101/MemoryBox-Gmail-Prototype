@@ -1,6 +1,6 @@
 # Historian Capture HC-2 — autonomous five-minute cadence
 
-**Status:** implemented, not FlightSim-accepted. Do not register, enable, or send live mail until founder gates below.
+**Status:** ACCEPTED 2026-09-11. FlightSim SHA `743c76712cb286ccdae3ad1108fb260dbd04770d`. Windows task **MemoryBox Historian Capture Tick** is enabled on FlightSim. Do not reopen without founder direction.
 
 **HC-1 accepted base:** `f777832cb4581344b294fcbd961eea5a0ecc4e10`  
 **Production provider:** Namecheap Private Email (`privateemail`), mailbox `memorybox@marvinbot.net`  
@@ -163,26 +163,15 @@ Register uses:
 - MultipleInstances = IgnoreNew
 - **Disabled** after register (`-Enable` is refused)
 
-Do not register or enable during development.
+Do not register or enable a second copy during development.
 
 ## Credentials
 
 Unchanged from HC-1: `MEMORYBOX_HC_PRIVATEEMAIL_PASSWORD` or gitignored `config/historian_capture_privateemail_credentials.json`. Never in task XML or CLI args.
 
-## Deployment / acceptance / rollback (prepare only — do not execute)
+## Deployment / acceptance / rollback
 
-1. Deploy the approved HC-2 SHA to FlightSim (`C:\MemoryBox`), venv Python, load `memorybox_app.env`.
-2. `python -m memorybox migrate` — apply `034_historian_capture_hc2_tick.sql` (requires HC I12 tables). Verify `historian_capture_tick_heartbeat` and `idx_hc_items_inbound_msg`.
-3. `GET /historian-capture/email-status` remains `live_ok` / `namecheap_privateemail_imap_smtp`.
-4. One manual dry tick: `python -m memorybox hc-tick --dry-run`.
-5. Create the scheduled task **disabled** via `Register-HcTickTask.ps1`.
-6. Verify command, identity, paths, working directory, env loading (`Get-HcTickTask.ps1`).
-7. Founder authorizes **one** controlled scheduled/manual tick (not `--dry-run` if sending is intended; prefer a paused-except-one-test campaign).
-8. Verify inbound-first processing and no duplicate actions.
-9. Founder authorizes enabling the five-minute schedule (`Enable-ScheduledTask` — not this repo script).
-10. Observe at least three successful ticks.
-11. Verify heartbeat on the HC panel and Task Scheduler history.
-12. Founder accepts HC-2.
+Completed 2026-09-11 on FlightSim at SHA `743c76712cb286ccdae3ad1108fb260dbd04770d`: migrate 034, Namecheap `live_ok`, dry-run, register disabled, one live `Invoke-HcTick`, enable, more than three scheduled ticks, founder accept.
 
 Rollback: `Disable-HcTickTask.ps1` or `Unregister-HcTickTask.ps1`. Serve continues; cadence stops. HC-1 transport is unchanged. Migration 034 is additive.
 

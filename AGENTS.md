@@ -3,6 +3,7 @@
 **Integration commit (P2-I12 ACCEPTED):** `9f0d7dc75c7a4cfd633af2175399e4141e7f56ee`  
 **Tag:** `increment-12-accepted`  
 **P2-I13 ACCEPTED (2026-09-11):** FlightSim SHA `b2dd4a2c4cfd613b0d7cd32d9a4426b25be3ebcb` on `codex/p2-i13-stage-a`  
+**HC-2 ACCEPTED (2026-09-11):** FlightSim SHA `743c76712cb286ccdae3ad1108fb260dbd04770d` on `codex/p2-i13-stage-a` (five-minute Historian Capture tick enabled)  
 **Transition branch:** `transition/p2-i12-codex-handoff`  
 **Do not merge to `main` without explicit founder direction.** `main` is scaffolding only.  
 **Do not start I14** without explicit founder authorization.
@@ -28,6 +29,7 @@ Read in order:
 
 - **P2-I12 is ACCEPTED (2026-09-04).** Do not reopen without explicit founder direction.
 - **P2-I13 is ACCEPTED (2026-09-11).** Do not reopen without explicit founder direction.
+- **HC-2 is ACCEPTED (2026-09-11).** Do not reopen without explicit founder direction.
 - **No application behavior changes** on preservation/transition branches unless a new increment is authorized.
 - **Never commit secrets:** Gmail OAuth credentials/tokens, `.env`, databases, logs, fake-mail runtime dirs, personal media.
 - **Historian Capture production email** is Namecheap Private Email (`MEMORYBOX_HC_EMAIL_PROVIDER=privateemail`) for `memorybox@marvinbot.net`. Optional Gmail API is not the production path. See [docs/codex-handoff/08-ENVIRONMENT-SETUP.md](docs/codex-handoff/08-ENVIRONMENT-SETUP.md).

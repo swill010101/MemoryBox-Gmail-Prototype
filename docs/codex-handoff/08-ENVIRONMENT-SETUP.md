@@ -87,7 +87,7 @@ I12 was built as a MemoryBox-native module (`memorybox/historian_capture/`) with
 
 Production provider is Namecheap Private Email (`privateemail`) for `memorybox@marvinbot.net`. `startmb.ps1` defaults `MEMORYBOX_HC_EMAIL_PROVIDER=privateemail` and `MEMORYBOX_HC_USER_EMAIL=memorybox@marvinbot.net`. Store the app password only in gitignored env or `config/historian_capture_privateemail_credentials.json`. Optional Gmail API remains behind `MEMORYBOX_HC_EMAIL_PROVIDER=gmail`. See [HISTORIAN_CAPTURE_EMAIL_TRANSPORT.md](../ops/HISTORIAN_CAPTURE_EMAIL_TRANSPORT.md).
 
-HC-2 autonomous tick (`python -m memorybox hc-tick`, five-minute Windows task created **disabled**) is documented in [HISTORIAN_CAPTURE_HC2_CADENCE.md](../ops/HISTORIAN_CAPTURE_HC2_CADENCE.md). Do not register or enable the task until founder authorization.
+HC-2 autonomous tick (`python -m memorybox hc-tick`, five-minute Windows task **MemoryBox Historian Capture Tick**) is documented in [HISTORIAN_CAPTURE_HC2_CADENCE.md](../ops/HISTORIAN_CAPTURE_HC2_CADENCE.md). **HC-2 ACCEPTED 2026-09-11** at FlightSim SHA `743c76712cb286ccdae3ad1108fb260dbd04770d`.
 
 The I13 line still vendors `gmail_client.py`, `plus_address.py`, `reply_extract.py`, and `__init__.py` from `fe913a4` under `application/marvin_capture/` for the optional Gmail provider and plus-address helpers.
 
