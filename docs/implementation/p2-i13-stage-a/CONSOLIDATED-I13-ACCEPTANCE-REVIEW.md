@@ -3,7 +3,7 @@
 **Date:** 2026-09-08  
 **Branch:** `codex/p2-i13-stage-a`  
 **Prepared for:** Tom (founder acceptance)  
-**I13 status:** **OPEN** — awaiting founder sign-off below
+**I13 status:** **ACCEPTED 2026-09-11** — superseded for close-out by [CONSOLIDATED-FINAL-I13-ACCEPTANCE-REVIEW.md](CONSOLIDATED-FINAL-I13-ACCEPTANCE-REVIEW.md) (SHA `b2dd4a2c4cfd613b0d7cd32d9a4426b25be3ebcb`). This file remains the 2026-09-08 bounded-evidence snapshot.
 
 ---
 

@@ -51,4 +51,4 @@
 
 ## Next increment (not authorized to build)
 
-Per [MBRM-001C](../product/MBRM-001C_P2_POST_I12_ROADMAP.md): **P2-I13 Video, Face, STT & Voice Pipeline Revalidation**.
+Per [MBRM-001C](../product/MBRM-001C_P2_POST_I12_ROADMAP.md): **P2-I14 Unified Person Evidence & Timeline**. **I13 is ACCEPTED (2026-09-11)** at FlightSim SHA `b2dd4a2c4cfd613b0d7cd32d9a4426b25be3ebcb`. Do not start I14 without explicit founder authorization.

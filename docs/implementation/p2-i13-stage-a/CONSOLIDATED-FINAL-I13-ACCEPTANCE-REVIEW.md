@@ -1,61 +1,93 @@
-# Consolidated final I13 acceptance review (template — after FlightSim proof)
+# Consolidated final I13 acceptance review
 
-**Status:** **DRAFT — pending live FlightSim proof**  
-I13 must **not** close on FR-005 playback or the two-source fragment pilot alone.
+**I13 status:** **ACCEPTED** — closed 2026-09-11 by founder sign-off.  
+**This is not a new increment.** No deploy, restore, requeue, evidence create/withdraw, criteria change, additional processing, I14 build, or cleanup execution is authorized by this close.
 
-Complete [CONSOLIDATED-DEPLOYMENT-REQUEST-ACCEPTANCE-LEARNING.md](CONSOLIDATED-DEPLOYMENT-REQUEST-ACCEPTANCE-LEARNING.md) and [LEGACY-HVRT-FRAGMENT-RECONCILIATION-GATE.md](LEGACY-HVRT-FRAGMENT-RECONCILIATION-GATE.md) before founder sign-off.
+**Deployed SHA (FlightSim, frozen):** `b2dd4a2c4cfd613b0d7cd32d9a4426b25be3ebcb`  
+**Admission:** `9e1cb49b-ec9d-40cb-ac34-7b3968d5af2a` (stopped, `interactive_learn_enabled`, bounded `acceptance_learning`)  
+**Person:** Eugene Will `b67708d8-0262-404d-a230-2cc99900cea4`
 
----
+**Founder sign:** Tom — “i13 visually verified…. i13 accepted.” (2026-09-11)  
+**Reference:** FlightSim live visual pass + face/voice engineering proofs below  
+**Dump path (FlightSim, not pasted in chat):** `C:\MemoryBox-backups\i13-interactive-learn-20260910-105354\voice-exemplar-interval-transcript.txt`
 
-## Prerequisites completed (desktop)
-
-- [x] Admin landing, Jobs, Learned Evidence implemented
-- [x] Bounded `acceptance-learning-bounded-plan.json` validates (88 work items, SHA `edd2ddc39…`)
-- [x] FR-005 offline binder passed ([fr005-playback-spotcheck-proof.json](fr005-playback-spotcheck-proof.json))
-- [x] Interactive Learn two-lane separation + async follow-on (commit on `codex/p2-i13-stage-a`)
-- [x] Legacy fragment reconciliation gate tooling + offline tests (manifest-scoped; not archive-wide)
-- [x] Founder decision B recorded
-
-## Live FlightSim proof (fill after deploy)
-
-### Interactive Learn + Admin
-
-| # | Checkpoint | Class | Evidence |
-|---|---|---|---|
-| 1 | Face box → Person → Learn | | |
-| 2 | Transcript → Person → voice Learn | | |
-| 3 | Admin → Learned Evidence | | |
-| 4 | Admin → Jobs (async follow-on rows) | | |
-| 5 | Correction / removal | | |
-| 6 | Learn on after stop + enable-interactive-learn | | |
-| 7 | Bounded acceptance_learning admission | | admission UUID, start/stop refs |
-| 8 | FR-005 Explore spot-check | | manual note + binder JSON |
-
-### Legacy HVRT fragment reconciliation (manifest-scoped)
-
-| # | Checkpoint | Class | Evidence |
-|---|---|---|---|
-| F1 | Full manifest inventory | | `legacy-hvrt-fragment-inventory.json` |
-| F2 | Founder-reviewed preview | | `legacy-hvrt-fragment-preview.json` |
-| F3 | Allowlist published + deployed | | `publish-fragment-allowlist.py` reference |
-| F4 | Source/observation/provenance preserved | | inventory + DB spot-check |
-| F5 | Duplicate presentations removed | | before/after counts |
-| F6 | Timing gaps preserved | | preview partitions |
-| F7 | Pipeline anti-fragment (future scans) | | unit tests + cadence proof |
-| F8 | Live Gallery/retrieval representative proof | | owner notes + `verify-fragment-reconciliation.py` |
-
-Inspector outputs to attach:
-
-- `inspect-interactive-learn-reconciliation.py` → Learn checks **passed**
-- `inspect-face-voice-corroboration.py` → `ok: true`
-- `verify-fragment-reconciliation.py` → `ok: true` (after F1 inventory JSON attached)
+Do **not** reopen I13 without explicit founder direction. Do **not** merge to `main` without explicit founder direction.
 
 ---
 
-## Founder acceptance (after proof)
+## Engineering processing proofs (accepted 2026-09-11)
 
-- [ ] **Accept** P2-I13 closed on completed scope  
-- [ ] **Reject** — return for: ___________________
+| Proof | Identifier | Result |
+|---|---|---|
+| Face owner_learn queue | `72050a51-91e1-49b9-874a-7726109cfce5` | **completed** on `vid-c57dbd21f993f6d1` (`20111105_1532.MP4`) |
+| Voice owner_learn queue | `0886a090-2bae-4895-8ab6-38f73e1bb4a2` | **completed** (upsert from historical `excluded` / `no_voice_exemplars`) on `vid-da41273dbd9ac4bb` |
+| Active Eugene voice exemplar | `26be56d0-659f-4a0f-bef5-c89a3a097d99` | `speechbrain-ecapa`, withdrawn false, meta `owner_review_learn` / `mb_native_i9`, interval **1673.48–1718.92 s** |
+| Bulk drains | recognition 0, speech 0 | held |
+| Archive | locked | held |
+| Inspector check 7 | `queue_not_stranded` | **passed** — no scoped owner_learn queued/running; 2 terminal rows |
+| Inspector check 8 | `owner_learn_follow_on_succeeded` | **passed** — completed face=1, voice=1, scoped_total=2 |
+| Inspector exit | `INSPECTOR_EXIT=0` | `C:\MemoryBox-backups\i13-interactive-learn-20260910-105354\voice-proof-learn-recon.json` |
 
-**Reference:** ___________________  
-**Date:** ___________________
+---
+
+## 1. Voice-evidence quality — **founder passed**
+
+Founder visually verified the learned interval and accepted I13. Speaker purity is therefore **founder-passed**, not independently re-scored from chat (interval dump file was produced on FlightSim; body was not pasted here).
+
+Interval: **1673.48–1718.92 s** on `vid-da41273dbd9ac4bb`. Learn may have labeled overlapping turns Eugene/`owner_confirmed`; founder visual review is the purity authority.
+
+---
+
+## 2. Admin Learned Evidence
+
+**Code (SHA `b2dd4a2`):** `scope=exemplars` lists all non-withdrawn `speech_voice_exemplars` without filtering `owner_review_learn`. Voice `method`/`is_owner_learn` is `owner_learn`. Face requires `method = 'owner_learn'`. UI: Person, source, interval, Withdraw.
+
+**Founder:** visually verified Learned Evidence as part of I13 accept.
+
+---
+
+## 3. Inspectors on record
+
+| Inspector | Result | Limits |
+|---|---|---|
+| Interactive Learn reconciliation | 2026-09-11: checks **6, 7, 8 passed**; **1–5 not tested**; `gate_passed: true`; `INSPECTOR_EXIT=0` | 1–5 are UI; founder visual checklist covers them |
+| Face/voice corroboration | 2026-09-08 FlightSim `ok: true`, 8 assignments | Canonical eight / voice-pilot overlap |
+| 22-video fragment gate | Allowlist: two approved source runs (1532 + 1530), `manifest_id` `p2-i13-flightsim-22`. Founder Gallery sample visually verified (no duplicate short-fragment presentations) | Allowlist not expanded at close |
+| Archive/drain | `archive=True`, `rec=0`, `speech=0` | Held through close |
+
+---
+
+## 4. Founder visual checklist — **signed**
+
+| # | Check | Result |
+|---|---|---|
+| V1 | Right-rail Learn available with admission stopped | **passed** (founder visual) |
+| V2 | Admin Jobs: face `72050a51-…` and voice `0886a090-…` completed | **passed** (engineering + founder visual) |
+| V3 | Admin Learned Evidence: active Eugene face + voice `26be56d0-…` | **passed** (founder visual) |
+| V4 | FR-005 playback continues past evidence interval | **passed** (founder visual) |
+| V5 | Gallery 22-video sample: no duplicate short-fragment cards | **passed** (founder visual) |
+
+**Sign (founder):**
+
+- [x] Visual checklist complete  
+- [x] Voice interval quality accepted by founder visual verification  
+- [x] **Accept** P2-I13 closed on completed scope  
+- [ ] Reject — n/a  
+
+**Reference:** Tom, FlightSim, SHA `b2dd4a2c4cfd613b0d7cd32d9a4426b25be3ebcb`  
+**Date:** 2026-09-11
+
+---
+
+## 5. Explicitly not authorized by this acceptance
+
+- Archive Outcomes C/D/E (register / unlock / start / drains)
+- Restore, deploy, requeue, new Learn, withdraw, criteria edits
+- I14 implementation
+- Codex/Cursor temp-directory cleanup (inventory only)
+
+---
+
+## 6. Cleanup inventory (still not executed)
+
+I13 is signed. Cleanup remains a **separate** I14-prep step. See [I13-CODEX-CURSOR-CLEANUP-INVENTORY.md](I13-CODEX-CURSOR-CLEANUP-INVENTORY.md). Do not delete backups or proof folders until Tom authorizes execution.

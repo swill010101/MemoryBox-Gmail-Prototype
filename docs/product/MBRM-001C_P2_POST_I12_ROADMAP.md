@@ -33,7 +33,7 @@ P2-I15 — External Historical Context
   ↓
 P2-I16 — Dynamic / Saved Views
   ↓
-P2-I17 — Settings & Processing Controls
+P2-I17 — Settings & Processing Controls (Admin / UX-consistency)
   ↓
 P2-I18 — Trust Consistency & Private Owner Trust
   ↓
@@ -300,7 +300,7 @@ This roadmap changes the post-I12 numbering recorded in MBRM-001B.
 | Previous MBRM-001B ID | Previous name | New ID |
 |---|---|---|
 | P2-I13 | Dynamic Views | **P2-I16** |
-| P2-I14 | Settings & Processing Controls | **P2-I17** |
+| P2-I14 | Settings & Processing Controls | **P2-I17** (Admin / UX-consistency) |
 | P2-I15 | Trust Consistency & Private Owner Trust | **P2-I18** |
 | P2-I16 | Portability & Import-back | **P2-I19** |
 | Deferred backlog | External Historical Context | **P2-I15** |
@@ -362,6 +362,40 @@ The following remain active unless separately closed:
 - archive configuration;
 - visibility into full-archive processing when I13 scales beyond the proof corpus.
 
+### Recorded 2026-09-11 during I13 closeout — Admin Learn Review and UX consistency (P2-I17)
+
+**Status:** Recorded only. **Not I13 scope.** Do not implement during I13 closeout. Do not change I13 code, tests, acceptance criteria, or the I13 deployment candidate.
+
+**Problem.** Video detail currently creates competing workflows:
+
+- contextual transcript annotation beneath the media;
+- Explore right-rail Learn;
+- legacy top-nav Review & Learn;
+- Admin Learned Evidence.
+
+**Founder decision (supersedes the earlier 2026-09-11 note that preferred under-video annotation for normal users).**
+
+- **Right-rail Learn is the preferred normal MemoryBox user workflow.** It is easier and more intuitive than the annotation box beneath the video.
+- After feature-parity reconciliation, **remove the separate under-video transcript annotation box** to eliminate duplicate workflows and give more room for transcript examination.
+- Before removal, **inventory everything the under-video annotation workflow can do that right-rail Learn cannot currently do**, then bring required capabilities into the right rail, including:
+  - known Person assignment;
+  - Unknown speaker assignment;
+  - timestamp-backed transcript-range selection;
+  - face selection;
+  - saved-assignment visibility;
+  - correction before submission;
+  - annotation-only evidence that should identify a Person but should **not** become reusable learning evidence.
+- Right-rail Learn remains the **intake/action** experience: identify the Person; capture selected face or voice evidence; save; start the appropriate bounded follow-on process.
+- **Admin** becomes the **management** experience: Learn Review; provenance and source interval; job status and progress; correction/reassignment; withdrawal/removal/retirement; retry when appropriate.
+- **Reconcile legacy top-nav Review & Learn** into this model so it does not remain a third competing workflow.
+
+**I13 preservation.** Keep the current I13 Explore Learn implementation until the Admin replacement and right-rail parity work are complete. Do **not** remove or redirect Explore Learn during I13 acceptance.
+
+**Also record (UX, not I13 closeout work):**
+
+- video-load failure visible in founder screenshot;
+- nested transcript/Learn scroll areas require UX correction.
+
 ### Trust / correction
 - merge;
 - split;
@@ -417,6 +451,7 @@ Locked 2026-09-03:
 - Stories and Artifacts should participate meaningfully in the timeline.
 - External Historical Context moves to **I15**.
 - Dynamic Views, Settings, Trust, and Portability shift to I16–I19.
+- **2026-09-11 (I13 closeout record only, corrected):** Right-rail Learn is the normal-user intake; Admin is Learn Review/management; remove under-video annotation only after right-rail parity; reconcile top-nav Review & Learn. Belongs to **P2-I17**. I13 Explore Learn stays. Not I13 implementation or acceptance.
 - I13 should primarily reuse existing MemoryBox screens; expected work is backend/process/proof heavy.
 - I11A remains on hold and I11B deferred pending reassessment after stronger evidence pipelines exist.
 

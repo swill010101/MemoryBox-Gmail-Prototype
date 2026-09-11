@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-08  
 **Branch:** `codex/p2-i13-stage-a`  
-**Status:** Pending founder acceptance — see [CONSOLIDATED-I13-ACCEPTANCE-REVIEW.md](CONSOLIDATED-I13-ACCEPTANCE-REVIEW.md). Open items include **interactive Learn + Admin screens** and **FR-005 live render** — not FR-005 alone.
+**Status:** **ACCEPTED 2026-09-11** — founder visual sign-off; deployed SHA `b2dd4a2c4cfd613b0d7cd32d9a4426b25be3ebcb`. Close record: [CONSOLIDATED-FINAL-I13-ACCEPTANCE-REVIEW.md](CONSOLIDATED-FINAL-I13-ACCEPTANCE-REVIEW.md). Rows below are the 2026-09-08 matrix snapshot and are not reopened.
 
 Classifications: **passed** | **waived** | **deferred** | **failed**
 
