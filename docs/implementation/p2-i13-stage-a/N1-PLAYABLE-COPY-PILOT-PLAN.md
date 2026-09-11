@@ -51,3 +51,7 @@ The first encode attempt is consumed and will not be repeated. `--validate-stage
 ## Limits
 
 This is a media-compatibility proposal only. It does not use Q1/N1 as voice evidence, alter the archive, change the app/worker, or unlock any I13 processing.
+
+## Publication and MemoryBox acceptance
+
+On 2026-09-07, the validated staged copy was atomically published at `browser_proxies/9eca7338d7a661aed03b02b9.mp4`. The worker status endpoint returned `ready` with the expected stream URL. Tom then validated playback in MemoryBox. This closes the N1 browser-playback gap for this exact source only. The original remains unchanged, and no database, queue, recognition, transcription, Learn, migration, service restart, or additional media conversion occurred.

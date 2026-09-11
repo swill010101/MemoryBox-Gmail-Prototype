@@ -6,6 +6,10 @@
 
 **Overlap pilot (stopped, do not retry):** `339b3a14-5069-4554-846f-dc84d6745c00` — [overlap-poor-audio-voice-pilot-report.json](overlap-poor-audio-voice-pilot-report.json).
 
+## H: storage migration planning only
+
+Tom requested a safe storage migration plan before any move. [H-DRIVE-STORAGE-MIGRATION-PLAN.md](H-DRIVE-STORAGE-MIGRATION-PLAN.md) defines a copy-verified, rollback-preserving H: cutover. It does not authorize or perform a copy, move, deletion, service change, Git-metadata move, database/Docker move, model invocation, media conversion, or processing action. It is operational work separate from I13 Gate acceptance.
+
 ## Current status - voice-result playback accepted by Tom
 
 Tom reports the FlightSim deployment of `d3785b93311920a3409961054368796ed7fa66b3` worked as designed: the read-only pilot-results panel opened the existing rich video viewer modal and reused an existing browser-playable copy. This confirms result-time navigation and no-conversion playback for the reviewed source. The release does not apply a migration, start a drain, unlock Learn, run recognition, transcribe media, or create derived media. This is owner-reported live acceptance; backup output and independent process inspection are not recorded here.
