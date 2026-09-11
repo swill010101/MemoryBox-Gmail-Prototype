@@ -133,13 +133,24 @@ class Hc2CadenceDbTests(unittest.TestCase):
     def setUp(self) -> None:
         os.environ["MEMORYBOX_HC_EMAIL_PROVIDER"] = "fake"
         os.environ["MEMORYBOX_HC_MAX_SENDS_PER_TICK"] = "5"
+        os.environ["MEMORYBOX_HC_HEARTBEAT_SKIP_DB"] = "1"
         self._state = tempfile.TemporaryDirectory()
         os.environ["MEMORYBOX_HC_STATE_DIR"] = self._state.name
         set_email_adapter(None)
-        self.t0 = datetime(2026, 9, 11, 18, 0, tzinfo=timezone.utc)
+        # Frozen past clock so live FlightSim due rows (2026) are not selected.
+        self.t0 = datetime(1999, 6, 15, 12, 0, tzinfo=timezone.utc)
+        self._campaign_ids: list[str] = []
 
     def tearDown(self) -> None:
+        from memorybox.historian_capture import pause_campaign
+
+        for cid in self._campaign_ids:
+            try:
+                pause_campaign(cid)
+            except Exception:
+                pass
         set_email_adapter(None)
+        os.environ.pop("MEMORYBOX_HC_HEARTBEAT_SKIP_DB", None)
         self._state.cleanup()
 
     def _campaign(self, fake, *, questions=None, respondents=None, follow_up=1, title=None):
@@ -156,7 +167,7 @@ class Hc2CadenceDbTests(unittest.TestCase):
                     "contact_route_value": f"pat.{tag}@example.com",
                 }
             ]
-        return create_campaign(
+        camp = create_campaign(
             title=title or f"HC2 {tag}",
             cadence_config_json={"pattern": "seconds", "interval_seconds": 3600},
             follow_up_interval_seconds=follow_up,
@@ -164,6 +175,16 @@ class Hc2CadenceDbTests(unittest.TestCase):
             respondents=respondents,
             questions=questions or [f"Q for {tag}?"],
         )
+        self._campaign_ids.append(str(camp["id"]))
+        camp["_tag"] = tag
+        camp["_to"] = respondents[0]["contact_route_value"]
+        return camp
+
+    def _sent_to(self, fake, to_email: str, *, reminder: bool | None = None):
+        rows = [s for s in fake.sent if s.get("to") == to_email]
+        if reminder is None:
+            return rows
+        return [s for s in rows if bool(s.get("is_reminder")) is reminder]
 
     def test_poll_before_followup_and_reply_suppresses_reminder(self) -> None:
         from memorybox.historian_capture import get_campaign, start_campaign, tick_scheduler
@@ -171,20 +192,21 @@ class Hc2CadenceDbTests(unittest.TestCase):
         fake = OrderFake()
         set_email_adapter(fake)
         camp = self._campaign(fake)
+        to_email = camp["_to"]
         start_campaign(camp["id"], now=self.t0)
         self.assertEqual(fake.calls[0], "poll")
-        self.assertIn("send", fake.calls)
+        self.assertEqual(len(self._sent_to(fake, to_email, reminder=False)), 1)
         token = get_campaign(camp["id"])["deliveries"][0]["correlation_token"]
         fake.inject_reply(
             correlation_token=token,
-            from_addr="pat@example.com",
+            from_addr=to_email,
             text="Here is the memory.",
         )
         fake.calls.clear()
         result = tick_scheduler(now=self.t0 + timedelta(seconds=5), adapter=fake)
         self.assertEqual(fake.calls[0], "poll")
-        self.assertNotIn("send", fake.calls)
-        self.assertEqual(result.get("reminders") or [], [])
+        self.assertEqual(len(self._sent_to(fake, to_email, reminder=True)), 0)
+        self.assertNotIn(str(get_campaign(camp["id"])["deliveries"][0]["id"]), result.get("reminders") or [])
         d = get_campaign(camp["id"])["deliveries"][0]
         self.assertEqual(d["status"], "answered")
 
@@ -194,14 +216,15 @@ class Hc2CadenceDbTests(unittest.TestCase):
         fake = FakeHistorianEmailAdapter()
         set_email_adapter(fake)
         camp = self._campaign(fake)
+        to_email = camp["_to"]
         start_campaign(camp["id"], now=self.t0)
-        self.assertEqual(sum(1 for s in fake.sent if not s.get("is_reminder")), 1)
+        self.assertEqual(len(self._sent_to(fake, to_email, reminder=False)), 1)
         tick_scheduler(now=self.t0, adapter=fake)
-        self.assertEqual(sum(1 for s in fake.sent if not s.get("is_reminder")), 1)
+        self.assertEqual(len(self._sent_to(fake, to_email, reminder=False)), 1)
         tick_scheduler(now=self.t0 + timedelta(seconds=5), adapter=fake)
-        self.assertEqual(sum(1 for s in fake.sent if s.get("is_reminder")), 1)
+        self.assertEqual(len(self._sent_to(fake, to_email, reminder=True)), 1)
         tick_scheduler(now=self.t0 + timedelta(seconds=5), adapter=fake)
-        self.assertEqual(sum(1 for s in fake.sent if s.get("is_reminder")), 1)
+        self.assertEqual(len(self._sent_to(fake, to_email, reminder=True)), 1)
         tick_scheduler(now=self.t0 + timedelta(seconds=10), adapter=fake)
         camp = get_campaign(camp["id"])
         statuses = {d["status"] for d in camp["deliveries"]}
@@ -213,11 +236,12 @@ class Hc2CadenceDbTests(unittest.TestCase):
         fake = FakeHistorianEmailAdapter()
         set_email_adapter(fake)
         camp = self._campaign(fake)
+        to_email = camp["_to"]
         start_campaign(camp["id"], now=self.t0)
         pause_campaign(camp["id"])
-        before = len(fake.sent)
+        before = len(self._sent_to(fake, to_email))
         tick_scheduler(now=self.t0 + timedelta(seconds=5), adapter=fake)
-        self.assertEqual(len(fake.sent), before)
+        self.assertEqual(len(self._sent_to(fake, to_email)), before)
 
     def test_repeat_tick_does_not_duplicate(self) -> None:
         from memorybox.historian_capture import start_campaign, tick_scheduler
@@ -225,10 +249,11 @@ class Hc2CadenceDbTests(unittest.TestCase):
         fake = FakeHistorianEmailAdapter()
         set_email_adapter(fake)
         camp = self._campaign(fake)
+        to_email = camp["_to"]
         start_campaign(camp["id"], now=self.t0)
         tick_scheduler(now=self.t0, adapter=fake)
         tick_scheduler(now=self.t0, adapter=fake)
-        self.assertEqual(len(fake.sent), 1)
+        self.assertEqual(len(self._sent_to(fake, to_email, reminder=False)), 1)
 
     def test_concurrent_tick_already_running(self) -> None:
         from memorybox.historian_capture import start_campaign, tick_scheduler
@@ -278,11 +303,12 @@ class Hc2CadenceDbTests(unittest.TestCase):
         fake = FakeHistorianEmailAdapter()
         set_email_adapter(fake)
         camp = self._campaign(fake)
+        to_email = camp["_to"]
         start_campaign(camp["id"], now=self.t0)
         fake.poll_error = "imap_poll_failed"
-        before = len(fake.sent)
+        before = len(self._sent_to(fake, to_email))
         result = tick_scheduler(now=self.t0 + timedelta(seconds=5), adapter=fake)
-        self.assertEqual(len(fake.sent), before)
+        self.assertEqual(len(self._sent_to(fake, to_email)), before)
         self.assertEqual(result.get("result"), "imap_unavailable")
         self.assertEqual(result.get("reminders") or [], [])
 
@@ -324,11 +350,14 @@ class Hc2CadenceDbTests(unittest.TestCase):
             respondents=respondents,
             questions=[f"Cap Q {tag}?"],
         )
+        self._campaign_ids.append(str(camp["id"]))
         result = start_campaign(camp["id"], now=self.t0)
         del result
-        self.assertEqual(len(fake.sent), 5)
+        mine = [s for s in fake.sent if str(s.get("to") or "").endswith(f".{tag}@example.com")]
+        self.assertEqual(len(mine), 5)
         tick_scheduler(now=self.t0, adapter=fake)
-        self.assertEqual(len(fake.sent), 6)
+        mine = [s for s in fake.sent if str(s.get("to") or "").endswith(f".{tag}@example.com")]
+        self.assertEqual(len(mine), 6)
 
     def test_heartbeat_updates(self) -> None:
         from memorybox.historian_capture import start_campaign, tick_scheduler
@@ -351,6 +380,7 @@ class Hc2LockHoldTests(unittest.TestCase):
         from memorybox.historian_capture.cadence import hc_tick_lock, run_historian_capture_tick
 
         os.environ["MEMORYBOX_HC_EMAIL_PROVIDER"] = "fake"
+        os.environ["MEMORYBOX_HC_HEARTBEAT_SKIP_DB"] = "1"
         fake = FakeHistorianEmailAdapter()
         set_email_adapter(fake)
         barrier = threading.Barrier(2)
