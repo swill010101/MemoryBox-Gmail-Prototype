@@ -975,6 +975,15 @@ def main(argv: list[str] | None = None) -> int:
     p_serve = sub.add_parser("serve", help="Run uvicorn")
     p_serve.add_argument("--host", default=None)
     p_serve.add_argument("--port", type=int, default=None)
+    p_hc_tick = sub.add_parser(
+        "hc-tick",
+        help="Historian Capture autonomous tick (poll inbound, then due outbound)",
+    )
+    p_hc_tick.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Poll and ingest only; do not send questions, reminders, or no-response advances",
+    )
 
     args = parser.parse_args(argv)
     if args.cmd in {"prove-p2-i1", "prove-p2-i8b", "prove-p2-i9"} or (args.cmd == "recognition-people-apply" and not args.dry_run):
@@ -1948,6 +1957,11 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         print(json.dumps(payload, indent=2, default=str))
         return 0 if payload.get("ok") else 1
+
+    if args.cmd == "hc-tick":
+        from memorybox.historian_capture.cadence import cli_hc_tick
+
+        return cli_hc_tick(dry_run=bool(args.dry_run))
 
     if args.cmd == "serve":
         import uvicorn

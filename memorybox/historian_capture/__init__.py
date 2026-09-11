@@ -941,58 +941,65 @@ def advance_campaign(
     campaign_id: str, *, now: datetime | None = None, adapter: Any | None = None
 ) -> dict[str, Any]:
     """Send the next scheduled question now, but never skip an outstanding reply."""
+    from memorybox.historian_capture.cadence import hc_tick_lock
+
     cid = _parse_uuid(campaign_id, field="campaign_id")
     now = now or _now()
-    with connection() as conn:
-        camp = conn.execute(
-            "SELECT status FROM historian_capture_campaigns WHERE id = %s", (cid,)
-        ).fetchone()
-        if not camp:
-            raise HistorianCaptureError("campaign not found")
-        if camp["status"] != "running":
-            raise HistorianCaptureError("only an in-progress campaign can advance")
-        waiting = conn.execute(
-            """
-            SELECT 1 FROM historian_capture_deliveries
-            WHERE campaign_id = %s
-              AND status IN ('sent', 'waiting', 'reminder_sent')
-            LIMIT 1
-            """,
-            (cid,),
-        ).fetchone()
-        if waiting:
+    with hc_tick_lock() as held:
+        if not held:
             raise HistorianCaptureError(
-                "cannot advance while waiting for a response to the current question"
+                "an automatic check is already running; try again in a moment"
             )
-        pending = conn.execute(
-            """
-            SELECT id FROM historian_capture_deliveries
-            WHERE campaign_id = %s AND status = 'pending'
-            ORDER BY scheduled_for ASC
-            LIMIT 1
-            """,
-            (cid,),
-        ).fetchone()
-        if not pending:
-            raise HistorianCaptureError("there is no next question waiting to send")
-        conn.execute(
-            """
-            UPDATE historian_capture_deliveries
-            SET scheduled_for = %s, updated_at = now()
-            WHERE id = %s
-            """,
-            (now, pending["id"]),
-        )
-    result = tick_scheduler(now=now, adapter=adapter)
-    if str(pending["id"]) not in (result.get("sent") or []):
-        refreshed = get_campaign(str(cid))
-        delivery = next(
-            (d for d in refreshed["deliveries"] if d["id"] == str(pending["id"])),
-            None,
-        )
-        detail = (delivery or {}).get("fail_detail")
-        raise HistorianCaptureError(detail or "next question could not be sent")
-    return get_campaign(str(cid))
+        with connection() as conn:
+            camp = conn.execute(
+                "SELECT status FROM historian_capture_campaigns WHERE id = %s", (cid,)
+            ).fetchone()
+            if not camp:
+                raise HistorianCaptureError("campaign not found")
+            if camp["status"] != "running":
+                raise HistorianCaptureError("only an in-progress campaign can advance")
+            waiting = conn.execute(
+                """
+                SELECT 1 FROM historian_capture_deliveries
+                WHERE campaign_id = %s
+                  AND status IN ('sent', 'waiting', 'reminder_sent')
+                LIMIT 1
+                """,
+                (cid,),
+            ).fetchone()
+            if waiting:
+                raise HistorianCaptureError(
+                    "cannot advance while waiting for a response to the current question"
+                )
+            pending = conn.execute(
+                """
+                SELECT id FROM historian_capture_deliveries
+                WHERE campaign_id = %s AND status = 'pending'
+                ORDER BY scheduled_for ASC
+                LIMIT 1
+                """,
+                (cid,),
+            ).fetchone()
+            if not pending:
+                raise HistorianCaptureError("there is no next question waiting to send")
+            conn.execute(
+                """
+                UPDATE historian_capture_deliveries
+                SET scheduled_for = %s, updated_at = now()
+                WHERE id = %s
+                """,
+                (now, pending["id"]),
+            )
+        result = tick_scheduler(now=now, adapter=adapter, acquire_lock=False)
+        if str(pending["id"]) not in (result.get("sent") or []):
+            refreshed = get_campaign(str(cid))
+            delivery = next(
+                (d for d in refreshed["deliveries"] if d["id"] == str(pending["id"])),
+                None,
+            )
+            detail = (delivery or {}).get("fail_detail")
+            raise HistorianCaptureError(detail or "next question could not be sent")
+        return get_campaign(str(cid))
 
 
 def delete_campaign(campaign_id: str) -> dict[str, Any]:
@@ -1322,16 +1329,47 @@ def _process_respondent_opt_out(
 
 
 def tick_scheduler(
-    *, now: datetime | None = None, adapter: Any | None = None
+    *,
+    now: datetime | None = None,
+    adapter: Any | None = None,
+    dry_run: bool = False,
+    acquire_lock: bool = True,
 ) -> dict[str, Any]:
-    """Poll inbound mail, send pending deliveries, process follow-up deadlines."""
-    now = now or _now()
-    adapter = adapter or get_email_adapter()
+    """Poll inbound mail, send pending deliveries, process follow-up deadlines.
+
+    Manual UI actions and the HC-2 scheduled CLI share this entry point and lock.
+    """
+    from memorybox.historian_capture.cadence import run_historian_capture_tick
+
+    return run_historian_capture_tick(
+        now=now,
+        adapter=adapter,
+        dry_run=dry_run,
+        acquire_lock=acquire_lock,
+    )
+
+
+def _tick_scheduler_unlocked(
+    *,
+    now: datetime,
+    adapter: Any,
+    dry_run: bool = False,
+    max_sends: int = 5,
+    skip_followups: bool = False,
+    skip_all_outbound: bool = False,
+) -> dict[str, Any]:
+    """Inbound-first tick body. Caller holds the singleton lock."""
     ingest = poll_and_ingest(adapter=adapter)
     sent_ids: list[str] = []
     failed_ids: list[str] = []
     reminders: list[str] = []
     no_responses: list[str] = []
+    deferred: list[str] = []
+    outbound_attempted = 0
+    poll_failed = ingest.get("ok") is False
+    block_followups = skip_followups or poll_failed or dry_run
+    block_questions = skip_all_outbound or dry_run
+    sends_used = 0
 
     with connection() as conn:
         due_followups = conn.execute(
@@ -1360,6 +1398,9 @@ def tick_scheduler(
     for d in due_followups:
         if d["respondent_status"] != "active":
             continue
+        if block_followups:
+            deferred.append(str(d["id"]))
+            continue
         interval = timedelta(seconds=int(d["follow_up_interval_seconds"]))
         with connection() as conn:
             fresh = conn.execute(
@@ -1368,6 +1409,10 @@ def tick_scheduler(
             if not fresh or fresh["status"] != "waiting":
                 continue
             if fresh["reminder_sent_at"] is None:
+                if sends_used >= max_sends:
+                    deferred.append(str(d["id"]))
+                    continue
+                outbound_attempted += 1
                 result = adapter.send_question(
                     to_email=d["respondent_email"],
                     respondent_name=d["respondent_name"],
@@ -1386,6 +1431,7 @@ def tick_scheduler(
                         """,
                         (result.fail_detail or "reminder_send_failed", d["id"]),
                     )
+                    failed_ids.append(str(d["id"]))
                     continue
                 conn.execute(
                     """
@@ -1393,12 +1439,14 @@ def tick_scheduler(
                     SET reminder_sent_at = %s,
                         reminder_outbound_message_id = %s,
                         follow_up_deadline_at = %s,
+                        fail_detail = NULL,
                         updated_at = now()
                     WHERE id = %s
                     """,
                     (now, result.outbound_message_id, now + interval, d["id"]),
                 )
                 reminders.append(str(d["id"]))
+                sends_used += 1
             else:
                 _mark_delivery_no_response(conn, delivery_id=d["id"], now=now)
                 no_responses.append(str(d["id"]))
@@ -1430,7 +1478,14 @@ def tick_scheduler(
     for d in due:
         if d["respondent_status"] != "active":
             continue
+        if block_questions:
+            deferred.append(str(d["id"]))
+            continue
+        if sends_used >= max_sends:
+            deferred.append(str(d["id"]))
+            continue
         snapshot = d["question_body"]
+        outbound_attempted += 1
         result = adapter.send_question(
             to_email=d["respondent_email"],
             respondent_name=d["respondent_name"],
@@ -1443,9 +1498,9 @@ def tick_scheduler(
                 conn.execute(
                     """
                     UPDATE historian_capture_deliveries
-                    SET status = 'failed', fail_detail = %s,
+                    SET fail_detail = %s,
                         retry_count = retry_count + 1, updated_at = now()
-                    WHERE id = %s
+                    WHERE id = %s AND status = 'pending'
                     """,
                     (result.fail_detail or "send_failed", d["id"]),
                 )
@@ -1482,14 +1537,19 @@ def tick_scheduler(
                 ),
             )
             sent_ids.append(str(d["id"]))
+            sends_used += 1
 
     return {
-        "ok": True,
+        "ok": not poll_failed,
         "sent": sent_ids,
         "failed": failed_ids,
         "reminders": reminders,
         "no_responses": no_responses,
+        "deferred": deferred,
+        "outbound_attempted": outbound_attempted,
         "ingest": {
+            "ok": ingest.get("ok", True),
+            "reason": ingest.get("reason"),
             "created": len(ingest.get("created") or []),
             "quarantined": len(ingest.get("quarantined") or []),
             "duplicates": len(ingest.get("duplicates") or []),
@@ -1712,7 +1772,26 @@ def record_capture_item(
 def poll_and_ingest(*, adapter: Any | None = None) -> dict[str, Any]:
     """Poll email adapter; correlate by token; quarantine unmatched/ambiguous."""
     adapter = adapter or get_email_adapter()
-    items = adapter.poll_inbound()
+    empty = {
+        "ok": False,
+        "reason": "imap_unavailable",
+        "created": [],
+        "quarantined": [],
+        "duplicates": [],
+        "skipped": [],
+        "opt_outs": [],
+        "examined": 0,
+        "debug": {"error": "imap_unavailable"},
+    }
+    try:
+        items = adapter.poll_inbound()
+    except Exception:
+        return empty
+    debug = getattr(adapter, "last_poll_debug", None) or {}
+    if debug.get("error"):
+        empty["debug"] = {"error": "imap_unavailable"}
+        return empty
+
     created: list[str] = []
     quarantined: list[dict[str, Any]] = []
     duplicates: list[str] = []

@@ -29,12 +29,35 @@
       color: #e8edf5; line-height: 1.45;
     }
     #msg.err { color: #f0a898; }
+    #scheduled-services {
+      margin: 1rem 0 1.35rem; padding: 0.75rem 0.85rem;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      background: rgba(255, 255, 255, 0.06);
+    }
+    #scheduled-services h2 { font-family: Georgia, serif; font-size: 1.15rem; margin: 0 0 0.65rem; color: #eef1ef; }
+    .svc-card { border: 1px solid rgba(255, 255, 255, 0.12); background: rgba(0, 0, 0, 0.15); padding: 0.7rem 0.8rem; }
+    .svc-card h3 { margin: 0 0 0.45rem; font-size: 1rem; color: #eef1ef; }
+    .svc-meta { display: grid; grid-template-columns: 11rem 1fr; gap: 0.2rem 0.75rem; margin: 0; font-size: 0.86rem; }
+    .svc-meta dt { color: #a68b4b; font-weight: 600; }
+    .svc-meta dd { margin: 0; }
+    .svc-status-Active { color: #b8e6c8; }
+    .svc-status-Delayed { color: #ffe6a8; }
+    .svc-status-Disabled, .svc-status-Not { color: #c5cec8; }
+    .svc-status-Error { color: #f0a898; }
+    details.svc-history { margin-top: 0.65rem; }
+    details.svc-history summary { cursor: pointer; color: #9ec5ff; }
+    #hc-return { display: none; margin: 0 0 0.75rem; }
   </style>
 </head>
 <body class="mb-shell">
 <main>
   <h1>Processing Jobs</h1>
   <p class="muted"><a href="/admin/ui">← Admin</a> · Scoped I13 queue items stamped with the active admission.</p>
+  <p id="hc-return" class="muted"><a href="/historian-capture/ui">← Historian Capture</a></p>
+  <div id="scheduled-services">
+    <h2>Scheduled Services</h2>
+    <div id="svc-body" class="muted">Loading scheduled services…</div>
+  </div>
   <div id="lock" class="muted">Loading scope lock…</div>
   <button type="button" id="refresh">Refresh</button>
   <button type="button" class="secondary" id="retry">Retry failed owner_learn</button>
@@ -51,6 +74,89 @@ function formatWhen(iso) {
     return new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
   } catch (_) {
     return String(iso);
+  }
+}
+function escapeText(value) {
+  return String(value == null ? "" : value)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+function renderScheduledServices(payload) {
+  const host = document.getElementById("svc-body");
+  const services = Array.isArray(payload && payload.services) ? payload.services : [];
+  if (!services.length) {
+    host.innerHTML = '<p class="muted">No scheduled services configured.</p>';
+    return;
+  }
+  host.replaceChildren();
+  services.forEach((svc) => {
+    const card = document.createElement("div");
+    card.className = "svc-card";
+    const status = String(svc.status || "Not configured");
+    const statusClass = "svc-status-" + status.split(" ")[0];
+    const runs = Array.isArray(svc.recent_runs) ? svc.recent_runs.slice(0, 20) : [];
+    const errorRow = svc.last_error
+      ? `<dt>Last error</dt><dd>${escapeText(svc.last_error)}</dd>`
+      : "";
+    const rows = runs.map((run) => {
+      const already = run.already_running ? " · already_running" : "";
+      return `<tr>
+        <td>${escapeText(formatWhen(run.started_at))}</td>
+        <td>${escapeText(formatWhen(run.completed_at))}</td>
+        <td>${escapeText(run.duration_ms != null ? run.duration_ms + " ms" : "—")}</td>
+        <td>${escapeText(run.result || "—")}${already}</td>
+        <td>${escapeText(run.replies_found != null ? run.replies_found : "—")}</td>
+        <td>${escapeText(run.replies_imported != null ? run.replies_imported : "—")}</td>
+        <td>${escapeText(run.outbound_attempted != null ? run.outbound_attempted : "—")}</td>
+        <td>${escapeText(run.emails_sent != null ? run.emails_sent : (run.outbound_sent != null ? run.outbound_sent : "—"))}</td>
+        <td>${escapeText(run.deferred != null ? run.deferred : "—")}</td>
+        <td>${escapeText(run.failure_category || "—")}</td>
+      </tr>`;
+    }).join("");
+    const open = location.hash === "#scheduled-services" ? " open" : "";
+    card.innerHTML = `
+      <h3>${escapeText(svc.title || "Scheduled service")}</h3>
+      <dl class="svc-meta">
+        <dt>Status</dt><dd class="${statusClass}">${escapeText(status)}</dd>
+        <dt>Schedule</dt><dd>${escapeText(svc.schedule || "—")}</dd>
+        <dt>Provider</dt><dd>${escapeText(svc.provider || "—")}</dd>
+        <dt>Mailbox</dt><dd>${escapeText(svc.mailbox || "—")}</dd>
+        <dt>Last successful run</dt><dd>${escapeText(formatWhen(svc.last_successful_run_at))}</dd>
+        <dt>Next expected run</dt><dd>${escapeText(formatWhen(svc.next_expected_run_at))}</dd>
+        <dt>Last result</dt><dd>${escapeText(svc.last_result || "—")}</dd>
+        <dt>Replies imported</dt><dd>${escapeText(svc.replies_imported != null ? svc.replies_imported : "—")}</dd>
+        <dt>Emails sent</dt><dd>${escapeText(svc.emails_sent != null ? svc.emails_sent : "—")}</dd>
+        <dt>Actions deferred</dt><dd>${escapeText(svc.actions_deferred != null ? svc.actions_deferred : "—")}</dd>
+        ${errorRow}
+      </dl>
+      <details class="svc-history"${open}>
+        <summary>Recent run history</summary>
+        <table>
+          <thead><tr>
+            <th>Started</th><th>Completed</th><th>Duration</th><th>Result</th>
+            <th>Replies found</th><th>Imported</th><th>Attempted</th><th>Sent</th>
+            <th>Deferred</th><th>Error</th>
+          </tr></thead>
+          <tbody>${rows || '<tr><td colspan="10" class="muted">No runs recorded yet.</td></tr>'}</tbody>
+        </table>
+      </details>`;
+    host.appendChild(card);
+  });
+  if (location.hash === "#scheduled-services") {
+    document.getElementById("scheduled-services").scrollIntoView();
+  }
+}
+async function loadScheduled() {
+  const host = document.getElementById("svc-body");
+  try {
+    const res = await fetch("/admin/api/scheduled-services");
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.ok === false) {
+      host.textContent = "Could not load scheduled services.";
+      return;
+    }
+    renderScheduledServices(data);
+  } catch (e) {
+    host.textContent = e.message || "Could not load scheduled services.";
   }
 }
 function scopeFromPayload(data) {
@@ -72,6 +178,11 @@ async function loadScopeFallback() {
   };
 }
 async function load() {
+  const params = new URLSearchParams(location.search);
+  const back = params.get("mb_return") || "";
+  const hcReturn = document.getElementById("hc-return");
+  if (back === "/historian-capture/ui") hcReturn.style.display = "block";
+  await loadScheduled();
   const msg = document.getElementById("msg");
   msg.textContent = "";
   msg.classList.remove("err");

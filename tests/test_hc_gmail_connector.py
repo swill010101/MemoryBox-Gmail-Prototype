@@ -296,6 +296,9 @@ class HcGmailConnectorTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertIn("m.detail", html)
         self.assertIn("Email is not connected yet.", html)
+        self.assertIn("View run history", html)
+        self.assertIn("Automatic checks not configured", html)
+        self.assertIn("cadenceBanner", html)
 
 
 if __name__ == "__main__":

@@ -217,6 +217,8 @@ class FakeHistorianEmailAdapter:
         self.inbox: list[dict[str, Any]] = []
         self.processed: set[str] = set()
         self.fail_next_send = fail_next_send
+        self.poll_error: str | None = None
+        self.last_poll_debug: dict[str, Any] = {}
         self._root = Path.cwd() / ".memorybox_hc_fake_mail"
         self._seq = 0
 
@@ -342,6 +344,9 @@ class FakeHistorianEmailAdapter:
         return mid
 
     def poll_inbound(self) -> list[InboundMailItem]:
+        self.last_poll_debug = {"error": self.poll_error}
+        if self.poll_error:
+            return []
         out: list[InboundMailItem] = []
         for item in self.inbox:
             mid = item["id"]
@@ -491,6 +496,34 @@ def set_email_adapter(adapter: HistorianEmailAdapter | None) -> None:
                 live=False,
             )
         )
+        return
+    key = getattr(adapter, "provider_key", None)
+    user_email = getattr(adapter, "user_email", None)
+    if key == "unavailable":
+        _ADAPTER_STATUS.clear()
+        _ADAPTER_STATUS.update(
+            _status_payload(
+                ok=False,
+                reason="unavailable",
+                provider_key="unavailable",
+                live=False,
+                user_email=user_email,
+            )
+        )
+        return
+    fake = key == "fake_historian_email"
+    _ADAPTER_STATUS.clear()
+    _ADAPTER_STATUS.update(
+        _status_payload(
+            ok=True,
+            reason="fake_ok" if fake else "live_ok",
+            provider_key=key,
+            live=not fake,
+            configured_email=user_email,
+            transport_email=user_email,
+            user_email=user_email,
+        )
+    )
 
 
 def email_adapter_status() -> dict[str, Any]:

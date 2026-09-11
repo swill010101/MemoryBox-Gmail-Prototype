@@ -59,6 +59,8 @@ Proposed wording — **not the production default until founder approval**:
 
 Correlation remains in Reply-To (`memorybox+hc-<token>@marvinbot.net`) and `X-MemoryBox-HC-Token`. Replies that keep the plus-address work even if the visible subject has no token. Replies that drop both the plus-address and the subject token will not correlate (same I12 risk if Reply-To is ignored).
 
+Autonomous five-minute cadence (HC-2) is documented in [HISTORIAN_CAPTURE_HC2_CADENCE.md](HISTORIAN_CAPTURE_HC2_CADENCE.md). Do not register or enable the Windows task until founder authorization.
+
 ## Later FlightSim procedure (do not execute until founder authorizes)
 
 1. Deploy an approved commit.

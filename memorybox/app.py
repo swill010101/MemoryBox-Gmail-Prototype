@@ -1379,6 +1379,13 @@ def admin_jobs_retry_failed() -> dict[str, Any]:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
+@app.get("/admin/api/scheduled-services")
+def admin_scheduled_services() -> dict[str, Any]:
+    from memorybox.historian_capture.scheduled_status import list_scheduled_services
+
+    return list_scheduled_services()
+
+
 @app.get("/admin/api/learned-evidence")
 def admin_learned_evidence(
     limit: int = Query(300, ge=1, le=1000),
@@ -4662,9 +4669,12 @@ def gc_audio(response_id: str) -> Response:
 
 @app.get("/historian-capture/email-status")
 def hc_email_status() -> dict[str, Any]:
+    from memorybox.historian_capture.cadence import cadence_public_status
     from memorybox.historian_capture.email_adapter import email_adapter_status
 
-    return email_adapter_status()
+    out = email_adapter_status()
+    out["cadence"] = cadence_public_status()
+    return out
 
 
 @app.get("/historian-capture/respondent-options")

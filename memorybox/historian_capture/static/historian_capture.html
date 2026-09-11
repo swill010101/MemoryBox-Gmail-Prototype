@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>MemoryBox — Historian Capture</title>
-  <link rel="stylesheet" href="/static/explore/explore.css?v=hc-i12-4" />
+  <link rel="stylesheet" href="/static/explore/explore.css?v=hc-i12-5" />
   <link rel="stylesheet" href="/static/shell/mb-narrative-field.css?v=i10a2-7" />
   <style>
     :root {
@@ -94,6 +94,7 @@
     .banner { background: rgba(251,146,60,0.12); border: 1px solid rgba(251,146,60,0.35); color: #fdba74; border-radius: 10px; padding: 0.65rem 0.8rem; margin: 0.6rem 0; }
     .banner.info { background: rgba(59,130,246,0.1); border-color: rgba(59,130,246,0.35); color: #93c5fd; }
     .banner.ok { background: rgba(61,207,154,0.1); border-color: rgba(61,207,154,0.35); color: #86efac; }
+    .banner a.quiet { margin-left: 0.65rem; font-size: 0.85rem; color: inherit; text-decoration: underline; }
     .hidden { display: none !important; }
     .empty { color: var(--muted); text-align: center; padding: 2rem 1rem; }
     label { display: block; font-size: 0.82rem; margin: 0.55rem 0 0.25rem; color: var(--muted); }
@@ -279,6 +280,17 @@
       const row = VERDICT.find(([k]) => k === v);
       return row ? row[1] : (v || "Needs review");
     }
+    function cadenceBanner() {
+      const c = (state.mailbox && state.mailbox.cadence) || {};
+      const summary = typeof c.summary === "string" && c.summary.trim()
+        ? c.summary.trim()
+        : "Automatic checks not configured";
+      const cls = c.display_state === "delayed" ? "banner" : (c.display_state === "active" ? "banner info" : "banner");
+      const href = (typeof c.history_href === "string" && c.history_href.startsWith("/admin/jobs/ui"))
+        ? c.history_href
+        : "/admin/jobs/ui?mb_return=/historian-capture/ui#scheduled-services";
+      return `<div class="${cls}">${esc(summary)} <a class="quiet" href="${esc(href)}">View run history</a></div>`;
+    }
     function mailboxBanner() {
       const m = state.mailbox || {};
       if (!m.ok) {
@@ -413,6 +425,7 @@
           </div>
         </div>
         ${mailboxBanner()}
+        ${cadenceBanner()}
         <div class="tabs" style="margin:0.8rem 0 1rem">
           <button type="button" class="${state.tab === "responses" ? "on" : ""}" data-tab="responses">Needs review${state.newCount ? ` (${state.newCount})` : ""}</button>
           <button type="button" class="${state.tab === "retained" ? "on" : ""}" data-tab="retained">Kept</button>

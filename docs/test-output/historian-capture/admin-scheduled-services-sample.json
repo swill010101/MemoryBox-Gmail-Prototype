@@ -1,0 +1,40 @@
+{
+  "ok": true,
+  "services": [
+    {
+      "id": "historian_capture_email",
+      "kind": "recurring_service",
+      "title": "Historian Capture email",
+      "status": "Active",
+      "schedule": "Every 5 minutes",
+      "provider": "Test email provider",
+      "mailbox": "memorybox@marvinbot.net",
+      "last_successful_run_at": "2026-09-11T19:58:00+00:00",
+      "next_expected_run_at": "2026-09-11T20:03:00+00:00",
+      "last_result": "ok",
+      "replies_imported": 1,
+      "emails_sent": 1,
+      "actions_deferred": 0,
+      "last_error": null,
+      "already_running": false,
+      "scheduler_registered": true,
+      "scheduler_enabled": true,
+      "recent_runs": [
+        {
+          "started_at": "2026-09-11T19:57:00+00:00",
+          "completed_at": "2026-09-11T19:58:00+00:00",
+          "duration_ms": null,
+          "result": "ok",
+          "replies_found": 1,
+          "replies_imported": 1,
+          "outbound_attempted": 1,
+          "outbound_sent": 1,
+          "deferred": 0,
+          "failure_category": null,
+          "already_running": false,
+          "emails_sent": 1
+        }
+      ]
+    }
+  ]
+}

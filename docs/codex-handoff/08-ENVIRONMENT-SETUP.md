@@ -87,6 +87,8 @@ I12 was built as a MemoryBox-native module (`memorybox/historian_capture/`) with
 
 Production provider is Namecheap Private Email (`privateemail`) for `memorybox@marvinbot.net`. `startmb.ps1` defaults `MEMORYBOX_HC_EMAIL_PROVIDER=privateemail` and `MEMORYBOX_HC_USER_EMAIL=memorybox@marvinbot.net`. Store the app password only in gitignored env or `config/historian_capture_privateemail_credentials.json`. Optional Gmail API remains behind `MEMORYBOX_HC_EMAIL_PROVIDER=gmail`. See [HISTORIAN_CAPTURE_EMAIL_TRANSPORT.md](../ops/HISTORIAN_CAPTURE_EMAIL_TRANSPORT.md).
 
+HC-2 autonomous tick (`python -m memorybox hc-tick`, five-minute Windows task created **disabled**) is documented in [HISTORIAN_CAPTURE_HC2_CADENCE.md](../ops/HISTORIAN_CAPTURE_HC2_CADENCE.md). Do not register or enable the task until founder authorization.
+
 The I13 line still vendors `gmail_client.py`, `plus_address.py`, `reply_extract.py`, and `__init__.py` from `fe913a4` under `application/marvin_capture/` for the optional Gmail provider and plus-address helpers.
 
 ### Config files
@@ -110,11 +112,12 @@ Do not commit:
 - `.memorybox_capture_fake/` — capture fake media
 - `memorybox_artifact_media/` — local promotion test files
 - `.memorybox_hc_imap_checkpoint.json` — legacy IMAP UID checkpoint
-- `.memorybox_hc_state/` — provider/mailbox-scoped IMAP checkpoints
+- `.memorybox_hc_state/` — provider/mailbox-scoped IMAP checkpoints, HC-2 heartbeat and tick log
 
 ## Related ops docs
 
 - [HISTORIAN_CAPTURE_EMAIL_TRANSPORT.md](../ops/HISTORIAN_CAPTURE_EMAIL_TRANSPORT.md)
+- [HISTORIAN_CAPTURE_HC2_CADENCE.md](../ops/HISTORIAN_CAPTURE_HC2_CADENCE.md)
 - [FLIGHTSIM_IMMICH_CUTOVER.md](../ops/FLIGHTSIM_IMMICH_CUTOVER.md)
 - [MBBS-P2_HOST_SIZING.md](../ops/MBBS-P2_HOST_SIZING.md)
 - [GIT_SYNC.md](../GIT_SYNC.md)

@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>MemoryBox — Admin Jobs (Scheduled Services expanded)</title>
+  <style>
+    body { margin: 0; background: #0f141c; color: #e8edf5; font-family: "Segoe UI", system-ui, sans-serif; }
+    main { max-width: 1200px; margin: 0 auto; padding: 1.25rem; }
+    h1 { font-family: Georgia, serif; margin: 0 0 0.35rem; }
+    h2 { font-family: Georgia, serif; font-size: 1.15rem; margin: 0 0 0.65rem; }
+    .muted { color: #c5cec8; font-size: 0.88rem; }
+    a { color: #9ec5ff; }
+    #scheduled-services { margin: 1rem 0 1.35rem; padding: 0.75rem 0.85rem; border: 1px solid rgba(255,255,255,0.15); background: rgba(255,255,255,0.06); }
+    .svc-card { border: 1px solid rgba(255,255,255,0.12); background: rgba(0,0,0,0.15); padding: 0.7rem 0.8rem; }
+    .svc-meta { display: grid; grid-template-columns: 11rem 1fr; gap: 0.2rem 0.75rem; margin: 0; font-size: 0.86rem; }
+    .svc-meta dt { color: #a68b4b; font-weight: 600; } .svc-meta dd { margin: 0; }
+    .svc-status-Active { color: #b8e6c8; }
+    details.svc-history { margin-top: 0.65rem; } details.svc-history summary { cursor: pointer; color: #9ec5ff; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.88rem; margin-top: 0.8rem; }
+    th, td { border-bottom: 1px solid rgba(255,255,255,0.15); padding: 0.35rem 0.4rem; text-align: left; }
+    thead th { background: rgba(255,255,255,0.06); }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Processing Jobs</h1>
+  <p class="muted">← Admin · Scoped I13 queue items stamped with the active admission.</p>
+  <div id="scheduled-services">
+    <h2>Scheduled Services</h2>
+    <div class="svc-card">
+      <h3>Historian Capture email</h3>
+      <dl class="svc-meta">
+        <dt>Status</dt><dd class="svc-status-Active">Active</dd>
+        <dt>Schedule</dt><dd>Every 5 minutes</dd>
+        <dt>Provider</dt><dd>Namecheap Private Email</dd>
+        <dt>Mailbox</dt><dd>memorybox@marvinbot.net</dd>
+        <dt>Last successful run</dt><dd>Sep 11, 2026, 2:58 PM</dd>
+        <dt>Next expected run</dt><dd>Sep 11, 2026, 3:03 PM</dd>
+        <dt>Last result</dt><dd>ok</dd>
+        <dt>Replies imported</dt><dd>1</dd>
+        <dt>Emails sent</dt><dd>1</dd>
+        <dt>Actions deferred</dt><dd>0</dd>
+      </dl>
+      <details class="svc-history" open>
+        <summary>Recent run history</summary>
+        <table>
+          <thead><tr>
+            <th>Started</th><th>Completed</th><th>Duration</th><th>Result</th>
+            <th>Replies found</th><th>Imported</th><th>Attempted</th><th>Sent</th>
+            <th>Deferred</th><th>Error</th>
+          </tr></thead>
+          <tbody>
+            <tr><td>Sep 11, 2026, 2:57 PM</td><td>Sep 11, 2026, 2:58 PM</td><td>1200 ms</td><td>ok</td><td>1</td><td>1</td><td>1</td><td>1</td><td>0</td><td>—</td></tr>
+            <tr><td>Sep 11, 2026, 2:52 PM</td><td>Sep 11, 2026, 2:52 PM</td><td>80 ms</td><td>already_running</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>—</td></tr>
+          </tbody>
+        </table>
+      </details>
+    </div>
+  </div>
+  <p class="muted">Interactive Learn · Archive locked · owner_learn queued: 0</p>
+  <table>
+    <thead><tr><th>When</th><th>Lane</th><th>Video</th><th>Person</th><th>Status</th><th>Reason</th><th>Attempts</th><th></th></tr></thead>
+    <tbody><tr><td colspan="8" class="muted">No I13-scoped queue items yet (face/voice Learn enqueues one owner_learn row per source).</td></tr></tbody>
+  </table>
+</main>
+</body>
+</html>
