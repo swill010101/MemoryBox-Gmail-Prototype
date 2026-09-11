@@ -271,19 +271,20 @@ class HcGmailConnectorTests(unittest.TestCase):
         self.assertNotIn("Exception", data["detail"])
         self.assertNotIn("marvinbot.net", data["detail"])
 
-    def test_serve_defaults_do_not_hardcode_capture_mailbox(self) -> None:
+    def test_serve_defaults_use_privateemail_mailbox(self) -> None:
         root = Path(__file__).resolve().parents[1]
         startmb = (root / "startmb.ps1").read_text(encoding="utf-8")
         env_example = (root / "config" / "memorybox_app.env.example").read_text(encoding="utf-8")
         reqs = (root / "memorybox" / "requirements.txt").read_text(encoding="utf-8")
-        self.assertNotIn("memorybox@marvinbot.net", startmb)
-        self.assertIn('$env:MEMORYBOX_HC_EMAIL_PROVIDER = "auto"', startmb)
-        self.assertNotIn("MEMORYBOX_HC_USER_EMAIL", startmb)
-        self.assertNotIn("memorybox@marvinbot.net", env_example)
-        self.assertIn("historian-capture@example.invalid", env_example)
+        gitignore = (root / ".gitignore").read_text(encoding="utf-8")
+        self.assertIn('$env:MEMORYBOX_HC_EMAIL_PROVIDER = "privateemail"', startmb)
+        self.assertIn('$env:MEMORYBOX_HC_USER_EMAIL = "memorybox@marvinbot.net"', startmb)
+        self.assertIn("MEMORYBOX_HC_EMAIL_PROVIDER=privateemail", env_example)
+        self.assertIn("MEMORYBOX_HC_USER_EMAIL=memorybox@marvinbot.net", env_example)
+        self.assertIn("historian_capture_privateemail_credentials.json", gitignore)
+        self.assertIn(".memorybox_hc_state/", gitignore)
         self.assertIn("google-api-python-client>=", reqs)
         self.assertIn("google-auth-oauthlib>=", reqs)
-        self.assertNotIn("# google-api-python-client", reqs)
 
     def test_ui_banner_includes_detail(self) -> None:
         html = (

@@ -30,12 +30,15 @@ config/secrets.json
 config/local.json
 config/historian_capture_gmail_credentials.json
 config/historian_capture_gmail_token.json
+config/historian_capture_privateemail_credentials.json
 config/marvin_capture.json
 
 # Historian Capture / Guided Capture local runtime (never commit)
 .memorybox_hc_fake_mail/
 .memorybox_gc_fake_mail/
 .memorybox_hc_mail/
+.memorybox_hc_imap_checkpoint.json
+.memorybox_hc_state/
 .memorybox_capture_fake/
 memorybox_artifact_media/
 # Python

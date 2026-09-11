@@ -51,6 +51,13 @@ HC_PLUS_PREFIX = "hc-"
 HC_MAILBOX = "memorybox@marvinbot.net"
 SUBJECT_TOKEN_RE = re.compile(r"\[MB-HC-([A-Za-z0-9]+)\]", re.IGNORECASE)
 STOP_KEYWORDS = frozenset({"stop", "unsubscribe", "opt out", "opt-out"})
+HC_TOKEN_HEADER = "X-MemoryBox-HC-Token"
+
+DEFAULT_QUESTION_SUBJECT_TEMPLATE = "[MB-HC-{token}] {title}"
+DEFAULT_THANKYOU_SUBJECT_TEMPLATE = "[MB-HC-{token}] Thank you — MemoryBox"
+# Founder-review samples only — not production defaults until approved:
+PROPOSED_QUESTION_SUBJECT_TEMPLATE = "A MemoryBox question from Tom about {title}"
+PROPOSED_THANKYOU_SUBJECT_TEMPLATE = "Thank you for sharing this memory"
 
 HC_OUTBOUND_MARKER = "— MemoryBox Historian Capture"
 HC_REMINDER_MARKER = "— Friendly reminder"
@@ -112,6 +119,32 @@ def new_correlation_token() -> str:
     return secrets.token_hex(6)
 
 
+def format_question_subject(*, correlation_token: str, campaign_title: str | None = None) -> str:
+    title = (campaign_title or "MemoryBox question").strip() or "MemoryBox question"
+    tmpl = (
+        os.environ.get("MEMORYBOX_HC_QUESTION_SUBJECT_TEMPLATE") or DEFAULT_QUESTION_SUBJECT_TEMPLATE
+    ).strip()
+    try:
+        return tmpl.format(token=correlation_token, title=title, person=title)
+    except (KeyError, ValueError, IndexError):
+        return DEFAULT_QUESTION_SUBJECT_TEMPLATE.format(token=correlation_token, title=title)
+
+
+def format_thankyou_subject(*, correlation_token: str | None = None) -> str:
+    tmpl = (
+        os.environ.get("MEMORYBOX_HC_THANKYOU_SUBJECT_TEMPLATE") or DEFAULT_THANKYOU_SUBJECT_TEMPLATE
+    ).strip()
+    token = (correlation_token or "").strip()
+    if not token and tmpl == DEFAULT_THANKYOU_SUBJECT_TEMPLATE:
+        return "Thank you — MemoryBox"
+    try:
+        return tmpl.format(token=token, title="MemoryBox")
+    except (KeyError, ValueError, IndexError):
+        if token:
+            return DEFAULT_THANKYOU_SUBJECT_TEMPLATE.format(token=token)
+        return "Thank you — MemoryBox"
+
+
 def extract_correlation_token(
     *,
     subject: str | None = None,
@@ -127,12 +160,20 @@ def extract_correlation_token(
         if tag and tag.lower().startswith(HC_PLUS_PREFIX):
             return tag[len(HC_PLUS_PREFIX) :].lower()
     if headers:
-        for key in ("delivered-to", "x-original-to", "to", "Delivered-To", "To"):
+        for key in ("delivered-to", "x-original-to", "to", "Delivered-To", "To", "reply-to", "Reply-To"):
             raw = headers.get(key) or ""
             for part in re.split(r",\s*", raw):
                 tag = parse_plus_tag(part.strip())
                 if tag and tag.lower().startswith(HC_PLUS_PREFIX):
                     return tag[len(HC_PLUS_PREFIX) :].lower()
+        header_token = (
+            headers.get(HC_TOKEN_HEADER)
+            or headers.get(HC_TOKEN_HEADER.lower())
+            or headers.get("x-memorybox-hc-token")
+            or ""
+        ).strip()
+        if header_token:
+            return header_token.lower()
     return None
 
 
@@ -197,7 +238,9 @@ class FakeHistorianEmailAdapter:
             self.fail_next_send = False
             return OutboundSendResult(ok=False, fail_detail="synthetic_send_failure")
         reply_to = build_plus_address(self.user_email, f"{HC_PLUS_PREFIX}{correlation_token}")
-        subject = f"[MB-HC-{correlation_token}] {campaign_title or 'MemoryBox question'}"
+        subject = format_question_subject(
+            correlation_token=correlation_token, campaign_title=campaign_title
+        )
         if is_reminder:
             body = (
                 f"Hi {respondent_name},\n\n"
@@ -247,8 +290,7 @@ class FakeHistorianEmailAdapter:
         body: str,
         correlation_token: str | None = None,
     ) -> OutboundSendResult:
-        token_part = f"[MB-HC-{correlation_token}] " if correlation_token else ""
-        subject = f"{token_part}Thank you — MemoryBox"
+        subject = format_thankyou_subject(correlation_token=correlation_token)
         mid = self._next_id("ty")
         raw = f"Message-ID: {mid}\nTo: {to_email}\nSubject: {subject}\n\n{body}".encode()
         uri = _preserve_bytes(raw, stem=mid, root=self._root)
@@ -355,7 +397,7 @@ PUBLIC_REASON_DETAIL = {
         "The dedicated Historian Capture mailbox address is not configured on this host."
     ),
     "missing_credentials": (
-        "Dedicated Historian Capture Gmail credentials are not configured on this host. "
+        "Dedicated Historian Capture credentials are not configured on this host. "
         "Family Gmail files are not used."
     ),
     "missing_token": (
@@ -368,6 +410,12 @@ PUBLIC_REASON_DETAIL = {
         "Family Gmail cannot be used for Historian Capture. "
         "Configure the dedicated capture mailbox instead."
     ),
+    "imap_unavailable": "Historian Capture IMAP is not available on this host.",
+    "smtp_unavailable": "Historian Capture SMTP is not available on this host.",
+    "authentication_failed": (
+        "Historian Capture email authentication failed. The dedicated app password was not accepted."
+    ),
+    "configuration_invalid": "Historian Capture email configuration is invalid on this host.",
     "unavailable": "Historian Capture email is not connected on this host.",
 }
 
@@ -450,6 +498,155 @@ def email_adapter_status() -> dict[str, Any]:
     return dict(_ADAPTER_STATUS)
 
 
+def _fail_adapter(
+    fail_reason: str,
+    *,
+    user_email: str = "",
+    has_creds: bool = False,
+    has_token: bool = False,
+) -> HistorianEmailAdapter:
+    global _ADAPTER
+    _ADAPTER = UnavailableHistorianEmailAdapter(
+        PUBLIC_REASON_DETAIL.get(fail_reason, PUBLIC_REASON_DETAIL["unavailable"]),
+        user_email=user_email or None,
+    )
+    _ADAPTER_STATUS.clear()
+    _ADAPTER_STATUS.update(
+        _status_payload(
+            ok=False,
+            reason=fail_reason,
+            provider_key="unavailable",
+            live=False,
+            configured_email=user_email or None,
+            user_email=user_email or None,
+            has_dedicated_credentials=has_creds if fail_reason != "family_gmail_rejected" else False,
+            has_dedicated_token=has_token if fail_reason != "family_gmail_rejected" else False,
+        )
+    )
+    return _ADAPTER
+
+
+def _try_privateemail_adapter() -> HistorianEmailAdapter:
+    from memorybox.historian_capture.privateemail import (
+        NamecheapPrivateEmailAdapter,
+        load_privateemail_config,
+        probe_privateemail,
+    )
+
+    cfg = load_privateemail_config()
+    user_email = str(cfg.get("username") or "").strip()
+    if cfg.get("family_gmail_rejected"):
+        return _fail_adapter("family_gmail_rejected", user_email=user_email)
+    if not user_email or "@" not in user_email:
+        return _fail_adapter("missing_user_email")
+    has_password = bool(cfg.get("has_password"))
+    if not has_password:
+        return _fail_adapter(
+            "missing_credentials",
+            user_email=user_email,
+            has_creds=False,
+        )
+    probe = probe_privateemail(cfg)
+    if not probe.get("ok"):
+        return _fail_adapter(
+            str(probe.get("reason") or "unavailable"),
+            user_email=user_email,
+            has_creds=True,
+        )
+    adapter = NamecheapPrivateEmailAdapter(cfg)
+    _ADAPTER_STATUS.clear()
+    _ADAPTER_STATUS.update(
+        _status_payload(
+            ok=True,
+            reason="live_ok",
+            provider_key=adapter.provider_key,
+            live=True,
+            configured_email=user_email,
+            transport_email=user_email,
+            user_email=user_email,
+            has_dedicated_credentials=True,
+        )
+    )
+    return adapter
+
+
+def _try_gmail_adapter() -> HistorianEmailAdapter:
+    from memorybox.historian_capture.gmail_live import (
+        MarvinGmailHistorianEmailAdapter,
+        build_historian_gmail_client,
+        load_historian_gmail_config,
+        resolve_historian_user_email,
+    )
+
+    cfg = load_historian_gmail_config()
+    gmail = cfg.get("gmail") or {}
+    creds_path = Path(gmail.get("credentials_file") or "")
+    token_path = Path(gmail.get("token_file") or "")
+    user_email = resolve_historian_user_email(cfg)
+    family = _is_family_gmail_path(creds_path) or _is_family_gmail_path(token_path)
+    if family:
+        return _fail_adapter("family_gmail_rejected", user_email=user_email)
+    if not user_email or "@" not in user_email:
+        return _fail_adapter("missing_user_email")
+    has_creds = creds_path.is_file()
+    has_token = token_path.is_file()
+    if not has_creds:
+        return _fail_adapter(
+            "missing_credentials",
+            user_email=user_email,
+            has_creds=False,
+            has_token=has_token,
+        )
+    if not has_token:
+        return _fail_adapter(
+            "missing_token",
+            user_email=user_email,
+            has_creds=True,
+            has_token=False,
+        )
+    try:
+        client = build_historian_gmail_client(cfg)
+    except ImportError:
+        return _fail_adapter(
+            "missing_transport",
+            user_email=user_email,
+            has_creds=True,
+            has_token=True,
+        )
+    except Exception:
+        return _fail_adapter(
+            "unavailable",
+            user_email=user_email,
+            has_creds=True,
+            has_token=True,
+        )
+    transport_email = user_email
+    try:
+        profile = client.service.users().getProfile(userId="me").execute()
+        profile_email = (profile or {}).get("emailAddress") or ""
+        if profile_email and "@" in profile_email:
+            transport_email = profile_email
+            user_email = profile_email
+    except Exception:
+        pass
+    adapter = MarvinGmailHistorianEmailAdapter(client, user_email=user_email)
+    _ADAPTER_STATUS.clear()
+    _ADAPTER_STATUS.update(
+        _status_payload(
+            ok=True,
+            reason="live_ok",
+            provider_key="marvin_historian_gmail",
+            live=True,
+            configured_email=resolve_historian_user_email(cfg),
+            transport_email=transport_email,
+            user_email=transport_email,
+            has_dedicated_credentials=True,
+            has_dedicated_token=True,
+        )
+    )
+    return adapter
+
+
 def get_email_adapter() -> HistorianEmailAdapter:
     global _ADAPTER
     if _ADAPTER is not None:
@@ -457,7 +654,7 @@ def get_email_adapter() -> HistorianEmailAdapter:
     mode = (
         os.environ.get("MEMORYBOX_HC_EMAIL_PROVIDER")
         or os.environ.get("MEMORYBOX_GC_EMAIL_PROVIDER")
-        or "auto"
+        or "privateemail"
     ).strip().lower()
     if mode == "fake":
         _ADAPTER = FakeHistorianEmailAdapter()
@@ -473,81 +670,41 @@ def get_email_adapter() -> HistorianEmailAdapter:
         )
         return _ADAPTER
 
-    fail_reason = "unavailable"
-    has_creds = False
-    has_token = False
-    user_email = ""
-    if mode in ("auto", "marvin", "gmail", "live"):
+    if mode in ("privateemail", "namecheap", "imap", "imap_smtp"):
+        _ADAPTER = _try_privateemail_adapter()
+        return _ADAPTER
+
+    if mode in ("gmail", "marvin", "live"):
         try:
-            from memorybox.historian_capture.gmail_live import (
-                MarvinGmailHistorianEmailAdapter,
-                build_historian_gmail_client,
-                load_historian_gmail_config,
-                resolve_historian_user_email,
-            )
-
-            cfg = load_historian_gmail_config()
-            gmail = cfg.get("gmail") or {}
-            creds_path = Path(gmail.get("credentials_file") or "")
-            token_path = Path(gmail.get("token_file") or "")
-            user_email = resolve_historian_user_email(cfg)
-            configured_email = user_email
-            family = _is_family_gmail_path(creds_path) or _is_family_gmail_path(token_path)
-            if family:
-                fail_reason = "family_gmail_rejected"
-            elif not user_email or "@" not in user_email:
-                fail_reason = "missing_user_email"
-            else:
-                has_creds = creds_path.is_file()
-                has_token = token_path.is_file()
-                if not has_creds:
-                    fail_reason = "missing_credentials"
-                elif not has_token:
-                    fail_reason = "missing_token"
-                else:
-                    client = build_historian_gmail_client(cfg)
-                    transport_email = user_email
-                    try:
-                        profile = client.service.users().getProfile(userId="me").execute()
-                        profile_email = (profile or {}).get("emailAddress") or ""
-                        if profile_email and "@" in profile_email:
-                            transport_email = profile_email
-                            user_email = profile_email
-                    except Exception:
-                        pass
-                    _ADAPTER = MarvinGmailHistorianEmailAdapter(client, user_email=user_email)
-                    _ADAPTER_STATUS.clear()
-                    _ADAPTER_STATUS.update(
-                        _status_payload(
-                            ok=True,
-                            reason="live_ok",
-                            provider_key="marvin_historian_gmail",
-                            live=True,
-                            configured_email=configured_email,
-                            transport_email=transport_email,
-                            user_email=transport_email,
-                            has_dedicated_credentials=True,
-                            has_dedicated_token=True,
-                        )
-                    )
-                    return _ADAPTER
+            _ADAPTER = _try_gmail_adapter()
         except ImportError:
-            fail_reason = "missing_transport"
+            _ADAPTER = _fail_adapter("missing_transport")
         except Exception:
-            fail_reason = "unavailable"
+            _ADAPTER = _fail_adapter("unavailable")
+        return _ADAPTER
 
-    _ADAPTER = UnavailableHistorianEmailAdapter(
-        PUBLIC_REASON_DETAIL[fail_reason], user_email=user_email or None
-    )
-    _ADAPTER_STATUS.clear()
-    _ADAPTER_STATUS.update(
-        _status_payload(
-            ok=False,
-            reason=fail_reason,
-            provider_key="unavailable",
-            live=False,
-            has_dedicated_credentials=has_creds if fail_reason != "family_gmail_rejected" else False,
-            has_dedicated_token=has_token if fail_reason != "family_gmail_rejected" else False,
+    if mode == "auto":
+        from memorybox.historian_capture.privateemail import load_privateemail_config
+
+        pe = load_privateemail_config()
+        pe_ready = (
+            not pe.get("family_gmail_rejected")
+            and bool(pe.get("has_password"))
+            and "@" in str(pe.get("username") or "")
         )
-    )
+        if pe_ready:
+            _ADAPTER = _try_privateemail_adapter()
+            return _ADAPTER
+        if pe.get("family_gmail_rejected"):
+            _ADAPTER = _fail_adapter("family_gmail_rejected")
+            return _ADAPTER
+        try:
+            _ADAPTER = _try_gmail_adapter()
+        except ImportError:
+            _ADAPTER = _fail_adapter("missing_transport")
+        except Exception:
+            _ADAPTER = _fail_adapter("unavailable")
+        return _ADAPTER
+
+    _ADAPTER = _fail_adapter("configuration_invalid")
     return _ADAPTER

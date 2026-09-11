@@ -39,12 +39,12 @@ $env:MEMORYBOX_P1_RUNTIME_HOST = "1"
 $env:MEMORYBOX_HC_EMAIL_PROVIDER = "fake"
 python -m memorybox prove-historian-capture --slice s5
 
-# Historian Capture — live
-$env:MEMORYBOX_HC_EMAIL_PROVIDER = "auto"
-# Set MEMORYBOX_HC_USER_EMAIL from gitignored host env (dedicated capture mailbox).
-# Credentials (local only, never commit):
-#   config/historian_capture_gmail_credentials.json
-#   config/historian_capture_gmail_token.json
+# Historian Capture — live (Namecheap Private Email)
+$env:MEMORYBOX_HC_EMAIL_PROVIDER = "privateemail"
+$env:MEMORYBOX_HC_USER_EMAIL = "memorybox@marvinbot.net"
+# App password (gitignored only):
+#   MEMORYBOX_HC_PRIVATEEMAIL_PASSWORD
+#   or config/historian_capture_privateemail_credentials.json
 python -m memorybox prove-historian-capture --flightsim --slice s5
 ```
 
@@ -80,22 +80,26 @@ I12 was built as a MemoryBox-native module (`memorybox/historian_capture/`) with
 |------|--------|--------------|
 | `prove-historian-capture` (fake) | **Yes** | Postgres + `MEMORYBOX_HC_EMAIL_PROVIDER=fake` |
 | HC UI (read cached data) | **Yes** | Postgres + serve |
-| Live Gmail send/poll | **Yes** | Vendored `application/marvin_capture` transport + dedicated OAuth files |
+| Live Namecheap IMAP/SMTP | **Yes** | Dedicated app password + `MEMORYBOX_HC_EMAIL_PROVIDER=privateemail` |
+| Optional live Gmail API | **Yes** | Vendored `application/marvin_capture` + dedicated OAuth files; not production |
 
-### Vendored transport (HC-1)
+### Production transport (HC-1)
 
-The I13/I14 line vendors only `gmail_client.py`, `plus_address.py`, `reply_extract.py`, and `__init__.py` from `fe913a4` under `application/marvin_capture/`. PoC UI/SQLite/`config.py` are not included. `startmb.ps1` defaults `MEMORYBOX_HC_EMAIL_PROVIDER=auto`. Set `MEMORYBOX_HC_USER_EMAIL` in gitignored host env or `config/historian_capture.json` — serve scripts do not default the mailbox address. Restore OAuth files per [HISTORIAN_CAPTURE_GMAIL_RESTORE.md](../ops/HISTORIAN_CAPTURE_GMAIL_RESTORE.md).
+Production provider is Namecheap Private Email (`privateemail`) for `memorybox@marvinbot.net`. `startmb.ps1` defaults `MEMORYBOX_HC_EMAIL_PROVIDER=privateemail` and `MEMORYBOX_HC_USER_EMAIL=memorybox@marvinbot.net`. Store the app password only in gitignored env or `config/historian_capture_privateemail_credentials.json`. Optional Gmail API remains behind `MEMORYBOX_HC_EMAIL_PROVIDER=gmail`. See [HISTORIAN_CAPTURE_EMAIL_TRANSPORT.md](../ops/HISTORIAN_CAPTURE_EMAIL_TRANSPORT.md).
+
+The I13 line still vendors `gmail_client.py`, `plus_address.py`, `reply_extract.py`, and `__init__.py` from `fe913a4` under `application/marvin_capture/` for the optional Gmail provider and plus-address helpers.
 
 ### Config files
 
 | File | In Git? | Purpose |
 |------|---------|---------|
 | `config/historian_capture.json.example` | Yes | Template |
-| `config/historian_capture_gmail_credentials.json` | **No** (gitignored) | OAuth client secret |
-| `config/historian_capture_gmail_token.json` | **No** (gitignored) | OAuth token |
+| `config/historian_capture_privateemail_credentials.json` | **No** (gitignored) | Namecheap app password |
+| `config/historian_capture_gmail_credentials.json` | **No** (gitignored) | Optional Gmail OAuth client secret |
+| `config/historian_capture_gmail_token.json` | **No** (gitignored) | Optional Gmail OAuth token |
 | `config/historian_capture.json` | Local optional | Overrides example |
 
-Env overrides: `MEMORYBOX_HC_CONFIG`, `MEMORYBOX_HC_GMAIL_CREDENTIALS`, `MEMORYBOX_HC_GMAIL_TOKEN`, `MEMORYBOX_HC_USER_EMAIL`.
+Env overrides: `MEMORYBOX_HC_CONFIG`, `MEMORYBOX_HC_PRIVATEEMAIL_PASSWORD`, `MEMORYBOX_HC_PRIVATEEMAIL_CREDENTIALS`, `MEMORYBOX_HC_GMAIL_CREDENTIALS`, `MEMORYBOX_HC_GMAIL_TOKEN`, `MEMORYBOX_HC_USER_EMAIL`.
 
 ## Gitignored runtime dirs
 
@@ -105,10 +109,12 @@ Do not commit:
 - `.memorybox_gc_fake_mail/` — guided capture fake mail
 - `.memorybox_capture_fake/` — capture fake media
 - `memorybox_artifact_media/` — local promotion test files
-- `.memorybox_hc_mail/` — live mail preservation (if present)
+- `.memorybox_hc_imap_checkpoint.json` — legacy IMAP UID checkpoint
+- `.memorybox_hc_state/` — provider/mailbox-scoped IMAP checkpoints
 
 ## Related ops docs
 
+- [HISTORIAN_CAPTURE_EMAIL_TRANSPORT.md](../ops/HISTORIAN_CAPTURE_EMAIL_TRANSPORT.md)
 - [FLIGHTSIM_IMMICH_CUTOVER.md](../ops/FLIGHTSIM_IMMICH_CUTOVER.md)
 - [MBBS-P2_HOST_SIZING.md](../ops/MBBS-P2_HOST_SIZING.md)
 - [GIT_SYNC.md](../GIT_SYNC.md)

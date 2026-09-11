@@ -12,6 +12,7 @@ from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
 from memorybox.db import connection
+from psycopg.errors import UniqueViolation
 from memorybox.historian_capture.email_adapter import (
     FakeHistorianEmailAdapter,
     HC_OUTBOUND_MARKER,
@@ -1632,69 +1633,80 @@ def record_capture_item(
     rid = _parse_uuid(campaign_respondent_id, field="campaign_respondent_id", required=False)
     item_id = uuid4()
     now = _now()
-    with connection() as conn:
-        if content_hash:
-            dup = conn.execute(
-                """
-                SELECT id FROM historian_capture_items
-                WHERE content_hash = %s AND content_hash <> ''
-                LIMIT 1
-                """,
-                (content_hash,),
-            ).fetchone()
-            if dup:
-                return get_capture_item(str(dup["id"]))
-        conn.execute(
-            """
-            INSERT INTO historian_capture_items (
-                id, campaign_id, question_id, delivery_id, campaign_respondent_id,
-                channel, received_at, inbound_message_id, from_address, subject,
-                preserved_raw_uri, content_hash, header_json, extracted_text,
-                match_status, provenance_json
-            ) VALUES (
-                %s, %s, %s, %s, %s,
-                %s, %s, %s, %s, %s,
-                %s, %s, %s::jsonb, %s,
-                %s, %s::jsonb
-            )
-            """,
-            (
-                item_id,
-                cid,
-                qid,
-                did,
-                rid,
-                channel,
-                now,
-                inbound_message_id,
-                from_address or "",
-                subject or "",
-                preserved_raw_uri or "",
-                content_hash,
-                json.dumps(header_json or {}),
-                extracted_text or "",
-                match_status,
-                json.dumps({"increment": "12", "testimony_immutable": True}),
-            ),
-        )
-        if did and match_status == "matched":
-            _mark_delivery_answered(conn, delivery_id=did, now=now)
-        if auto_draft and (extracted_text or "").strip():
+    try:
+        with connection() as conn:
+            if content_hash:
+                dup = conn.execute(
+                    """
+                    SELECT id FROM historian_capture_items
+                    WHERE content_hash = %s AND content_hash <> ''
+                    LIMIT 1
+                    """,
+                    (content_hash,),
+                ).fetchone()
+                if dup:
+                    return get_capture_item(str(dup["id"]))
             conn.execute(
                 """
-                INSERT INTO historian_capture_review_drafts (
-                    id, capture_item_id, version, is_current, body_text,
-                    created_by, supersedes_draft_id
-                ) VALUES (%s, %s, 1, TRUE, %s, 'owner', NULL)
+                INSERT INTO historian_capture_items (
+                    id, campaign_id, question_id, delivery_id, campaign_respondent_id,
+                    channel, received_at, inbound_message_id, from_address, subject,
+                    preserved_raw_uri, content_hash, header_json, extracted_text,
+                    match_status, provenance_json
+                ) VALUES (
+                    %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s,
+                    %s, %s, %s::jsonb, %s,
+                    %s, %s::jsonb
+                )
                 """,
-                (uuid4(), item_id, (extracted_text or "").strip()),
+                (
+                    item_id,
+                    cid,
+                    qid,
+                    did,
+                    rid,
+                    channel,
+                    now,
+                    inbound_message_id,
+                    from_address or "",
+                    subject or "",
+                    preserved_raw_uri or "",
+                    content_hash,
+                    json.dumps(header_json or {}),
+                    extracted_text or "",
+                    match_status,
+                    json.dumps({"increment": "12", "testimony_immutable": True}),
+                ),
             )
-        if cid:
-            conn.execute(
-                "UPDATE historian_capture_campaigns SET updated_at = now() WHERE id = %s",
-                (cid,),
-            )
-    return get_capture_item(str(item_id))
+            if did and match_status == "matched":
+                _mark_delivery_answered(conn, delivery_id=did, now=now)
+            if auto_draft and (extracted_text or "").strip():
+                conn.execute(
+                    """
+                    INSERT INTO historian_capture_review_drafts (
+                        id, capture_item_id, version, is_current, body_text,
+                        created_by, supersedes_draft_id
+                    ) VALUES (%s, %s, 1, TRUE, %s, 'owner', NULL)
+                    """,
+                    (uuid4(), item_id, (extracted_text or "").strip()),
+                )
+            if cid:
+                conn.execute(
+                    "UPDATE historian_capture_campaigns SET updated_at = now() WHERE id = %s",
+                    (cid,),
+                )
+        return get_capture_item(str(item_id))
+    except UniqueViolation:
+        if inbound_message_id:
+            with connection() as conn:
+                existing = conn.execute(
+                    "SELECT id FROM historian_capture_items WHERE inbound_message_id = %s",
+                    (inbound_message_id,),
+                ).fetchone()
+            if existing:
+                return get_capture_item(str(existing["id"]))
+        raise
 
 
 def poll_and_ingest(*, adapter: Any | None = None) -> dict[str, Any]:

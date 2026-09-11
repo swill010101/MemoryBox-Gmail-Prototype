@@ -20,6 +20,8 @@ from memorybox.historian_capture.email_adapter import (
     _preserve_bytes,
     build_plus_address,
     extract_correlation_token,
+    format_question_subject,
+    format_thankyou_subject,
 )
 
 try:
@@ -145,7 +147,9 @@ class MarvinGmailHistorianEmailAdapter:
         is_reminder: bool = False,
     ) -> OutboundSendResult:
         reply_to = build_plus_address(self.user_email, f"{HC_PLUS_PREFIX}{correlation_token}")
-        subject = f"[MB-HC-{correlation_token}] {campaign_title or 'MemoryBox question'}"
+        subject = format_question_subject(
+            correlation_token=correlation_token, campaign_title=campaign_title
+        )
         if is_reminder:
             body = (
                 f"Hi {respondent_name},\n\n"
@@ -190,8 +194,7 @@ class MarvinGmailHistorianEmailAdapter:
         body: str,
         correlation_token: str | None = None,
     ) -> OutboundSendResult:
-        token_part = f"[MB-HC-{correlation_token}] " if correlation_token else ""
-        subject = f"{token_part}Thank you — MemoryBox"
+        subject = format_thankyou_subject(correlation_token=correlation_token)
         try:
             result = self.client.send_message(to=to_email, subject=subject, body=body)
         except Exception as exc:  # noqa: BLE001

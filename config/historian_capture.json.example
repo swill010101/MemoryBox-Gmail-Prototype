@@ -1,11 +1,19 @@
 {
   "gmail": {
-    "user_email": "historian-capture@example.invalid",
+    "user_email": "memorybox@marvinbot.net",
     "credentials_file": "config/historian_capture_gmail_credentials.json",
     "token_file": "config/historian_capture_gmail_token.json",
     "scopes": [
       "https://www.googleapis.com/auth/gmail.modify",
       "https://www.googleapis.com/auth/gmail.send"
     ]
+  },
+  "privateemail": {
+    "username": "memorybox@marvinbot.net",
+    "imap_host": "mail.privateemail.com",
+    "imap_port": 993,
+    "smtp_host": "mail.privateemail.com",
+    "smtp_port": 465,
+    "from_display_name": "MemoryBox Historian for Tom"
   }
 }

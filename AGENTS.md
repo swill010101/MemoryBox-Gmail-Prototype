@@ -30,7 +30,7 @@ Read in order:
 - **P2-I13 is ACCEPTED (2026-09-11).** Do not reopen without explicit founder direction.
 - **No application behavior changes** on preservation/transition branches unless a new increment is authorized.
 - **Never commit secrets:** Gmail OAuth credentials/tokens, `.env`, databases, logs, fake-mail runtime dirs, personal media.
-- **Historian Capture live Gmail** requires `application/marvin_capture/` from the PoC branch on FlightSim — see [docs/codex-handoff/08-ENVIRONMENT-SETUP.md](docs/codex-handoff/08-ENVIRONMENT-SETUP.md).
+- **Historian Capture production email** is Namecheap Private Email (`MEMORYBOX_HC_EMAIL_PROVIDER=privateemail`) for `memorybox@marvinbot.net`. Optional Gmail API is not the production path. See [docs/codex-handoff/08-ENVIRONMENT-SETUP.md](docs/codex-handoff/08-ENVIRONMENT-SETUP.md).
 - **Fake adapter** is sufficient for automated prove: `MEMORYBOX_HC_EMAIL_PROVIDER=fake`.
 
 ## Prove commands (I12)
@@ -40,10 +40,10 @@ python -m memorybox migrate
 MEMORYBOX_HC_EMAIL_PROVIDER=fake python -m memorybox prove-historian-capture --slice s5
 ```
 
-FlightSim live (requires Gmail creds + `application/marvin_capture/`):
+FlightSim live (Namecheap app password in gitignored env; do not send until founder authorizes):
 
 ```powershell
-$env:MEMORYBOX_HC_EMAIL_PROVIDER = "auto"
+$env:MEMORYBOX_HC_EMAIL_PROVIDER = "privateemail"
 $env:MEMORYBOX_HC_USER_EMAIL = "memorybox@marvinbot.net"
 python -m memorybox prove-historian-capture --flightsim --slice s5
 ```

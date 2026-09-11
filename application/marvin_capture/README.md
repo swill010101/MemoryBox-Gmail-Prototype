@@ -1,34 +1,29 @@
-# Historian Capture Gmail transport (vendored subset)
+# Historian Capture email transport (vendored Gmail subset)
 
 Source: `origin/cursor/marvin-capture-v01-3344` @ `fe913a4c18e76beb32467306e6f653bbe93c43b9`
 
-This directory is **only** the Gmail transport used by `memorybox.historian_capture`. It is not the Marvin Capture PoC application.
+This directory is **only** helpers plus the **optional** Gmail API transport. Production Historian Capture uses Namecheap Private Email (`MEMORYBOX_HC_EMAIL_PROVIDER=privateemail`).
 
 ## Vendored files
 
 | File | Why |
 |------|-----|
 | `__init__.py` | Package marker |
-| `gmail_client.py` | `build_live_gmail_client` |
-| `plus_address.py` | Plus-address helpers |
+| `gmail_client.py` | Optional `build_live_gmail_client` |
+| `plus_address.py` | Plus-address helpers (also used with Namecheap) |
 | `reply_extract.py` | Reply body extraction |
 
 Not vendored (PoC-only): `app.py`, `db.py`, `config.py`, `mail_store.py`, `mem_bank.py`, `service.py`, `whisper_client.py`, `static/*`.
 
-PoC `config.py` defaults to family `config/gmail_credentials.json`. Historian Capture must **not** load that module for live mail.
+PoC `config.py` defaults to family `config/gmail_credentials.json`. Historian Capture must **not** load that module.
 
-## Live Gmail
-
-Use dedicated files only (gitignored):
-
-- `config/historian_capture_gmail_credentials.json`
-- `config/historian_capture_gmail_token.json`
-
-Serve env:
+## Production (Namecheap)
 
 ```
-MEMORYBOX_HC_EMAIL_PROVIDER=auto
-MEMORYBOX_HC_USER_EMAIL=<dedicated-capture-mailbox>
+MEMORYBOX_HC_EMAIL_PROVIDER=privateemail
+MEMORYBOX_HC_USER_EMAIL=memorybox@marvinbot.net
 ```
 
-See `docs/ops/HISTORIAN_CAPTURE_GMAIL_RESTORE.md`.
+Store the app password in gitignored env or `config/historian_capture_privateemail_credentials.json`.
+
+See `docs/ops/HISTORIAN_CAPTURE_EMAIL_TRANSPORT.md`.
