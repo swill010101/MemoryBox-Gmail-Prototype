@@ -58,6 +58,40 @@ function Stop-Deploy([string]$Reason) {
   throw $Reason
 }
 
+function Test-PythonHasServeDeps([string]$Exe) {
+  if (-not $Exe -or -not (Test-Path -LiteralPath $Exe)) { return $false }
+  $probe = & $Exe -c "import importlib.util,sys; print('executable='+sys.executable); print('uvicorn='+str(importlib.util.find_spec('uvicorn') is not None)); print('psycopg='+str(importlib.util.find_spec('psycopg') is not None))" 2>&1
+  $probeText = ($probe | Out-String).Trim()
+  Write-Log "PYTHON_PROBE exe=$Exe $probeText"
+  return ($probeText -match 'uvicorn=True' -and $probeText -match 'psycopg=True')
+}
+
+function Resolve-StartmbPython {
+  # Prefer the repository venv that FlightSim serve already uses.
+  # Fall back to Get-Command python, then py. Fail closed if none import uvicorn+psycopg.
+  $candidates = @()
+  $venvPy = Join-Path $RepoRoot '.venv\Scripts\python.exe'
+  if (Test-Path -LiteralPath $venvPy) { $candidates += $venvPy }
+  $pathPy = Get-Command python -ErrorAction SilentlyContinue
+  if ($pathPy) { $candidates += [string]$pathPy.Source }
+  $pyLauncher = Get-Command py -ErrorAction SilentlyContinue
+  if ($pyLauncher) { $candidates += [string]$pyLauncher.Source }
+  $seen = @{}
+  foreach ($exe in $candidates) {
+    if (-not $exe -or $seen.ContainsKey($exe)) { continue }
+    $seen[$exe] = $true
+    Write-Log "PYTHON_CANDIDATE=$exe"
+    if (Test-PythonHasServeDeps $exe) {
+      Write-Log "PYTHON_SELECTED=$exe"
+      return $exe
+    }
+  }
+  Stop-Deploy @"
+No valid MemoryBox interpreter found. Tried repository venv ($venvPy) then PATH python/py.
+Each candidate must import uvicorn and psycopg. Install deps into C:\MemoryBox\.venv or the PATH interpreter, then re-run. Do not prepend PATH as a workaround.
+"@
+}
+
 function Invoke-Docker {
   param(
     [Parameter(Mandatory = $true)][string[]]$Args
@@ -174,6 +208,7 @@ ORDER BY lane, video_external_id;
 
     if (-not $SkipRestart) {
       Write-Log 'Step 4: restart serve with required env'
+      $null = Resolve-StartmbPython
       $env:MEMORYBOX_I13_ADMISSION_ID  = $AdmissionId
       $env:MEMORYBOX_RECOGNITION_DRAIN = '0'
       $env:MEMORYBOX_SPEECH_DRAIN      = '0'
@@ -222,7 +257,10 @@ ORDER BY lane;
     $env:MEMORYBOX_I13_ADMISSION_ID = $AdmissionId
     $env:MEMORYBOX_RECOGNITION_DRAIN = '0'
     $env:MEMORYBOX_SPEECH_DRAIN = '0'
-    & python -B (Join-Path $RepoRoot 'docs\implementation\p2-i13-stage-a\inspect-interactive-learn-reconciliation.py')
+    if (-not $env:MEMORYBOX_QDRANT_URL) { $env:MEMORYBOX_QDRANT_URL = 'http://127.0.0.1:6333' }
+    if (-not $env:MEMORYBOX_QDRANT_COLLECTION) { $env:MEMORYBOX_QDRANT_COLLECTION = 'memorybox_evidence' }
+    $InspectorPython = Resolve-StartmbPython
+    & $InspectorPython -B (Join-Path $RepoRoot 'docs\implementation\p2-i13-stage-a\inspect-interactive-learn-reconciliation.py')
     Write-Log "INSPECTOR_EXIT=$LASTEXITCODE"
     if ($LASTEXITCODE -ne 0) { Stop-Deploy "reconciliation inspector failed with exit $LASTEXITCODE" }
 

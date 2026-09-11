@@ -11,6 +11,7 @@ import json
 import os
 import sys
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parents[3]
 if str(ROOT) not in sys.path:
@@ -26,7 +27,8 @@ CHECKS = (
     "admin_jobs",
     "learned_evidence_correction_removal",
     "interactive_learn_enabled_while_archive_locked",
-    "owner_learn_follow_on_complete",
+    "queue_not_stranded",
+    "owner_learn_follow_on_succeeded",
 )
 
 
@@ -76,6 +78,7 @@ def _query_db(conn, *, admission_id: str = "") -> dict:
         SELECT id::text, state, created_at,
                interactive_learn_enabled,
                interactive_learn_ref,
+               start_ref,
                plan_json->>'purpose' AS purpose,
                plan_json->>'scope_kind' AS scope_kind,
                plan_json->'lanes' AS lanes
@@ -88,8 +91,9 @@ def _query_db(conn, *, admission_id: str = "") -> dict:
     face_owner_learn = conn.execute(
         """
         SELECT count(*) AS n
-        FROM face_exemplars
+        FROM face_evidence
         WHERE method = 'owner_learn'
+          AND withdrawn IS NOT TRUE
         """
     ).fetchone()["n"]
     voice_owner_learn = conn.execute(
@@ -123,8 +127,8 @@ def _query_db(conn, *, admission_id: str = "") -> dict:
     speech_withdrawn = conn.execute(
         """
         SELECT count(*) AS n
-        FROM speech_voice_moments
-        WHERE withdrawn IS TRUE
+        FROM speech_spoken_moments
+        WHERE COALESCE(status, 'accepted') = 'withdrawn'
         """
     ).fetchone()["n"]
     annotation_withdrawn = conn.execute(
@@ -146,6 +150,10 @@ def _query_db(conn, *, admission_id: str = "") -> dict:
     scoped_stranded_voice = 0
     scoped_completed_face = 0
     scoped_completed_voice = 0
+    scoped_failed_face = 0
+    scoped_failed_voice = 0
+    scoped_excluded_face = 0
+    scoped_excluded_voice = 0
     scoped_owner_learn_total = 0
     if admission_id:
         scoped_stranded_face = int(
@@ -196,6 +204,54 @@ def _query_db(conn, *, admission_id: str = "") -> dict:
                 (admission_id,),
             ).fetchone()["n"]
         )
+        scoped_failed_face = int(
+            conn.execute(
+                """
+                SELECT count(*) AS n
+                FROM recognition_queue_items
+                WHERE i13_admission_id = %s::uuid
+                  AND enqueue_reason = 'owner_learn'
+                  AND status = 'failed'
+                """,
+                (admission_id,),
+            ).fetchone()["n"]
+        )
+        scoped_failed_voice = int(
+            conn.execute(
+                """
+                SELECT count(*) AS n
+                FROM speech_queue_items
+                WHERE i13_admission_id = %s::uuid
+                  AND enqueue_reason = 'owner_learn'
+                  AND status = 'failed'
+                """,
+                (admission_id,),
+            ).fetchone()["n"]
+        )
+        scoped_excluded_face = int(
+            conn.execute(
+                """
+                SELECT count(*) AS n
+                FROM recognition_queue_items
+                WHERE i13_admission_id = %s::uuid
+                  AND enqueue_reason = 'owner_learn'
+                  AND status = 'excluded'
+                """,
+                (admission_id,),
+            ).fetchone()["n"]
+        )
+        scoped_excluded_voice = int(
+            conn.execute(
+                """
+                SELECT count(*) AS n
+                FROM speech_queue_items
+                WHERE i13_admission_id = %s::uuid
+                  AND enqueue_reason = 'owner_learn'
+                  AND status = 'excluded'
+                """,
+                (admission_id,),
+            ).fetchone()["n"]
+        )
         scoped_owner_learn_total = int(
             conn.execute(
                 """
@@ -227,8 +283,26 @@ def _query_db(conn, *, admission_id: str = "") -> dict:
         "scoped_owner_learn_stranded_total": scoped_stranded_face + scoped_stranded_voice,
         "scoped_owner_learn_completed_face": scoped_completed_face,
         "scoped_owner_learn_completed_voice": scoped_completed_voice,
+        "scoped_owner_learn_failed_face": scoped_failed_face,
+        "scoped_owner_learn_failed_voice": scoped_failed_voice,
+        "scoped_owner_learn_excluded_face": scoped_excluded_face,
+        "scoped_owner_learn_excluded_voice": scoped_excluded_voice,
         "scoped_owner_learn_total": scoped_owner_learn_total,
     }
+
+
+def _lanes_list(value: Any) -> list:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return value
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            return []
+        return parsed if isinstance(parsed, list) else []
+    return []
 
 
 def _classify(*, routes: dict, explore: dict, db: dict | None, env: dict) -> list[dict]:
@@ -239,22 +313,15 @@ def _classify(*, routes: dict, explore: dict, db: dict | None, env: dict) -> lis
             if row.get("id") == admission_id:
                 active = row
                 break
-    started = (db or {}).get("started_admissions") or []
-    started_learning = [
-        a
-        for a in started
-        if a.get("purpose") == "acceptance_learning"
-        and a.get("scope_kind") == "bounded"
-        and any(lane in (a.get("lanes") or []) for lane in ("face", "voice"))
-    ]
+    active_lanes = _lanes_list(active.get("lanes")) if active else []
     learn_enabled = bool(
         admission_id
         and active
         and active.get("purpose") == "acceptance_learning"
-        and active.get("scope_kind") == "bounded"
-        and any(lane in (active.get("lanes") or []) for lane in ("face", "voice"))
+        and active.get("scope_kind") != "archive"
+        and bool(set(active_lanes) & {"face", "voice"})
         and (
-            (active.get("state") == "started" and bool(started_learning))
+            (active.get("state") == "started" and active.get("start_ref"))
             or (
                 active.get("state") == "stopped"
                 and bool(active.get("interactive_learn_enabled"))
@@ -359,20 +426,23 @@ def _classify(*, routes: dict, explore: dict, db: dict | None, env: dict) -> lis
         c, e = "failed", "Lock state could not be confirmed."
     items.append({"id": 6, "key": CHECKS[5], "classification": c, "evidence": e})
 
-    # 7 owner_learn follow-on must not remain stranded when Learn is authorized
+    # 7 queue_not_stranded — worker must not leave owner_learn rows queued/running
     stranded = (db or {}).get("scoped_owner_learn_stranded_total", 0) if db else 0
-    completed_face = (db or {}).get("scoped_owner_learn_completed_face", 0) if db else 0
-    completed_voice = (db or {}).get("scoped_owner_learn_completed_voice", 0) if db else 0
     scoped_total = (db or {}).get("scoped_owner_learn_total", 0) if db else 0
     if not learn_enabled:
         c, e = (
             "not tested",
-            "Interactive Learn not authorized; owner_learn follow-on completion not evaluated.",
+            "Interactive Learn not authorized; owner_learn queue drain not evaluated.",
         )
     elif not admission_id:
         c, e = "not tested", "MEMORYBOX_I13_ADMISSION_ID absent; cannot evaluate scoped owner_learn jobs."
     elif db is None:
-        c, e = "failed", "Database unavailable; cannot verify owner_learn follow-on completion."
+        c, e = "failed", "Database unavailable; cannot verify owner_learn queue drain."
+    elif scoped_total == 0:
+        c, e = (
+            "not tested",
+            "No scoped owner_learn queue rows for this admission yet (Learn follow-on not exercised).",
+        )
     elif stranded > 0:
         c, e = (
             "failed",
@@ -381,24 +451,57 @@ def _classify(*, routes: dict, explore: dict, db: dict | None, env: dict) -> lis
             f"voice={ (db or {}).get('scoped_owner_learn_stranded_voice', 0) }). "
             "Dedicated Interactive Learn worker must drain these before closeout.",
         )
+    else:
+        c, e = (
+            "passed",
+            f"No scoped owner_learn rows queued/running for admission {admission_id} "
+            f"({scoped_total} terminal row(s) visible).",
+        )
+    items.append({"id": 7, "key": CHECKS[6], "classification": c, "evidence": e})
+
+    # 8 owner_learn_follow_on_succeeded — founder face+voice rows must reach completed
+    completed_face = (db or {}).get("scoped_owner_learn_completed_face", 0) if db else 0
+    completed_voice = (db or {}).get("scoped_owner_learn_completed_voice", 0) if db else 0
+    failed_face = (db or {}).get("scoped_owner_learn_failed_face", 0) if db else 0
+    failed_voice = (db or {}).get("scoped_owner_learn_failed_voice", 0) if db else 0
+    excluded_face = (db or {}).get("scoped_owner_learn_excluded_face", 0) if db else 0
+    excluded_voice = (db or {}).get("scoped_owner_learn_excluded_voice", 0) if db else 0
+    if not learn_enabled:
+        c, e = (
+            "not tested",
+            "Interactive Learn not authorized; owner_learn follow-on success not evaluated.",
+        )
+    elif not admission_id:
+        c, e = "not tested", "MEMORYBOX_I13_ADMISSION_ID absent; cannot evaluate owner_learn success."
+    elif db is None:
+        c, e = "failed", "Database unavailable; cannot verify owner_learn follow-on success."
     elif scoped_total == 0:
         c, e = (
             "not tested",
             "No scoped owner_learn queue rows for this admission yet (Learn follow-on not exercised).",
         )
-    elif completed_face + completed_voice >= scoped_total:
+    elif failed_face or failed_voice or excluded_face or excluded_voice:
+        c, e = (
+            "failed",
+            "Founder owner_learn follow-on did not succeed: "
+            f"failed face={failed_face} voice={failed_voice}, "
+            f"excluded face={excluded_face} voice={excluded_voice}. "
+            "Failed/excluded rows remain visible and do not satisfy I13 acceptance.",
+        )
+    elif completed_face >= 1 and completed_voice >= 1:
         c, e = (
             "passed",
-            f"All {scoped_total} scoped owner_learn job(s) completed "
-            f"(face={completed_face}, voice={completed_voice}).",
+            f"Founder face and voice owner_learn rows completed "
+            f"(face={completed_face}, voice={completed_voice}, scoped_total={scoped_total}).",
         )
     else:
         c, e = (
             "failed",
-            f"Incomplete owner_learn follow-on: {scoped_total} row(s) but only "
-            f"{completed_face + completed_voice} completed (face={completed_face}, voice={completed_voice}).",
+            f"Incomplete owner_learn follow-on success for admission {admission_id}: "
+            f"completed face={completed_face}, voice={completed_voice}; "
+            f"scoped_total={scoped_total}. Both founder lanes must reach completed.",
         )
-    items.append({"id": 7, "key": CHECKS[6], "classification": c, "evidence": e})
+    items.append({"id": 8, "key": CHECKS[7], "classification": c, "evidence": e})
 
     return items
 

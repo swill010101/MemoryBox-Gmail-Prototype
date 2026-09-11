@@ -355,43 +355,8 @@ class InteractiveLearnInspectorGateTests(unittest.TestCase):
         spec.loader.exec_module(mod)
         return mod
 
-    def test_inspector_fails_when_owner_learn_stranded(self):
-        mod = self._load_inspector()
-        env = {
-            "MEMORYBOX_I13_ADMISSION_ID": ADMISSION,
-            "MEMORYBOX_RECOGNITION_DRAIN": "0",
-            "MEMORYBOX_SPEECH_DRAIN": "0",
-        }
-        db = {
-            "owner_learn_face_exemplars": 1,
-            "owner_learn_voice_exemplars": 1,
-            "scoped_owner_learn_stranded_total": 2,
-            "scoped_owner_learn_stranded_face": 1,
-            "scoped_owner_learn_stranded_voice": 1,
-            "scoped_owner_learn_completed_face": 0,
-            "scoped_owner_learn_completed_voice": 0,
-            "scoped_owner_learn_total": 2,
-            "admissions_recent": [
-                {
-                    "id": ADMISSION,
-                    "purpose": "acceptance_learning",
-                    "scope_kind": "bounded",
-                    "lanes": ["face", "voice"],
-                    "state": "started",
-                }
-            ],
-            "started_admissions": [
-                {
-                    "id": ADMISSION,
-                    "purpose": "acceptance_learning",
-                    "scope_kind": "bounded",
-                    "lanes": ["face", "voice"],
-                    "state": "started",
-                }
-            ],
-            "archive_admissions_unlocked_or_started": 0,
-        }
-        items = mod._classify(
+    def _classify(self, mod, *, db: dict):
+        return mod._classify(
             routes={
                 "explore_ui": True,
                 "recognition_learn_post": True,
@@ -404,26 +369,26 @@ class InteractiveLearnInspectorGateTests(unittest.TestCase):
             },
             explore={"submitExploreLearn": True, "transcript_selection": True},
             db=db,
-            env=env,
+            env={
+                "MEMORYBOX_I13_ADMISSION_ID": ADMISSION,
+                "MEMORYBOX_RECOGNITION_DRAIN": "0",
+                "MEMORYBOX_SPEECH_DRAIN": "0",
+            },
         )
-        check7 = next(i for i in items if i["key"] == "owner_learn_follow_on_complete")
-        self.assertEqual(check7["classification"], "failed")
 
-    def test_inspector_passes_when_owner_learn_completed(self):
-        mod = self._load_inspector()
-        env = {
-            "MEMORYBOX_I13_ADMISSION_ID": ADMISSION,
-            "MEMORYBOX_RECOGNITION_DRAIN": "0",
-            "MEMORYBOX_SPEECH_DRAIN": "0",
-        }
-        db = {
+    def _learn_db(self, **overrides):
+        base = {
             "owner_learn_face_exemplars": 1,
             "owner_learn_voice_exemplars": 1,
             "scoped_owner_learn_stranded_total": 0,
             "scoped_owner_learn_stranded_face": 0,
             "scoped_owner_learn_stranded_voice": 0,
-            "scoped_owner_learn_completed_face": 1,
-            "scoped_owner_learn_completed_voice": 1,
+            "scoped_owner_learn_completed_face": 0,
+            "scoped_owner_learn_completed_voice": 0,
+            "scoped_owner_learn_failed_face": 0,
+            "scoped_owner_learn_failed_voice": 0,
+            "scoped_owner_learn_excluded_face": 0,
+            "scoped_owner_learn_excluded_voice": 0,
             "scoped_owner_learn_total": 2,
             "admissions_recent": [
                 {
@@ -432,36 +397,70 @@ class InteractiveLearnInspectorGateTests(unittest.TestCase):
                     "scope_kind": "bounded",
                     "lanes": ["face", "voice"],
                     "state": "started",
-                }
-            ],
-            "started_admissions": [
-                {
-                    "id": ADMISSION,
-                    "purpose": "acceptance_learning",
-                    "scope_kind": "bounded",
-                    "lanes": ["face", "voice"],
-                    "state": "started",
+                    "start_ref": "founder-session",
                 }
             ],
             "archive_admissions_unlocked_or_started": 0,
         }
-        items = mod._classify(
-            routes={
-                "explore_ui": True,
-                "recognition_learn_post": True,
-                "speech_learn_post": True,
-                "appearances_correct_post": True,
-                "speech_moments_correct_post": True,
-                "admin_landing": True,
-                "admin_learned_evidence": True,
-                "admin_jobs_i13": True,
-            },
-            explore={"submitExploreLearn": True, "transcript_selection": True},
-            db=db,
-            env=env,
+        base.update(overrides)
+        return base
+
+    def test_queue_not_stranded_fails_when_queued_or_running(self):
+        mod = self._load_inspector()
+        items = self._classify(
+            mod,
+            db=self._learn_db(
+                scoped_owner_learn_stranded_total=2,
+                scoped_owner_learn_stranded_face=1,
+                scoped_owner_learn_stranded_voice=1,
+            ),
         )
-        check7 = next(i for i in items if i["key"] == "owner_learn_follow_on_complete")
-        self.assertEqual(check7["classification"], "passed")
+        check = next(i for i in items if i["key"] == "queue_not_stranded")
+        self.assertEqual(check["classification"], "failed")
+
+    def test_queue_not_stranded_passes_when_terminal_only(self):
+        mod = self._load_inspector()
+        items = self._classify(
+            mod,
+            db=self._learn_db(
+                scoped_owner_learn_failed_face=1,
+                scoped_owner_learn_excluded_voice=1,
+            ),
+        )
+        check = next(i for i in items if i["key"] == "queue_not_stranded")
+        self.assertEqual(check["classification"], "passed")
+
+    def test_owner_learn_success_fails_on_failed(self):
+        mod = self._load_inspector()
+        items = self._classify(
+            mod,
+            db=self._learn_db(scoped_owner_learn_failed_face=1),
+        )
+        check = next(i for i in items if i["key"] == "owner_learn_follow_on_succeeded")
+        self.assertEqual(check["classification"], "failed")
+
+    def test_owner_learn_success_fails_on_excluded(self):
+        mod = self._load_inspector()
+        items = self._classify(
+            mod,
+            db=self._learn_db(scoped_owner_learn_excluded_voice=1),
+        )
+        check = next(i for i in items if i["key"] == "owner_learn_follow_on_succeeded")
+        self.assertEqual(check["classification"], "failed")
+
+    def test_owner_learn_success_passes_when_face_and_voice_completed(self):
+        mod = self._load_inspector()
+        items = self._classify(
+            mod,
+            db=self._learn_db(
+                scoped_owner_learn_completed_face=1,
+                scoped_owner_learn_completed_voice=1,
+            ),
+        )
+        queue = next(i for i in items if i["key"] == "queue_not_stranded")
+        success = next(i for i in items if i["key"] == "owner_learn_follow_on_succeeded")
+        self.assertEqual(queue["classification"], "passed")
+        self.assertEqual(success["classification"], "passed")
 
 
 if __name__ == "__main__":
