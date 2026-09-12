@@ -118,11 +118,30 @@ function Load-MbEnv {
   }
 }
 
+function Test-PythonHasServeDeps([string]$Exe) {
+  if (-not $Exe -or -not (Test-Path -LiteralPath $Exe)) { return $false }
+  $probe = & $Exe -c "import importlib.util; print('uvicorn='+str(importlib.util.find_spec('uvicorn') is not None)); print('psycopg='+str(importlib.util.find_spec('psycopg') is not None))" 2>&1
+  $text = ($probe | Out-String)
+  return ($text -match 'uvicorn=True' -and $text -match 'psycopg=True')
+}
+
 function Resolve-Python {
-  $cmd = Get-Command python -ErrorAction SilentlyContinue
-  if (-not $cmd) { $cmd = Get-Command py -ErrorAction SilentlyContinue }
-  if (-not $cmd) { throw "python not found on PATH" }
-  return $cmd.Source
+  $candidates = @()
+  $venvPy = Join-Path $Root '.venv\Scripts\python.exe'
+  if (Test-Path -LiteralPath $venvPy) { $candidates += $venvPy }
+  $pathPy = Get-Command python -ErrorAction SilentlyContinue
+  if ($pathPy) { $candidates += [string]$pathPy.Source }
+  $pyLauncher = Get-Command py -ErrorAction SilentlyContinue
+  if ($pyLauncher) { $candidates += [string]$pyLauncher.Source }
+  $seen = @{}
+  foreach ($exe in $candidates) {
+    if (-not $exe -or $seen.ContainsKey($exe)) { continue }
+    $seen[$exe] = $true
+    if (Test-PythonHasServeDeps $exe) {
+      return $exe
+    }
+  }
+  throw "No python with uvicorn+psycopg. Tried repo .venv ($venvPy) then PATH python/py. Do not use PATH python as a workaround."
 }
 
 function Add-DirToUserPath([string]$Dir) {
@@ -283,6 +302,7 @@ if ($Role -eq "worker" -or $Role -eq "serve") {
   $Host.UI.RawUI.WindowTitle = "MemoryBox $Role"
   Load-MbEnv
   $PythonExe = Resolve-Python
+  Write-Host "  python: $PythonExe"
   if ($Role -eq "worker") {
     Write-Host "Starting video worker on :$($env:MEMORYBOX_VIDEO_WORKER_PORT)"
     Write-Host "  VIDEO_MEDIA_ROOT=$($env:MEMORYBOX_VIDEO_MEDIA_ROOT)"
@@ -329,7 +349,8 @@ Ensure-Container -Name "memorybox-qdrant" -Recreate:$RecreateContainers -Create 
 Wait-Tcp "Postgres" "127.0.0.1" 5432 60
 Wait-Tcp "Qdrant" "127.0.0.1" 6333 60
 
-$null = Resolve-Python
+$PythonExe = Resolve-Python
+Write-Host "  python: $PythonExe"
 
 if ($Restart) {
   Write-Step "Restart: stopping listeners on :$WorkerPort and :$ServePort"

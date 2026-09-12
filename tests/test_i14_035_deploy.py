@@ -418,6 +418,16 @@ class RuntimeEnvAndMigrate(unittest.TestCase):
         self.assertLess(text.index("=== RUNTIME ENV ==="), text.index("=== BACKUP ==="))
         self.assertLess(text.index("=== BACKUP ==="), text.index("$mig = Invoke-MbMigrate"))
 
+    def test_startmb_prefers_venv_python_with_uvicorn(self) -> None:
+        startmb = (ROOT / "startmb.ps1").read_text(encoding="utf-8")
+        self.assertIn(".venv\\Scripts\\python.exe", startmb)
+        self.assertIn("Test-PythonHasServeDeps", startmb)
+        self.assertIn("uvicorn=True", startmb)
+        self.assertLess(
+            startmb.index(".venv\\Scripts\\python.exe"),
+            startmb.index("Get-Command python"),
+        )
+
     def test_production_equivalent_defaults_supply_qdrant(self) -> None:
         startmb = (ROOT / "startmb.ps1").read_text(encoding="utf-8")
         self.assertIn('MEMORYBOX_QDRANT_URL = "http://127.0.0.1:6333"', startmb)
