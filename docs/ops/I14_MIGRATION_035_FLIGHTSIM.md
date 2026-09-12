@@ -131,4 +131,4 @@ Captured migrate files (`%TEMP%\mb-i14-035-migrate.*.txt`): stdout 72 bytes succ
 
 **Root cause of script failure:** not SQL. `interpret_migrate_process` treated **any nonzero process exit** as SQL failure and ignored success JSON. `Start-Process` reported exit=1 with empty stderr after a successful apply. No disposable rehearsal database was created because production is no longer pre-035.
 
-**Do not re-apply 035.** Next founder-authorized step is `-ResumeAfterMigrate` (schema verify + controlled serve restart only; no backup, no migrate).
+**ResumeAfterMigrate (012059f), 2026-09-12:** Git/origin/clean/035 blob gates passed. Resume printed counts evidence=188656 sources=27 rfc=287010 then stopped in `collect_schema_snapshot`: psycopg `ProgrammingError` because `execute(sql, ())` treated `LIKE 'comms_%'` as a placeholder. **No migrate. No serve restart.** 035 remains applied; tables still empty.

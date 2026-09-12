@@ -582,8 +582,9 @@ def assert_035_contract(snapshot: dict[str, Any]) -> dict[str, Any]:
 
 
 def collect_schema_snapshot(conn: Any, *, baseline_counts: dict[str, int] | None = None) -> dict[str, Any]:
-    def q(sql: str, params: tuple = ()) -> list[Any]:
-        cur = conn.execute(sql, params)
+    def q(sql: str, params: tuple | None = None) -> list[Any]:
+        # Do not pass an empty params tuple: psycopg then treats LIKE '%' as a placeholder.
+        cur = conn.execute(sql, params) if params else conn.execute(sql)
         return list(cur.fetchall())
 
     tables = {

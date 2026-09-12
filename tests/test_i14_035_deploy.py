@@ -252,6 +252,14 @@ class SchemaContract(unittest.TestCase):
         with self.assertRaises(DeployValidationError):
             d035.assert_035_contract(snap)
 
+    def test_snapshot_query_helper_does_not_pass_empty_params(self) -> None:
+        import inspect
+
+        src = inspect.getsource(d035.collect_schema_snapshot)
+        self.assertIn("if params else conn.execute(sql)", src)
+        self.assertNotIn("params: tuple = ()", src)
+        self.assertIn("LIKE 'comms_%'", src)
+
 
 class UntrackedAndRollback(unittest.TestCase):
     def test_untracked_collisions(self) -> None:
