@@ -16,7 +16,7 @@ Do **not** seed logical sources, backfill mappings, ingest mail/calendar/SMS, me
 ## Prerequisites
 
 - Run **on FlightSim** from `C:\MemoryBox` (not Toms-Desktop).
-- Operator has already fetched and checked out the approved **full** release SHA.
+- Operator has already fetched and checked out the approved **full** release SHA. Detached HEAD at that SHA is expected and supported (`git checkout <SHA>`).
 - Tracked git tree clean. Untracked files are listed and never deleted, overwritten, staged, or committed.
 - `-ReleaseSha` equals `HEAD` and, unless `-AllowOfflineOrigin` is separately authorized, equals `origin/codex/p2-i14-communications`.
 - That SHA is a descendant of schema-review `4c13f70`. Git blob IDs for `memorybox/migrations/035_p2_i14_communications_lineage.sql` at HEAD and `4c13f70` match.

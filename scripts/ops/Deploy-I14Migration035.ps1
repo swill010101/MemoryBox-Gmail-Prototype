@@ -105,6 +105,14 @@ function Get-UntrackedPaths {
   git -C $RepoRoot ls-files --others --exclude-standard
 }
 
+function Get-GitText {
+  param([Parameter(Mandatory = $true)][string[]]$GitArgs)
+  $raw = & git -C $RepoRoot @GitArgs
+  if ($LASTEXITCODE -ne 0) { throw "STOP git $($GitArgs -join ' ') failed" }
+  if ($null -eq $raw) { return '' }
+  return (($raw | ForEach-Object { [string]$_ }) -join "`n").Trim()
+}
+
 function Assert-GitCleanTracked {
   $dirty = git -C $RepoRoot status --porcelain --untracked-files=no
   if ($dirty) { throw "STOP tracked files dirty:`n$dirty" }
@@ -127,8 +135,9 @@ Import-FlightSimEnv
 $Python = Resolve-MbPython
 
 Write-Host '=== GIT / RELEASE ==='
-$head = (git -C $RepoRoot rev-parse HEAD).Trim()
-$branch = (git -C $RepoRoot branch --show-current).Trim()
+$head = Get-GitText @('rev-parse', 'HEAD')
+$branch = Get-GitText @('branch', '--show-current')
+if (-not $branch) { $branch = '(detached)' }
 Write-Host "HEAD=$head"
 Write-Host "BRANCH=$branch"
 Write-Host "RELEASE_SHA=$ReleaseSha"
@@ -156,7 +165,7 @@ if ($Rollback) {
   & $Python -m memorybox.ops.i14_migration_035 print-rollback-sql | Set-Content -Encoding ascii $rbSql
   Write-Host "DIAGNOSTICS=$diag"
   git -C $RepoRoot checkout --detach $RequiredPrior
-  if ((git -C $RepoRoot rev-parse HEAD).Trim() -ne $RequiredPrior) { throw 'STOP rollback HEAD mismatch' }
+  if ((Get-GitText @('rev-parse', 'HEAD')) -ne $RequiredPrior) { throw 'STOP rollback HEAD mismatch' }
   git -C $RepoRoot cat-file -e "${RequiredPrior}:memorybox/migrations/$MigrationFile" 2>$null
   if ($LASTEXITCODE -eq 0) { throw 'STOP 035 unexpectedly present on prior SHA' }
   if (Test-Path -LiteralPath (Join-Path $RepoRoot "memorybox\migrations\$MigrationFile")) {
@@ -203,7 +212,7 @@ Invoke-Mb035 'assert-ops-pack' | Out-Host
 if ($PreflightOnly -or $WhatIfPreference) {
   Write-Host 'PREFLIGHT_ONLY: no backup, migrate, or restart; Git HEAD unchanged'
   git -C $RepoRoot status --short
-  Write-Host "HEAD_UNCHANGED=$((git -C $RepoRoot rev-parse HEAD).Trim())"
+  Write-Host "HEAD_UNCHANGED=$(Get-GitText @('rev-parse', 'HEAD'))"
   return
 }
 
@@ -230,7 +239,7 @@ docker exec memorybox-pg rm -f /tmp/pre-i14-035-verify.dump | Out-Null
 Write-Host "BACKUP_PATH=$($info.FullName)"
 Write-Host "BACKUP_SIZE=$($info.Length)"
 
-if ((git -C $RepoRoot rev-parse HEAD).Trim() -ne $ReleaseSha.ToLower()) {
+if ((Get-GitText @('rev-parse', 'HEAD')) -ne $ReleaseSha.ToLower()) {
   throw 'STOP Git HEAD changed unexpectedly before migrate'
 }
 
@@ -252,7 +261,7 @@ $verify = ($script:BaselineCounts | & $Python -m memorybox.ops.i14_migration_035
 if ($LASTEXITCODE -ne 0) { throw 'STOP schema verification failed' }
 Write-Host $verify
 Invoke-Mb035 'assert-ops-pack' | Out-Host
-if ((git -C $RepoRoot rev-parse HEAD).Trim() -ne $ReleaseSha.ToLower()) {
+if ((Get-GitText @('rev-parse', 'HEAD')) -ne $ReleaseSha.ToLower()) {
   throw 'STOP Git HEAD changed during apply'
 }
 
@@ -273,5 +282,5 @@ Write-Host $schedCheck
 Invoke-Mb035 'assert-ops-pack' | Out-Host
 Write-Host 'FINAL_GIT'
 git -C $RepoRoot status --short
-Write-Host "RELEASE_HEAD=$((git -C $RepoRoot rev-parse HEAD).Trim()) BACKUP=$($info.FullName) SIZE=$($info.Length)"
+Write-Host "RELEASE_HEAD=$(Get-GitText @('rev-parse', 'HEAD')) BACKUP=$($info.FullName) SIZE=$($info.Length)"
 Write-Host 'Done. No seed/backfill/ingest/Peggy/UI/task work was performed. Git HEAD was not changed by this script.'
