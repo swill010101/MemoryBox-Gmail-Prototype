@@ -16,6 +16,7 @@ Do **not** seed logical sources, backfill mappings, ingest mail/calendar/SMS, me
 
 - Run **on FlightSim** from `C:\MemoryBox` (not Toms-Desktop).
 - Tracked git tree clean. Untracked files are listed and left untouched; checkout stops if they collide with incoming paths.
+- Live HEAD is `743c767…`, already `4c13f70…`, or a descendant of `4c13f70` (so this ops script can be fetched first). The apply still checks out **`4c13f70`**.
 - Ledger is exactly versions **001–034** with FlightSim filenames for **009** and **025–029**.
 - 035 absent; six `comms_*` tables absent.
 - `/health` ok with pending empty.
@@ -42,7 +43,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\ops\Deploy-I14Migr
 
 ## Hard stops
 
-- HEAD is not the prior SHA `743c767` and not already the target SHA
+- HEAD is not the prior SHA `743c767`, not `4c13f70`, and not a descendant of `4c13f70`
 - Tracked files dirty
 - Untracked path would be overwritten by checkout
 - Ledger is not the ordered 001–034 set, 035 is present, or 009/025–029 filenames differ

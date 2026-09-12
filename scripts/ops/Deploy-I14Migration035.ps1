@@ -123,6 +123,13 @@ function Assert-GitCleanTracked {
   if ($dirty) { throw "STOP tracked files dirty:`n$dirty" }
 }
 
+function Test-AllowedStartHead([string]$Head) {
+  if ($Head -eq $RequiredPrior -or $Head -eq $RequiredSha) { return }
+  git -C $RepoRoot merge-base --is-ancestor $RequiredSha $Head
+  if ($LASTEXITCODE -eq 0) { return }
+  throw "STOP unexpected HEAD=$Head expected prior $RequiredPrior, target $RequiredSha, or a descendant of the target"
+}
+
 Import-FlightSimEnv
 $Python = Resolve-MbPython
 
@@ -134,6 +141,7 @@ Write-Host "BRANCH=$branch"
 git -C $RepoRoot status --short
 Assert-GitCleanTracked
 Test-UntrackedCollisions $RequiredSha
+Test-AllowedStartHead $head
 
 if ($Rollback) {
   if (-not $PSCmdlet.ShouldProcess($RepoRoot, 'Rollback empty 035 and restore prior SHA')) { return }
@@ -153,10 +161,6 @@ if ($Rollback) {
   ($sched | ConvertTo-Json -Depth 8 -Compress | & $Python -m memorybox.ops.i14_migration_035 assert-scheduled) | Out-Host
   git -C $RepoRoot status --short
   return
-}
-
-if ($head -ne $RequiredPrior -and $head -ne $RequiredSha) {
-  throw "STOP unexpected HEAD=$head expected prior $RequiredPrior or target $RequiredSha"
 }
 
 Write-Host '=== PREFLIGHT LEDGER ==='

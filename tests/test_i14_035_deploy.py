@@ -262,7 +262,7 @@ class ScriptAndRunbook(unittest.TestCase):
         self.assertIn("035_p2_i14_communications_lineage.sql", text)
         self.assertIn("PreflightOnly", text)
         self.assertIn("poll-health", text)
-        self.assertNotIn("Start-Sleep 8", text)
+        self.assertIn("merge-base --is-ancestor", text)
         self.assertIn("untracked files collide", text.lower())
         rb = RUNBOOK.read_text(encoding="utf-8")
         self.assertIn("4c13f70aae0d18f217eec4dcf43a98e6b964b14d", rb)
