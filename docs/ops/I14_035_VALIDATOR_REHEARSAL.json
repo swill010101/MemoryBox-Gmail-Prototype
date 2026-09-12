@@ -1,0 +1,462 @@
+{
+  "database_kind": "disposable_not_memorybox",
+  "first_pass": {
+    "after_counts": {
+      "communication_rfc_ids": 0,
+      "evidence": 0,
+      "sources": 0
+    },
+    "baseline_counts": {
+      "communication_rfc_ids": 0,
+      "evidence": 0,
+      "sources": 0
+    },
+    "checkpoint_delete": "RESTRICT",
+    "checks": [
+      {
+        "columns": [
+          "logical_key"
+        ],
+        "contype": "c",
+        "convalidated": true,
+        "name": "comms_logical_sources_logical_key_check",
+        "table": "comms_logical_sources"
+      },
+      {
+        "columns": [
+          "byte_size"
+        ],
+        "contype": "c",
+        "convalidated": true,
+        "name": "comms_extract_instances_byte_size_check",
+        "table": "comms_extract_instances"
+      },
+      {
+        "columns": [
+          "source_kind"
+        ],
+        "contype": "c",
+        "convalidated": true,
+        "name": "comms_logical_sources_source_kind_check",
+        "table": "comms_logical_sources"
+      },
+      {
+        "columns": [
+          "label"
+        ],
+        "contype": "c",
+        "convalidated": true,
+        "name": "comms_logical_sources_label_check",
+        "table": "comms_logical_sources"
+      },
+      {
+        "columns": [
+          "timezone_name"
+        ],
+        "contype": "c",
+        "convalidated": true,
+        "name": "comms_logical_sources_timezone_name_check",
+        "table": "comms_logical_sources"
+      },
+      {
+        "columns": [
+          "fingerprint"
+        ],
+        "contype": "c",
+        "convalidated": true,
+        "name": "comms_extract_instances_fingerprint_check",
+        "table": "comms_extract_instances"
+      },
+      {
+        "columns": [
+          "landing_alias"
+        ],
+        "contype": "c",
+        "convalidated": true,
+        "name": "comms_extract_instances_landing_alias_check",
+        "table": "comms_extract_instances"
+      },
+      {
+        "columns": [
+          "landing_basename"
+        ],
+        "contype": "c",
+        "convalidated": true,
+        "name": "comms_extract_instances_landing_basename_check",
+        "table": "comms_extract_instances"
+      },
+      {
+        "columns": [
+          "validation_status"
+        ],
+        "contype": "c",
+        "convalidated": true,
+        "name": "comms_extract_instances_validation_status_check",
+        "table": "comms_extract_instances"
+      },
+      {
+        "columns": [
+          "ingest_status"
+        ],
+        "contype": "c",
+        "convalidated": true,
+        "name": "comms_extract_instances_ingest_status_check",
+        "table": "comms_extract_instances"
+      },
+      {
+        "columns": [
+          "failure_category"
+        ],
+        "contype": "c",
+        "convalidated": true,
+        "name": "comms_extract_instances_failure_category_check",
+        "table": "comms_extract_instances"
+      },
+      {
+        "columns": [
+          "last_failure_category"
+        ],
+        "contype": "c",
+        "convalidated": true,
+        "name": "comms_source_checkpoint_last_failure_category_check",
+        "table": "comms_source_checkpoint"
+      },
+      {
+        "columns": [
+          "source_kind"
+        ],
+        "contype": "c",
+        "convalidated": true,
+        "name": "comms_record_identities_source_kind_check",
+        "table": "comms_record_identities"
+      },
+      {
+        "columns": [
+          "identity_method"
+        ],
+        "contype": "c",
+        "convalidated": true,
+        "name": "comms_record_identity_aliases_identity_method_check",
+        "table": "comms_record_identity_aliases"
+      },
+      {
+        "columns": [
+          "record_key"
+        ],
+        "contype": "c",
+        "convalidated": true,
+        "name": "comms_record_identity_aliases_record_key_check",
+        "table": "comms_record_identity_aliases"
+      },
+      {
+        "columns": [
+          "native_id_class"
+        ],
+        "contype": "c",
+        "convalidated": true,
+        "name": "comms_record_identity_aliases_native_id_class_check",
+        "table": "comms_record_identity_aliases"
+      }
+    ],
+    "checks_structural": true,
+    "columns": {
+      "comms_extract_instances": [
+        "id",
+        "logical_source_id",
+        "source_id",
+        "fingerprint",
+        "landing_alias",
+        "landing_basename",
+        "byte_size",
+        "source_modified_at",
+        "validation_status",
+        "ingest_status",
+        "started_at",
+        "completed_at",
+        "failure_category",
+        "created_at",
+        "updated_at"
+      ],
+      "comms_logical_sources": [
+        "id",
+        "logical_key",
+        "source_kind",
+        "label",
+        "is_configured",
+        "is_enabled",
+        "timezone_name",
+        "created_at",
+        "updated_at"
+      ],
+      "comms_record_identities": [
+        "id",
+        "logical_source_id",
+        "evidence_id",
+        "source_kind",
+        "first_extract_instance_id",
+        "created_at"
+      ],
+      "comms_record_identity_aliases": [
+        "id",
+        "canonical_record_id",
+        "logical_source_id",
+        "identity_method",
+        "record_key",
+        "native_id_class",
+        "created_at"
+      ],
+      "comms_source_checkpoint": [
+        "logical_source_id",
+        "last_success_at",
+        "last_closed_source_date",
+        "current_extract_instance_id",
+        "last_failure_category",
+        "created_at",
+        "updated_at"
+      ],
+      "comms_source_memberships": [
+        "source_id",
+        "logical_source_id",
+        "created_at"
+      ]
+    },
+    "extract_source_id_unique": false,
+    "foreign_keys": [
+      {
+        "columns": [
+          "source_id"
+        ],
+        "confdeltype": "r",
+        "foreign_columns": [
+          "id"
+        ],
+        "foreign_table": "sources",
+        "table": "comms_source_memberships"
+      },
+      {
+        "columns": [
+          "logical_source_id"
+        ],
+        "confdeltype": "r",
+        "foreign_columns": [
+          "id"
+        ],
+        "foreign_table": "comms_logical_sources",
+        "table": "comms_source_memberships"
+      },
+      {
+        "columns": [
+          "logical_source_id"
+        ],
+        "confdeltype": "r",
+        "foreign_columns": [
+          "id"
+        ],
+        "foreign_table": "comms_logical_sources",
+        "table": "comms_extract_instances"
+      },
+      {
+        "columns": [
+          "source_id"
+        ],
+        "confdeltype": "r",
+        "foreign_columns": [
+          "id"
+        ],
+        "foreign_table": "sources",
+        "table": "comms_extract_instances"
+      },
+      {
+        "columns": [
+          "source_id",
+          "logical_source_id"
+        ],
+        "confdeltype": "r",
+        "foreign_columns": [
+          "source_id",
+          "logical_source_id"
+        ],
+        "foreign_table": "comms_source_memberships",
+        "table": "comms_extract_instances"
+      },
+      {
+        "columns": [
+          "logical_source_id"
+        ],
+        "confdeltype": "r",
+        "foreign_columns": [
+          "id"
+        ],
+        "foreign_table": "comms_logical_sources",
+        "table": "comms_source_checkpoint"
+      },
+      {
+        "columns": [
+          "logical_source_id",
+          "current_extract_instance_id"
+        ],
+        "confdeltype": "r",
+        "foreign_columns": [
+          "logical_source_id",
+          "id"
+        ],
+        "foreign_table": "comms_extract_instances",
+        "table": "comms_source_checkpoint"
+      },
+      {
+        "columns": [
+          "logical_source_id"
+        ],
+        "confdeltype": "r",
+        "foreign_columns": [
+          "id"
+        ],
+        "foreign_table": "comms_logical_sources",
+        "table": "comms_record_identities"
+      },
+      {
+        "columns": [
+          "evidence_id"
+        ],
+        "confdeltype": "r",
+        "foreign_columns": [
+          "id"
+        ],
+        "foreign_table": "evidence",
+        "table": "comms_record_identities"
+      },
+      {
+        "columns": [
+          "logical_source_id",
+          "first_extract_instance_id"
+        ],
+        "confdeltype": "r",
+        "foreign_columns": [
+          "logical_source_id",
+          "id"
+        ],
+        "foreign_table": "comms_extract_instances",
+        "table": "comms_record_identities"
+      },
+      {
+        "columns": [
+          "canonical_record_id",
+          "logical_source_id"
+        ],
+        "confdeltype": "r",
+        "foreign_columns": [
+          "id",
+          "logical_source_id"
+        ],
+        "foreign_table": "comms_record_identities",
+        "table": "comms_record_identity_aliases"
+      }
+    ],
+    "indexes_expected_nonunique": {
+      "idx_comms_extract_instances_logical": false,
+      "idx_comms_extract_instances_source": false,
+      "idx_comms_logical_sources_kind": false,
+      "idx_comms_record_identities_logical": false,
+      "idx_comms_record_identity_aliases_canonical": false,
+      "idx_comms_source_memberships_logical": false
+    },
+    "ledger_035": {
+      "filename": "035_p2_i14_communications_lineage.sql",
+      "version": "035"
+    },
+    "ok": true,
+    "primary_keys": {
+      "comms_extract_instances": [
+        "id"
+      ],
+      "comms_logical_sources": [
+        "id"
+      ],
+      "comms_record_identities": [
+        "id"
+      ],
+      "comms_record_identity_aliases": [
+        "id"
+      ],
+      "comms_source_checkpoint": [
+        "logical_source_id"
+      ],
+      "comms_source_memberships": [
+        "source_id"
+      ]
+    },
+    "row_counts": {
+      "comms_extract_instances": 0,
+      "comms_logical_sources": 0,
+      "comms_record_identities": 0,
+      "comms_record_identity_aliases": 0,
+      "comms_source_checkpoint": 0,
+      "comms_source_memberships": 0
+    },
+    "tables": [
+      "comms_extract_instances",
+      "comms_logical_sources",
+      "comms_record_identities",
+      "comms_record_identity_aliases",
+      "comms_source_checkpoint",
+      "comms_source_memberships"
+    ],
+    "uniques": [
+      {
+        "columns": [
+          "source_kind",
+          "logical_key"
+        ],
+        "table": "comms_logical_sources"
+      },
+      {
+        "columns": [
+          "source_id",
+          "logical_source_id"
+        ],
+        "table": "comms_source_memberships"
+      },
+      {
+        "columns": [
+          "logical_source_id",
+          "fingerprint"
+        ],
+        "table": "comms_extract_instances"
+      },
+      {
+        "columns": [
+          "logical_source_id",
+          "id"
+        ],
+        "table": "comms_extract_instances"
+      },
+      {
+        "columns": [
+          "evidence_id"
+        ],
+        "table": "comms_record_identities"
+      },
+      {
+        "columns": [
+          "id",
+          "logical_source_id"
+        ],
+        "table": "comms_record_identities"
+      },
+      {
+        "columns": [
+          "logical_source_id",
+          "identity_method",
+          "record_key"
+        ],
+        "table": "comms_record_identity_aliases"
+      }
+    ]
+  },
+  "postgres_rendered_source_kind_checks": [
+    "CHECK ((source_kind = ANY (ARRAY['email'::text, 'calendar'::text, 'sms'::text])))",
+    "CHECK ((source_kind = ANY (ARRAY['email'::text, 'calendar'::text, 'sms'::text])))"
+  ],
+  "rehearsal": "disposable_postgres_fresh_035",
+  "second_pass_identical_ok": true
+}

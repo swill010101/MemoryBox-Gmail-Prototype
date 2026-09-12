@@ -1,6 +1,6 @@
 # FlightSim — apply I14 migration 035
 
-**Status:** 035 SQL is committed on FlightSim. Deploy wrapper aborted after success JSON. Controlled restart not yet run.  
+**Status:** 035 SQL is committed on FlightSim. Serve has not been restarted onto a validator-fixed SHA. Do not re-apply 035. Do not run `-ResumeAfterMigrate`. Next authorized step is read-only `verify-schema` then `.\startmb.cmd -Restart`.  
 **Schema-review commit (035 SQL):** `4c13f70aae0d18f217eec4dcf43a98e6b964b14d`  
 **Prior production SHA:** `743c76712cb286ccdae3ad1108fb260dbd04770d`  
 **Release SHA:** the founder-approved ops-pack commit the operator checks out **before** running the script (must be a descendant of `4c13f70` with identical 035 SQL).
@@ -46,13 +46,26 @@ Authorized apply (after separate founder go-ahead; do **not** use this if 035 is
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\ops\Deploy-I14Migration035.ps1 -ReleaseSha <same full SHA>
 ```
 
-Resume after a committed 035 whose wrapper aborted (no backup, no migrate):
+**Do not use `-ResumeAfterMigrate` for the current recovery.** That wrapper is leftover from the aborted apply. 035 is already committed; the remaining work is a read-only schema check, then a normal serve restart. Do not create or run another production resume wrapper.
+
+Final recovery (founder authorization required; 035 already applied):
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\ops\Deploy-I14Migration035.ps1 -ReleaseSha <same full SHA> -ResumeAfterMigrate
+cd C:\MemoryBox
+git fetch origin
+git checkout <new full ops-fix SHA>
+
+$env:MEMORYBOX_DATABASE_URL = 'postgresql://memorybox:memorybox@127.0.0.1:5432/memorybox'
+'{"evidence":188656,"sources":27,"communication_rfc_ids":287010}' | C:\MemoryBox\.venv\Scripts\python.exe -m memorybox.ops.i14_migration_035 verify-schema
 ```
 
-`-ResumeAfterMigrate` is only for a founder-authorized finish after 035 is already committed.
+Only if that command exits 0:
+
+```powershell
+.\startmb.cmd -Restart
+```
+
+Then verify `/health` (`ok=true`, pending empty; startup `migrate()` must apply nothing), Historian Capture email-status (`provider_key=namecheap_privateemail_imap_smtp`), and Scheduled Services (`historian_capture_email` not Error / Disabled / Not configured).
 
 `-WhatIf` skips mutating steps (`SupportsShouldProcess`). `-AllowOfflineOrigin` is only for separately authorized offline use.
 
@@ -86,7 +99,9 @@ Custom-format dump via `docker exec memorybox-pg pg_dump`, copied to `E:\MemoryB
 
 ## Verification
 
-Python catalog checks (`memorybox.ops.i14_migration_035`) remain importable after apply. They assert six empty tables, PKs, every FK including `ON DELETE RESTRICT`, composite same-lineage FKs, source-membership PK/`UNIQUE(source_id, logical_source_id)`, UNIQUE constraints, CHECK clauses, expected indexes, and **non-unique** `source_id` on extracts. Checkpoint delete action must be RESTRICT. Evidence / sources / `communication_rfc_ids` counts must match the pre-apply snapshot.
+Python catalog checks (`memorybox.ops.i14_migration_035 verify-schema`) remain importable after apply. They assert six empty tables, expected columns, PKs, UNIQUE constraints by ordered columns, FKs by source/target columns and delete action, expected indexes, **non-unique** `source_id` on extracts, no `UNIQUE(source_id)` on extracts, exact ledger row `035` / `035_p2_i14_communications_lineage.sql`, and unchanged evidence / sources / `communication_rfc_ids` counts.
+
+CHECK constraints are validated **structurally** only: expected name, `contype='c'`, `convalidated=true`, owning table, constrained columns. PostgreSQL may render `source_kind IN (...)` as `source_kind = ANY (ARRAY[...])`. The validator must not parse `pg_get_constraintdef` text and must never call `execute(sql, ())` when SQL contains a literal `%`. Catalog queries enumerate the six table names (`= ANY(%s)`), they do not use `LIKE 'comms_%'`.
 
 After restart, poll `/health` up to 60 seconds, then assert email-status and scheduled-services. No mail is sent. Ops pack presence is re-checked after migrate and after restart.
 
@@ -132,3 +147,9 @@ Captured migrate files (`%TEMP%\mb-i14-035-migrate.*.txt`): stdout 72 bytes succ
 **Root cause of script failure:** not SQL. `interpret_migrate_process` treated **any nonzero process exit** as SQL failure and ignored success JSON. `Start-Process` reported exit=1 with empty stderr after a successful apply. No disposable rehearsal database was created because production is no longer pre-035.
 
 **ResumeAfterMigrate (012059f), 2026-09-12:** Git/origin/clean/035 blob gates passed. Resume printed counts evidence=188656 sources=27 rfc=287010 then stopped in `collect_schema_snapshot`: psycopg `ProgrammingError` because `execute(sql, ())` treated `LIKE 'comms_%'` as a placeholder. **No migrate. No serve restart.** 035 remains applied; tables still empty.
+
+**Validator LIKE/CHECK incident (388c523 unused on FlightSim), 2026-09-12:** A follow-up empty-params LIKE patch was pushed as `388c523` but **never run on FlightSim**. Isolated disposable PostgreSQL then failed the next check: substring matching required `source_kind IN (...)` while PostgreSQL stores/renders `source_kind = ANY (ARRAY['email'::text, 'calendar'::text, 'sms'::text])`. Production CHECKs match the `= ANY` form. Do not require a particular `pg_get_constraintdef` spelling.
+
+**Corrected validator (this SHA):** catalog queries use `tablename = ANY(%s)` with the six names, or parameterized placeholders; `catalog_execute` refuses SQL containing `%` without parameters. CHECKs are name/contype/validated/table/columns only. Disposable rehearsal: apply 035 on a fresh non-`memorybox` database, run the complete validator twice, keep `docs/ops/I14_035_VALIDATOR_REHEARSAL.json`.
+
+**Next FlightSim action (not this turn):** checkout this SHA, run `verify-schema` read-only against production, then `.\startmb.cmd -Restart` only if the validator exits 0. Do not re-apply 035. Do not use `-ResumeAfterMigrate`.

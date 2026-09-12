@@ -1,6 +1,7 @@
 """Disposable PostgreSQL tests for I14 migration 035. Never uses the memorybox DB."""
 from __future__ import annotations
 
+import json
 import socket
 import subprocess
 import time
@@ -717,6 +718,128 @@ class DisposablePgFullChain(_DisposablePg):
             ).fetchone()
             self.assertIsNotNone(idx)
             self.assertFalse(idx["u"])
+
+
+def _sanitize_validator_evidence(snap: dict, result: dict) -> dict:
+    return {
+        "ok": result.get("ok"),
+        "checks_structural": result.get("checks_structural"),
+        "extract_source_id_unique": result.get("extract_source_id_unique"),
+        "checkpoint_delete": result.get("checkpoint_delete"),
+        "tables": snap.get("tables"),
+        "row_counts": snap.get("row_counts"),
+        "columns": snap.get("columns"),
+        "primary_keys": snap.get("primary_keys"),
+        "uniques": [
+            {"table": u.get("table"), "columns": u.get("columns")}
+            for u in snap.get("uniques") or []
+        ],
+        "foreign_keys": [
+            {
+                "table": f.get("table"),
+                "columns": f.get("columns"),
+                "foreign_table": f.get("foreign_table"),
+                "foreign_columns": f.get("foreign_columns"),
+                "confdeltype": f.get("confdeltype"),
+            }
+            for f in snap.get("foreign_keys") or []
+        ],
+        "checks": [
+            {
+                "table": c.get("table"),
+                "name": c.get("name"),
+                "columns": c.get("columns"),
+                "contype": c.get("contype"),
+                "convalidated": c.get("convalidated"),
+            }
+            for c in snap.get("checks") or []
+        ],
+        "indexes_expected_nonunique": {
+            name: snap.get("indexes", {}).get(name)
+            for name in (
+                "idx_comms_logical_sources_kind",
+                "idx_comms_source_memberships_logical",
+                "idx_comms_extract_instances_source",
+                "idx_comms_extract_instances_logical",
+                "idx_comms_record_identities_logical",
+                "idx_comms_record_identity_aliases_canonical",
+            )
+        },
+        "ledger_035": snap.get("ledger_035"),
+        "baseline_counts": snap.get("baseline_counts"),
+        "after_counts": snap.get("after_counts"),
+    }
+
+
+class DisposableValidatorRehearsal(_DisposablePg):
+    def test_apply_035_then_complete_validator_twice(self) -> None:
+        self._require_dsn()
+        from memorybox.ops import i14_migration_035 as d035
+
+        with psycopg.connect(self.dsn, row_factory=dict_row, connect_timeout=5) as conn:
+            db = conn.execute("SELECT current_database() AS db").fetchone()["db"]
+            self.assertNotEqual(db.lower(), "memorybox")
+            self.assertTrue(str(db).startswith("i14_035") or "i14_035" in str(db) or str(db) == "i14_035")
+            conn.execute(_BOOTSTRAP)
+            _apply_file(conn, SQL_001)
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS communication_rfc_ids (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid()
+                )
+                """
+            )
+            conn.commit()
+            _apply_file(conn, SQL_035)
+            conn.execute(
+                "INSERT INTO schema_migrations (version, filename) VALUES (%s, %s)",
+                ("035", SQL_035.name),
+            )
+            conn.commit()
+            defs = [
+                r["d"]
+                for r in conn.execute(
+                    """
+                    SELECT pg_get_constraintdef(oid) AS d
+                    FROM pg_constraint
+                    WHERE conname IN (
+                      'comms_logical_sources_source_kind_check',
+                      'comms_record_identities_source_kind_check'
+                    )
+                    """
+                ).fetchall()
+            ]
+            rendered = "\n".join(defs)
+            self.assertTrue(
+                any("= ANY" in d or "IN (" in d for d in defs),
+                rendered,
+            )
+            baseline = {
+                "evidence": conn.execute("SELECT COUNT(*) AS n FROM evidence").fetchone()["n"],
+                "sources": conn.execute("SELECT COUNT(*) AS n FROM sources").fetchone()["n"],
+                "communication_rfc_ids": conn.execute(
+                    "SELECT COUNT(*) AS n FROM communication_rfc_ids"
+                ).fetchone()["n"],
+            }
+            snap1 = d035.collect_schema_snapshot(conn, baseline_counts=baseline)
+            result1 = d035.assert_035_contract(snap1)
+            self.assertTrue(result1["ok"])
+            snap2 = d035.collect_schema_snapshot(conn, baseline_counts=baseline)
+            result2 = d035.assert_035_contract(snap2)
+            self.assertEqual(result1, result2)
+            self.assertEqual(snap1["row_counts"], snap2["row_counts"])
+            self.assertEqual(snap1["ledger_035"], snap2["ledger_035"])
+            evidence = {
+                "rehearsal": "disposable_postgres_fresh_035",
+                "database_kind": "disposable_not_memorybox",
+                "postgres_rendered_source_kind_checks": defs,
+                "first_pass": _sanitize_validator_evidence(snap1, result1),
+                "second_pass_identical_ok": True,
+            }
+            out = ROOT / "docs" / "ops" / "I14_035_VALIDATOR_REHEARSAL.json"
+            out.write_text(json.dumps(evidence, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            self.assertTrue(out.is_file())
+            self.assertGreater(out.stat().st_size, 200)
 
 
 if __name__ == "__main__":

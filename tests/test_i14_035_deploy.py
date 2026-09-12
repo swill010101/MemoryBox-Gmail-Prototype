@@ -23,52 +23,48 @@ def _ledger_ok() -> list[dict[str, str]]:
 
 
 def _contract_ok() -> dict:
+    checks = [
+        {
+            "table": table,
+            "name": name,
+            "columns": list(cols),
+            "contype": "c",
+            "convalidated": True,
+        }
+        for table, name, cols in d035.EXPECTED_CHECKS
+    ]
+    uniques = [
+        {"table": table, "name": f"{table}_key", "columns": list(cols)}
+        for table, cols in d035.EXPECTED_UNIQUES
+    ]
+    fks = [
+        {
+            "table": table,
+            "name": f"{table}_fk",
+            "columns": list(cols),
+            "foreign_table": ft,
+            "foreign_columns": list(fcols),
+            "confdeltype": deltype,
+        }
+        for table, cols, ft, fcols, deltype in d035.EXPECTED_FKS
+    ]
     return {
         "tables": list(d035.COMMS_TABLES),
         "row_counts": {t: 0 for t in d035.COMMS_TABLES},
-        "primary_keys": {
-            "comms_logical_sources": ["id"],
-            "comms_source_memberships": ["source_id"],
-            "comms_extract_instances": ["id"],
-            "comms_source_checkpoint": ["logical_source_id"],
-            "comms_record_identities": ["id"],
-            "comms_record_identity_aliases": ["id"],
-        },
-        "foreign_keys": [
-            "FOREIGN KEY (source_id) REFERENCES sources(id) ON DELETE RESTRICT",
-            "FOREIGN KEY (logical_source_id) REFERENCES comms_logical_sources(id) ON DELETE RESTRICT",
-            "FOREIGN KEY (source_id, logical_source_id) REFERENCES comms_source_memberships(source_id, logical_source_id) ON DELETE RESTRICT",
-            "FOREIGN KEY (logical_source_id, current_extract_instance_id) REFERENCES comms_extract_instances(logical_source_id, id) ON DELETE RESTRICT",
-            "FOREIGN KEY (logical_source_id, first_extract_instance_id) REFERENCES comms_extract_instances(logical_source_id, id) ON DELETE RESTRICT",
-            "FOREIGN KEY (canonical_record_id, logical_source_id) REFERENCES comms_record_identities(id, logical_source_id) ON DELETE RESTRICT",
-            "FOREIGN KEY (evidence_id) REFERENCES evidence(id) ON DELETE RESTRICT",
-        ],
-        "uniques": [
-            "UNIQUE (source_kind, logical_key)",
-            "UNIQUE (source_id, logical_source_id)",
-            "UNIQUE (logical_source_id, fingerprint)",
-            "UNIQUE (logical_source_id, id)",
-            "UNIQUE (evidence_id)",
-            "UNIQUE (id, logical_source_id)",
-            "UNIQUE (logical_source_id, identity_method, record_key)",
-        ],
-        "uniques_by_table": [
-            ("comms_extract_instances", "UNIQUE (logical_source_id, fingerprint)"),
-            ("comms_extract_instances", "UNIQUE (logical_source_id, id)"),
-        ],
-        "checks": [
-            "CHECK ((logical_key ~ '^[a-z][a-z0-9_]{1,62}$'))",
+        "columns": {k: list(v) for k, v in d035.EXPECTED_COLUMNS.items()},
+        "primary_keys": {k: list(v) for k, v in d035.EXPECTED_PKS.items()},
+        "foreign_keys": fks,
+        "uniques": uniques,
+        "checks": checks,
+        "check_defs": [
             "CHECK ((source_kind IN ('email', 'calendar', 'sms')))",
-            "CHECK ((fingerprint ~ '^[a-f0-9]{64}$'))",
-            "CHECK ((landing_alias ~ '^[a-z][a-z0-9_]{1,62}$'))",
-            "CHECK ((validation_status IN ('pending', 'valid', 'invalid')))",
-            "CHECK ((ingest_status IN ('not_started', 'running', 'checked_unchanged', 'ingested', 'failed')))",
-            "CHECK ((identity_method IN ('email_rfc_message_id')))",
+            "CHECK ((source_kind = ANY (ARRAY['email'::text, 'calendar'::text, 'sms'::text])))",
         ],
         "checkpoint_confdeltype": "r",
         "indexes": {name: False for name in d035.EXPECTED_INDEXES},
         "baseline_counts": {"evidence": 3, "sources": 2, "communication_rfc_ids": 4},
         "after_counts": {"evidence": 3, "sources": 2, "communication_rfc_ids": 4},
+        "ledger_035": {"version": "035", "filename": d035.MIGRATION_FILENAME},
     }
 
 
@@ -223,14 +219,42 @@ class SchemaContract(unittest.TestCase):
         result = d035.assert_035_contract(_contract_ok())
         self.assertEqual(result["checkpoint_delete"], "RESTRICT")
         self.assertFalse(result["extract_source_id_unique"])
+        self.assertTrue(result["checks_structural"])
+
+    def test_check_validation_ignores_pg_constraintdef_text(self) -> None:
+        snap = _contract_ok()
+        snap["check_defs"] = [
+            "CHECK ((source_kind = ANY (ARRAY['email'::text, 'calendar'::text, 'sms'::text])))"
+        ]
+        out = d035.assert_035_contract(snap)
+        self.assertTrue(out["ok"])
+        self.assertTrue(out["checks_structural"])
+
+    def test_rejects_missing_structural_check(self) -> None:
+        snap = _contract_ok()
+        snap["checks"] = [c for c in snap["checks"] if c["name"] != "comms_logical_sources_source_kind_check"]
+        with self.assertRaises(DeployValidationError) as ctx:
+            d035.assert_035_contract(snap)
+        self.assertIn("missing_check:comms_logical_sources_source_kind_check", str(ctx.exception))
 
     def test_rejects_unique_source_id_and_set_null(self) -> None:
         snap = _contract_ok()
-        snap["uniques_by_table"].append(("comms_extract_instances", "UNIQUE (source_id)"))
+        snap["uniques"].append(
+            {"table": "comms_extract_instances", "name": "bad", "columns": ["source_id"]}
+        )
         with self.assertRaises(DeployValidationError):
             d035.assert_035_contract(snap)
         snap = _contract_ok()
-        snap["foreign_keys"].append("FOREIGN KEY (x) REFERENCES y(id) ON DELETE SET NULL")
+        snap["foreign_keys"].append(
+            {
+                "table": "comms_source_checkpoint",
+                "name": "bad_set_null",
+                "columns": ["x"],
+                "foreign_table": "y",
+                "foreign_columns": ["id"],
+                "confdeltype": "n",
+            }
+        )
         with self.assertRaises(DeployValidationError):
             d035.assert_035_contract(snap)
         snap = _contract_ok()
@@ -246,19 +270,36 @@ class SchemaContract(unittest.TestCase):
         with self.assertRaises(DeployValidationError):
             d035.assert_035_contract(snap)
 
+        snap = _contract_ok()
+        snap["columns"]["comms_logical_sources"] = ["id"]
+        with self.assertRaises(DeployValidationError) as ctx:
+            d035.assert_035_contract(snap)
+        self.assertIn("columns_mismatch_comms_logical_sources", str(ctx.exception))
+
     def test_indexes_source_id_nonunique(self) -> None:
         snap = _contract_ok()
         snap["indexes"]["idx_comms_extract_instances_source"] = True
         with self.assertRaises(DeployValidationError):
             d035.assert_035_contract(snap)
 
-    def test_snapshot_query_helper_does_not_pass_empty_params(self) -> None:
+    def test_catalog_execute_never_sends_empty_params_with_percent(self) -> None:
+        class Boom:
+            def execute(self, sql, params=None):
+                raise AssertionError("should not execute")
+
+        with self.assertRaises(DeployValidationError) as ctx:
+            d035.catalog_execute(Boom(), "SELECT 1 LIKE 'comms_%'")
+        self.assertIn("unsafe_percent_sql", str(ctx.exception))
+        with self.assertRaises(DeployValidationError):
+            d035.catalog_execute(Boom(), "SELECT 1 LIKE 'comms_%'", ())
+
+    def test_snapshot_query_helper_does_not_use_like(self) -> None:
         import inspect
 
         src = inspect.getsource(d035.collect_schema_snapshot)
-        self.assertIn("if params else conn.execute(sql)", src)
-        self.assertNotIn("params: tuple = ()", src)
-        self.assertIn("LIKE 'comms_%'", src)
+        self.assertNotIn("LIKE", src)
+        self.assertIn("ANY(%s)", src)
+        self.assertIn("catalog_execute", src)
 
 
 class UntrackedAndRollback(unittest.TestCase):
@@ -476,6 +517,10 @@ class ScriptAndRunbook(unittest.TestCase):
         self.assertIn("no backup; no migrate", text)
         self.assertIn("does **not** change Git commits", rb)
         self.assertIn("No migration SQL was applied", rb)
+        self.assertIn("Do not use `-ResumeAfterMigrate`", rb)
+        self.assertIn("python.exe -m memorybox.ops.i14_migration_035 verify-schema", rb)
+        self.assertIn(".\\startmb.cmd -Restart", rb)
+        self.assertIn("= ANY (ARRAY[", rb)
 
 
 if __name__ == "__main__":

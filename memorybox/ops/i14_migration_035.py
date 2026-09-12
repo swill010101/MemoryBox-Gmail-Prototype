@@ -69,14 +69,110 @@ EXPECTED_INDEXES = (
     "idx_comms_record_identities_logical",
     "idx_comms_record_identity_aliases_canonical",
 )
-CHECK_NEEDLES = (
-    "logical_key ~",
-    "source_kind IN",
-    "fingerprint ~",
-    "landing_alias ~",
-    "validation_status IN",
-    "ingest_status IN",
-    "identity_method IN",
+EXPECTED_PKS = {
+    "comms_logical_sources": ["id"],
+    "comms_source_memberships": ["source_id"],
+    "comms_extract_instances": ["id"],
+    "comms_source_checkpoint": ["logical_source_id"],
+    "comms_record_identities": ["id"],
+    "comms_record_identity_aliases": ["id"],
+}
+EXPECTED_COLUMNS = {
+    "comms_logical_sources": [
+        "id",
+        "logical_key",
+        "source_kind",
+        "label",
+        "is_configured",
+        "is_enabled",
+        "timezone_name",
+        "created_at",
+        "updated_at",
+    ],
+    "comms_source_memberships": ["source_id", "logical_source_id", "created_at"],
+    "comms_extract_instances": [
+        "id",
+        "logical_source_id",
+        "source_id",
+        "fingerprint",
+        "landing_alias",
+        "landing_basename",
+        "byte_size",
+        "source_modified_at",
+        "validation_status",
+        "ingest_status",
+        "started_at",
+        "completed_at",
+        "failure_category",
+        "created_at",
+        "updated_at",
+    ],
+    "comms_source_checkpoint": [
+        "logical_source_id",
+        "last_success_at",
+        "last_closed_source_date",
+        "current_extract_instance_id",
+        "last_failure_category",
+        "created_at",
+        "updated_at",
+    ],
+    "comms_record_identities": [
+        "id",
+        "logical_source_id",
+        "evidence_id",
+        "source_kind",
+        "first_extract_instance_id",
+        "created_at",
+    ],
+    "comms_record_identity_aliases": [
+        "id",
+        "canonical_record_id",
+        "logical_source_id",
+        "identity_method",
+        "record_key",
+        "native_id_class",
+        "created_at",
+    ],
+}
+EXPECTED_UNIQUES = (
+    ("comms_logical_sources", ("source_kind", "logical_key")),
+    ("comms_source_memberships", ("source_id", "logical_source_id")),
+    ("comms_extract_instances", ("logical_source_id", "fingerprint")),
+    ("comms_extract_instances", ("logical_source_id", "id")),
+    ("comms_record_identities", ("evidence_id",)),
+    ("comms_record_identities", ("id", "logical_source_id")),
+    ("comms_record_identity_aliases", ("logical_source_id", "identity_method", "record_key")),
+)
+EXPECTED_FKS = (
+    ("comms_source_memberships", ("source_id",), "sources", ("id",), "r"),
+    ("comms_source_memberships", ("logical_source_id",), "comms_logical_sources", ("id",), "r"),
+    ("comms_extract_instances", ("logical_source_id",), "comms_logical_sources", ("id",), "r"),
+    ("comms_extract_instances", ("source_id",), "sources", ("id",), "r"),
+    ("comms_extract_instances", ("source_id", "logical_source_id"), "comms_source_memberships", ("source_id", "logical_source_id"), "r"),
+    ("comms_source_checkpoint", ("logical_source_id",), "comms_logical_sources", ("id",), "r"),
+    ("comms_source_checkpoint", ("logical_source_id", "current_extract_instance_id"), "comms_extract_instances", ("logical_source_id", "id"), "r"),
+    ("comms_record_identities", ("logical_source_id",), "comms_logical_sources", ("id",), "r"),
+    ("comms_record_identities", ("evidence_id",), "evidence", ("id",), "r"),
+    ("comms_record_identities", ("logical_source_id", "first_extract_instance_id"), "comms_extract_instances", ("logical_source_id", "id"), "r"),
+    ("comms_record_identity_aliases", ("canonical_record_id", "logical_source_id"), "comms_record_identities", ("id", "logical_source_id"), "r"),
+)
+EXPECTED_CHECKS = (
+    ("comms_logical_sources", "comms_logical_sources_logical_key_check", ("logical_key",)),
+    ("comms_logical_sources", "comms_logical_sources_source_kind_check", ("source_kind",)),
+    ("comms_logical_sources", "comms_logical_sources_label_check", ("label",)),
+    ("comms_logical_sources", "comms_logical_sources_timezone_name_check", ("timezone_name",)),
+    ("comms_extract_instances", "comms_extract_instances_fingerprint_check", ("fingerprint",)),
+    ("comms_extract_instances", "comms_extract_instances_landing_alias_check", ("landing_alias",)),
+    ("comms_extract_instances", "comms_extract_instances_landing_basename_check", ("landing_basename",)),
+    ("comms_extract_instances", "comms_extract_instances_byte_size_check", ("byte_size",)),
+    ("comms_extract_instances", "comms_extract_instances_validation_status_check", ("validation_status",)),
+    ("comms_extract_instances", "comms_extract_instances_ingest_status_check", ("ingest_status",)),
+    ("comms_extract_instances", "comms_extract_instances_failure_category_check", ("failure_category",)),
+    ("comms_source_checkpoint", "comms_source_checkpoint_last_failure_category_check", ("last_failure_category",)),
+    ("comms_record_identities", "comms_record_identities_source_kind_check", ("source_kind",)),
+    ("comms_record_identity_aliases", "comms_record_identity_aliases_identity_method_check", ("identity_method",)),
+    ("comms_record_identity_aliases", "comms_record_identity_aliases_record_key_check", ("record_key",)),
+    ("comms_record_identity_aliases", "comms_record_identity_aliases_native_id_class_check", ("native_id_class",)),
 )
 
 
@@ -495,8 +591,21 @@ def assert_scheduled_services(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _norm_fk(defn: str) -> str:
-    return compact_space(defn).lower()
+def catalog_execute(conn: Any, sql: str, params: tuple | list | None = None) -> Any:
+    """Never pass an empty parameter tuple to SQL that contains '%'."""
+    if "%" in sql and not params:
+        raise DeployValidationError("unsafe_percent_sql")
+    if not params:
+        return conn.execute(sql)
+    return conn.execute(sql, params)
+
+
+def _as_cols(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value]
+    return [str(x) for x in value]
 
 
 def assert_035_contract(snapshot: dict[str, Any]) -> dict[str, Any]:
@@ -509,53 +618,40 @@ def assert_035_contract(snapshot: dict[str, Any]) -> dict[str, Any]:
     if nonempty:
         raise DeployValidationError("comms_tables_not_empty:" + ",".join(nonempty))
     pks = snapshot.get("primary_keys") or {}
-    expected_pk = {
-        "comms_logical_sources": ["id"],
-        "comms_source_memberships": ["source_id"],
-        "comms_extract_instances": ["id"],
-        "comms_source_checkpoint": ["logical_source_id"],
-        "comms_record_identities": ["id"],
-        "comms_record_identity_aliases": ["id"],
-    }
-    for table, cols in expected_pk.items():
+    for table, cols in EXPECTED_PKS.items():
         if list(pks.get(table) or []) != cols:
             raise DeployValidationError(f"pk_mismatch_{table}")
-    fks = [_norm_fk(x) for x in snapshot.get("foreign_keys") or []]
-    required_fks = (
-        "foreignkey(source_id)referencessources(id)ondeleterestrict",
-        "foreignkey(logical_source_id)referencescomms_logical_sources(id)ondeleterestrict",
-        "foreignkey(source_id,logical_source_id)referencescomms_source_memberships(source_id,logical_source_id)ondeleterestrict",
-        "foreignkey(logical_source_id,current_extract_instance_id)referencescomms_extract_instances(logical_source_id,id)ondeleterestrict",
-        "foreignkey(logical_source_id,first_extract_instance_id)referencescomms_extract_instances(logical_source_id,id)ondeleterestrict",
-        "foreignkey(canonical_record_id,logical_source_id)referencescomms_record_identities(id,logical_source_id)ondeleterestrict",
-        "foreignkey(evidence_id)referencesevidence(id)ondeleterestrict",
-    )
-    for needle in required_fks:
-        if not any(needle in item for item in fks):
-            raise DeployValidationError("missing_fk:" + needle)
-    if any("ondeletesetnull" in item for item in fks):
+    columns = snapshot.get("columns") or {}
+    for table, cols in EXPECTED_COLUMNS.items():
+        if list(columns.get(table) or []) != cols:
+            raise DeployValidationError(f"columns_mismatch_{table}")
+    fks = list(snapshot.get("foreign_keys") or [])
+    def _fk_key(item: dict[str, Any]) -> tuple:
+        return (
+            str(item.get("table") or ""),
+            tuple(_as_cols(item.get("columns"))),
+            str(item.get("foreign_table") or ""),
+            tuple(_as_cols(item.get("foreign_columns"))),
+            str(item.get("confdeltype") or ""),
+        )
+    have_fks = {_fk_key(x) for x in fks if isinstance(x, dict)}
+    for table, cols, ft, fcols, deltype in EXPECTED_FKS:
+        if (table, cols, ft, fcols, deltype) not in have_fks:
+            raise DeployValidationError(f"missing_fk:{table}:{','.join(cols)}")
+    if any(str(x.get("confdeltype") or "") == "n" for x in fks if isinstance(x, dict)):
         raise DeployValidationError("unexpected_on_delete_set_null")
-    if str(snapshot.get("checkpoint_confdeltype") or "") != "r":
+    ck_del = str(snapshot.get("checkpoint_confdeltype") or "")
+    if ck_del != "r":
         raise DeployValidationError("checkpoint_fk_not_restrict")
-    unique_blob = "\n".join(compact_space(str(u)).lower() for u in snapshot.get("uniques") or [])
-    unique_needles = (
-        "unique(source_kind,logical_key)",
-        "unique(source_id,logical_source_id)",
-        "unique(logical_source_id,fingerprint)",
-        "unique(logical_source_id,id)",
-        "unique(evidence_id)",
-        "unique(id,logical_source_id)",
-        "unique(logical_source_id,identity_method,record_key)",
-    )
-    for needle in unique_needles:
-        if needle not in unique_blob:
-            raise DeployValidationError("missing_unique:" + needle)
-    extract_uniques = [
-        compact_space(str(u)).lower()
-        for t, u in snapshot.get("uniques_by_table") or []
-        if t == "comms_extract_instances"
-    ]
-    if any(item == "unique(source_id)" for item in extract_uniques):
+    uniques = [x for x in (snapshot.get("uniques") or []) if isinstance(x, dict)]
+    have_u = {(str(u.get("table") or ""), tuple(_as_cols(u.get("columns")))) for u in uniques}
+    for table, cols in EXPECTED_UNIQUES:
+        if (table, cols) not in have_u:
+            raise DeployValidationError(f"missing_unique:{table}:{','.join(cols)}")
+    if any(
+        str(u.get("table")) == "comms_extract_instances" and _as_cols(u.get("columns")) == ["source_id"]
+        for u in uniques
+    ):
         raise DeployValidationError("extract_unique_source_id")
     indexes = snapshot.get("indexes") or {}
     for name in EXPECTED_INDEXES:
@@ -563,10 +659,22 @@ def assert_035_contract(snapshot: dict[str, Any]) -> dict[str, Any]:
             raise DeployValidationError("missing_index:" + name)
     if indexes.get("idx_comms_extract_instances_source") is not False:
         raise DeployValidationError("source_id_index_must_be_nonunique")
-    checks = "\n".join(str(c) for c in snapshot.get("checks") or []).lower()
-    for needle in CHECK_NEEDLES:
-        if needle.lower() not in checks:
-            raise DeployValidationError("missing_check:" + needle)
+    checks = [x for x in (snapshot.get("checks") or []) if isinstance(x, dict)]
+    by_name = {(str(c.get("table") or ""), str(c.get("name") or "")): c for c in checks}
+    for table, name, cols in EXPECTED_CHECKS:
+        got = by_name.get((table, name))
+        if not got:
+            raise DeployValidationError(f"missing_check:{name}")
+        if str(got.get("contype") or "") != "c":
+            raise DeployValidationError(f"check_contype:{name}")
+        if got.get("convalidated") is not True:
+            raise DeployValidationError(f"check_not_validated:{name}")
+        if _as_cols(got.get("columns")) != list(cols):
+            raise DeployValidationError(f"check_columns:{name}")
+    # pg_get_constraintdef text is ignored even if present (IN vs = ANY).
+    ledger = snapshot.get("ledger_035") or {}
+    if str(ledger.get("version") or "") != "035" or str(ledger.get("filename") or "") != MIGRATION_FILENAME:
+        raise DeployValidationError("ledger_035_row_mismatch")
     counts = snapshot.get("baseline_counts") or {}
     after = snapshot.get("after_counts") or {}
     if counts and after != counts:
@@ -578,75 +686,111 @@ def assert_035_contract(snapshot: dict[str, Any]) -> dict[str, Any]:
         "checkpoint_delete": "RESTRICT",
         "source_membership": "pk_source_id",
         "extract_source_id_unique": False,
+        "ledger_035": MIGRATION_FILENAME,
+        "checks_structural": True,
     }
 
 
 def collect_schema_snapshot(conn: Any, *, baseline_counts: dict[str, int] | None = None) -> dict[str, Any]:
-    def q(sql: str, params: tuple | None = None) -> list[Any]:
-        # Do not pass an empty params tuple: psycopg then treats LIKE '%' as a placeholder.
-        cur = conn.execute(sql, params) if params else conn.execute(sql)
+    names = list(COMMS_TABLES)
+
+    def q(sql: str, params: tuple | list | None = None) -> list[Any]:
+        cur = catalog_execute(conn, sql, params)
         return list(cur.fetchall())
 
-    tables = {
-        r[0] if not isinstance(r, dict) else r["t"]
+    present = {
+        r["t"] if isinstance(r, dict) else r[0]
         for r in q(
-            "SELECT tablename AS t FROM pg_tables WHERE schemaname='public' AND tablename LIKE 'comms_%'"
+            "SELECT tablename AS t FROM pg_tables WHERE schemaname = 'public' AND tablename = ANY(%s)",
+            (names,),
         )
     }
+    columns: dict[str, list[str]] = {t: [] for t in COMMS_TABLES if t in present}
+    for row in q(
+        """
+        SELECT table_name AS t, column_name AS c
+          FROM information_schema.columns
+         WHERE table_schema = 'public' AND table_name = ANY(%s)
+         ORDER BY table_name, ordinal_position
+        """,
+        (names,),
+    ):
+        rec = dict(row) if not isinstance(row, dict) else row
+        columns.setdefault(str(rec["t"]), []).append(str(rec["c"]))
     row_counts = {}
     for name in COMMS_TABLES:
-        if name in tables:
+        if name in present:
             n = q(f"SELECT COUNT(*) AS n FROM {name}")[0]
-            row_counts[name] = int(n[0] if not isinstance(n, dict) else n["n"])
+            row_counts[name] = int(n["n"] if isinstance(n, dict) else n[0])
     pks: dict[str, list[str]] = {}
+    fks: list[dict[str, Any]] = []
+    uniques: list[dict[str, Any]] = []
+    checks: list[dict[str, Any]] = []
     for row in q(
         """
-        SELECT c.relname AS t, array_agg(a.attname ORDER BY x.n) AS cols
+        SELECT
+          cl.relname AS t,
+          k.conname AS n,
+          k.contype AS ctype,
+          k.convalidated AS validated,
+          k.confdeltype AS deltype,
+          nf.relname AS ft,
+          ARRAY(
+            SELECT a.attname
+              FROM unnest(k.conkey) WITH ORDINALITY AS x(attnum, ord)
+              JOIN pg_attribute a ON a.attrelid = k.conrelid AND a.attnum = x.attnum
+             ORDER BY x.ord
+          ) AS cols,
+          ARRAY(
+            SELECT a.attname
+              FROM unnest(COALESCE(k.confkey, '{}'::int2[])) WITH ORDINALITY AS x(attnum, ord)
+              JOIN pg_attribute a ON a.attrelid = k.confrelid AND a.attnum = x.attnum
+             ORDER BY x.ord
+          ) AS fcols
         FROM pg_constraint k
-        JOIN pg_class c ON c.oid = k.conrelid
-        JOIN LATERAL unnest(k.conkey) WITH ORDINALITY AS x(attnum, n) ON TRUE
-        JOIN pg_attribute a ON a.attrelid = k.conrelid AND a.attnum = x.attnum
-        WHERE k.contype = 'p' AND c.relname LIKE 'comms_%'
-        GROUP BY c.relname
-        """
+        JOIN pg_class cl ON cl.oid = k.conrelid
+        LEFT JOIN pg_class nf ON nf.oid = k.confrelid
+        WHERE cl.relname = ANY(%s)
+        """,
+        (names,),
     ):
-        if isinstance(row, dict):
-            pks[row["t"]] = list(row["cols"])
-        else:
-            pks[row[0]] = list(row[1])
-    fks = []
-    uniques = []
-    uniques_by_table = []
-    checks = []
-    for row in q(
-        """
-        SELECT c.relname AS t, k.contype, pg_get_constraintdef(k.oid) AS d
-        FROM pg_constraint k
-        JOIN pg_class c ON c.oid = k.conrelid
-        WHERE c.relname LIKE 'comms_%'
-        """
-    ):
-        table, ctype, defn = (row["t"], row["contype"], row["d"]) if isinstance(row, dict) else row
-        if ctype == "f":
-            fks.append(defn)
+        rec = dict(row) if not isinstance(row, dict) else row
+        table = str(rec["t"])
+        ctype = str(rec["ctype"])
+        cols = _as_cols(rec.get("cols"))
+        if ctype == "p":
+            pks[table] = cols
+        elif ctype == "f":
+            fks.append(
+                {
+                    "table": table,
+                    "name": str(rec["n"]),
+                    "columns": cols,
+                    "foreign_table": str(rec.get("ft") or ""),
+                    "foreign_columns": _as_cols(rec.get("fcols")),
+                    "confdeltype": str(rec.get("deltype") or ""),
+                }
+            )
         elif ctype == "u":
-            uniques.append(defn)
-            uniques_by_table.append((table, defn))
+            uniques.append({"table": table, "name": str(rec["n"]), "columns": cols})
         elif ctype == "c":
-            checks.append(defn)
-    ck = q(
-        """
-        SELECT confdeltype AS d
-        FROM pg_constraint
-        WHERE conrelid = 'comms_source_checkpoint'::regclass
-          AND contype = 'f'
-          AND pg_get_constraintdef(oid) LIKE '%current_extract_instance_id%'
-        """
-    )
+            checks.append(
+                {
+                    "table": table,
+                    "name": str(rec["n"]),
+                    "columns": cols,
+                    "contype": "c",
+                    "convalidated": bool(rec.get("validated")),
+                }
+            )
     ck_del = None
-    if ck:
-        item = ck[0]
-        ck_del = item["d"] if isinstance(item, dict) else item[0]
+    for fk in fks:
+        if (
+            fk["table"] == "comms_source_checkpoint"
+            and fk["columns"] == ["logical_source_id", "current_extract_instance_id"]
+        ):
+            ck_del = fk["confdeltype"]
+            break
     indexes = {}
     for row in q(
         """
@@ -654,11 +798,12 @@ def collect_schema_snapshot(conn: Any, *, baseline_counts: dict[str, int] | None
         FROM pg_index i
         JOIN pg_class c ON c.oid = i.indexrelid
         JOIN pg_class t ON t.oid = i.indrelid
-        WHERE t.relname LIKE 'comms_%'
-        """
+        WHERE t.relname = ANY(%s)
+        """,
+        (names,),
     ):
-        name, uniq = (row["n"], row["u"]) if isinstance(row, dict) else row
-        indexes[name] = bool(uniq)
+        rec = dict(row) if not isinstance(row, dict) else row
+        indexes[str(rec["n"])] = bool(rec["u"])
     after = {}
     for key, sql in (
         ("evidence", "SELECT COUNT(*) AS n FROM evidence"),
@@ -667,18 +812,30 @@ def collect_schema_snapshot(conn: Any, *, baseline_counts: dict[str, int] | None
     ):
         item = q(sql)[0]
         after[key] = int(item["n"] if isinstance(item, dict) else item[0])
+    ledger_rows = q(
+        "SELECT version, filename FROM schema_migrations WHERE version = %s",
+        ("035",),
+    )
+    ledger_035 = {}
+    if ledger_rows:
+        item = ledger_rows[0]
+        ledger_035 = {
+            "version": str(item["version"] if isinstance(item, dict) else item[0]),
+            "filename": str(item["filename"] if isinstance(item, dict) else item[1]),
+        }
     return {
-        "tables": sorted(tables),
+        "tables": sorted(present),
         "row_counts": row_counts,
+        "columns": columns,
         "primary_keys": pks,
         "foreign_keys": fks,
         "uniques": uniques,
-        "uniques_by_table": uniques_by_table,
         "checks": checks,
         "checkpoint_confdeltype": ck_del,
         "indexes": indexes,
         "after_counts": after,
         "baseline_counts": baseline_counts or after,
+        "ledger_035": ledger_035,
     }
 
 
