@@ -398,8 +398,9 @@ class RuntimeEnvAndMigrate(unittest.TestCase):
             )
         self.assertIn("migrate_not_started:configuration", str(ctx.exception))
         with self.assertRaises(DeployValidationError) as ctx:
-            d035.interpret_migrate_process(2, '{"applied":[]}', "ERROR:  syntax error")
+            d035.interpret_migrate_process(2, "", "ERROR:  syntax error at or near CREATE")
         self.assertIn("migrate_failed:sql_or_runtime", str(ctx.exception))
+        self.assertIn("syntax error", str(ctx.exception))
         with self.assertRaises(DeployValidationError) as ctx:
             d035.interpret_migrate_process(0, "not-json", "")
         self.assertIn("migrate_invalid_output", str(ctx.exception))
@@ -409,6 +410,14 @@ class RuntimeEnvAndMigrate(unittest.TestCase):
             0, json.dumps({"applied": [d035.MIGRATION_FILENAME]}), ""
         )
         self.assertEqual(out["applied"], [d035.MIGRATION_FILENAME])
+        recovered = d035.interpret_migrate_process(
+            1,
+            '{\n  "applied": [\n    "035_p2_i14_communications_lineage.sql"\n  ]\n}\n',
+            "",
+        )
+        self.assertEqual(recovered["applied"], [d035.MIGRATION_FILENAME])
+        self.assertTrue(recovered["exit_nonzero_after_applied"])
+        self.assertEqual(recovered["process_exit_code"], 1)
 
     def test_no_restart_after_migrate_failure(self) -> None:
         text = PS1.read_text(encoding="utf-8")
@@ -445,7 +454,8 @@ class ScriptAndRunbook(unittest.TestCase):
         self.assertLess(text.index("assert-runtime-env"), text.index("=== BACKUP ==="))
         self.assertLess(text.index("$mig = Invoke-MbMigrate"), text.index("=== RESTART SERVE ==="))
         self.assertIn("restart_without_migrate_success", text)
-        self.assertIn("MEMORYBOX_QDRANT_URL = 'http://127.0.0.1:6333'", text)
+        self.assertIn("& $py -m memorybox migrate", text)
+        self.assertIn("MIGRATE_STDERR_SANITIZED", text)
         self.assertNotIn("& $Python -m memorybox migrate", text)
         self.assertNotIn("Start-Sleep 8", text)
         rb = RUNBOOK.read_text(encoding="utf-8")
@@ -453,6 +463,9 @@ class ScriptAndRunbook(unittest.TestCase):
         self.assertIn("-ReleaseSha <same full SHA> -PreflightOnly", rb)
         self.assertIn("-ReleaseSha <same full SHA>", rb)
         self.assertIn("Do **not** seed", rb)
+        self.assertIn("$ResumeAfterMigrate", text)
+        self.assertIn("=== RESUME AFTER MIGRATE ===", text)
+        self.assertIn("no backup; no migrate", text)
         self.assertIn("does **not** change Git commits", rb)
         self.assertIn("No migration SQL was applied", rb)
 

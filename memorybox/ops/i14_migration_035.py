@@ -332,20 +332,33 @@ def _is_config_failure(text: str) -> bool:
 
 
 def interpret_migrate_process(exit_code: int, stdout: str, stderr: str) -> dict[str, Any]:
-    combined = redact_process_text(f"{stdout or ''}\n{stderr or ''}")
+    raw = (stdout or "").strip()
+    stderr_s = redact_process_text(stderr or "")
+    stdout_s = redact_process_text(stdout or "")
+    parsed: dict[str, Any] | None = None
+    if raw:
+        try:
+            loaded = json.loads(raw)
+        except json.JSONDecodeError:
+            loaded = None
+        if isinstance(loaded, dict) and "applied" in loaded:
+            parsed = loaded
+    if parsed is not None:
+        assert_migrate_applied(parsed)
+        out = dict(parsed)
+        out["process_exit_code"] = int(exit_code)
+        if int(exit_code) != 0:
+            out["exit_nonzero_after_applied"] = True
+        return out
+    combined = (stdout_s + "\n" + stderr_s).strip()
+    detail = combined[:400] if combined else "(empty stdout/stderr)"
     if int(exit_code) != 0:
         if _is_config_failure(f"{stdout}\n{stderr}"):
-            raise DeployValidationError("migrate_not_started:configuration:" + combined[:240])
-        raise DeployValidationError("migrate_failed:sql_or_runtime:exit=" + str(exit_code))
-    raw = (stdout or "").strip()
-    try:
-        payload = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise DeployValidationError("migrate_invalid_output") from exc
-    if not isinstance(payload, dict):
-        raise DeployValidationError("migrate_invalid_output")
-    assert_migrate_applied(payload)
-    return payload
+            raise DeployValidationError("migrate_not_started:configuration:" + detail)
+        raise DeployValidationError(
+            "migrate_failed:sql_or_runtime:exit=" + str(exit_code) + ":stderr=" + detail
+        )
+    raise DeployValidationError("migrate_invalid_output:" + detail)
 
 
 def untracked_collisions(untracked: Iterable[str], incoming_paths: Iterable[str]) -> list[str]:

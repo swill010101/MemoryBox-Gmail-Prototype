@@ -13,8 +13,9 @@
   Read-only git/ledger/health/counts checks. No backup, migrate, or restart.
 .PARAMETER AllowOfflineOrigin
   Skip origin/codex/p2-i14-communications equality. Founder-authorized offline use only.
-.PARAMETER Rollback
-  Stop serve, save diagnostics, check out prior production SHA, reverse empty 035.
+.PARAMETER ResumeAfterMigrate
+  035 already committed. Skip backup/migrate. Verify schema/counts then controlled restart.
+  Founder-only after a successful SQL apply whose wrapper aborted.
 #>
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
@@ -23,6 +24,7 @@ param(
   [switch]$PreflightOnly,
   [switch]$AllowOfflineOrigin,
   [switch]$Rollback,
+  [switch]$ResumeAfterMigrate,
   [string]$RepoRoot = '',
   [string]$HealthUrl = 'http://127.0.0.1:8790/health',
   [string]$PythonExe = ''
@@ -102,13 +104,19 @@ function Invoke-MbMigrate {
   $outFile = Join-Path $env:TEMP 'mb-i14-035-migrate.stdout.txt'
   $errFile = Join-Path $env:TEMP 'mb-i14-035-migrate.stderr.txt'
   Remove-Item -LiteralPath $outFile, $errFile -ErrorAction SilentlyContinue
-  $proc = Start-Process -FilePath $py -ArgumentList @('-m', 'memorybox', 'migrate') -WorkingDirectory $RepoRoot -Wait -PassThru -NoNewWindow -RedirectStandardOutput $outFile -RedirectStandardError $errFile
+  $prev = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  & $py -m memorybox migrate 1>$outFile 2>$errFile
+  $code = $LASTEXITCODE
+  $ErrorActionPreference = $prev
   $stdout = ''
   $stderr = ''
   if (Test-Path -LiteralPath $outFile) { $stdout = Get-Content -LiteralPath $outFile -Raw -ErrorAction SilentlyContinue }
   if (Test-Path -LiteralPath $errFile) { $stderr = Get-Content -LiteralPath $errFile -Raw -ErrorAction SilentlyContinue }
+  Write-Host "MIGRATE_EXIT=$code STDOUT_BYTES=$((($stdout | Measure-Object -Character).Characters)) STDERR_BYTES=$((($stderr | Measure-Object -Character).Characters))"
+  if ($stderr) { Write-Host ('MIGRATE_STDERR_SANITIZED=' + ($stderr -replace '(://)([^/@\s]+):([^/@\s]+)@', '$1***:***@')) }
   $payload = @{
-    exit_code = [int]$proc.ExitCode
+    exit_code = [int]$code
     stdout = [string]$stdout
     stderr = [string]$stderr
   } | ConvertTo-Json -Compress
@@ -243,6 +251,20 @@ if ($Rollback) {
   return
 }
 
+if ($ResumeAfterMigrate) {
+  if ($PreflightOnly) { throw 'STOP ResumeAfterMigrate cannot combine with PreflightOnly' }
+  Write-Host '=== RESUME AFTER MIGRATE ==='
+  Write-Host 'no backup; no migrate; verify already-applied 035 then controlled restart'
+  $script:BaselineCounts = Invoke-Mb035 'baseline-counts'
+  Write-Host $script:BaselineCounts
+  Write-Host '=== VERIFY SCHEMA ==='
+  $verify = ($script:BaselineCounts | & $Python -m memorybox.ops.i14_migration_035 verify-schema)
+  if ($LASTEXITCODE -ne 0) { throw 'STOP schema verification failed' }
+  Write-Host $verify
+  $script:MigrateSucceeded = $true
+  $info = [pscustomobject]@{ FullName = 'already-applied-035'; Length = 0 }
+} else {
+
 Write-Host '=== PREFLIGHT LEDGER ==='
 $pre = Invoke-Mb035 'preflight-ledger'
 Write-Host $pre
@@ -310,6 +332,11 @@ if ((Get-GitText @('rev-parse', 'HEAD')) -ne $ReleaseSha.ToLower()) {
   throw 'STOP Git HEAD changed during apply'
 }
 
+}
+
+if ((Get-GitText @('rev-parse', 'HEAD')) -ne $ReleaseSha.ToLower()) {
+  throw 'STOP Git HEAD changed before restart'
+}
 if (-not $script:MigrateSucceeded) { throw 'STOP restart_without_migrate_success' }
 Write-Host '=== RESTART SERVE ==='
 Stop-MbServe
