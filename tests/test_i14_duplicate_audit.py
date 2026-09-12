@@ -153,7 +153,9 @@ class DuplicateAuditUnits(unittest.TestCase):
         self.assertNotIn("left(", load)
         self.assertNotIn("substr(", load)
         self.assertNotIn("substring(", load)
-        self.assertIn("limit %s offset %s", load)
+        self.assertNotIn("offset", load)
+        self.assertIn("where e.id > %s", load)
+        self.assertIn("limit %s", load)
         grouping = "\n".join(
             inspect.getsource(fn)
             for fn in (audit._within_source, audit._cross_source_in_cluster, audit._cross_cluster_or_stream)
@@ -310,7 +312,9 @@ class DuplicateAuditPg(_DisposablePg):
             sql_blob = "\n".join(spy.statements).lower()
             self.assertNotIn("hashtext", sql_blob)
             self.assertNotIn("select distinct source_id", sql_blob)
-            self.assertIn("limit %s offset %s", sql_blob)
+            self.assertNotIn(" offset ", sql_blob)
+            self.assertIn("where e.id > %s", sql_blob)
+            self.assertIn("limit %s", sql_blob)
             self.assertNotRegex(sql_blob, r"left\s*\(\s*lower\s*\(\s*btrim")
             self.assertNotRegex(sql_blob, r"substr(ing)?\s*\(")
             self.assertTrue(any("payload_json->>'content_hash'" in s.lower() for s in spy.statements))
@@ -455,6 +459,28 @@ class DuplicateAuditPg(_DisposablePg):
             fail = audit.failure_json(str(ctx.exception))
             self.assertEqual(fail, {"ok": False, "error": "statement_timeout"})
             self.assertNotIn(HASH_A, json.dumps(fail))
+            conn.rollback()
+            self.assertEqual(self._snap(), before)
+            self.assertEqual(self._temp_count(), 0)
+
+    def test_run_deadline_sanitized_and_rolls_back(self) -> None:
+        with self._conn() as conn:
+            self._truncate(conn)
+            self._seed(conn)
+            before = self._snap()
+            original = audit._create_temp
+
+            def slow(inner_conn):
+                audit.catalog_execute(inner_conn, "SELECT pg_sleep(2)")
+                return original(inner_conn)
+
+            audit._create_temp = slow
+            try:
+                with self.assertRaises(AuditError) as ctx:
+                    audit.run_audit(conn, run_deadline_s=1)
+            finally:
+                audit._create_temp = original
+            self.assertEqual(str(ctx.exception), "run_deadline")
             conn.rollback()
             self.assertEqual(self._snap(), before)
             self.assertEqual(self._temp_count(), 0)

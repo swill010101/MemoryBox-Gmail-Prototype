@@ -9,8 +9,9 @@ pg_class). The permitted path is therefore: autocommit off, START TRANSACTION (n
 ONLY), session TEMP ON COMMIT DROP, execute-gate refusing persistent DML/DDL, rollback on
 success and error. Persistent catalogs are unchanged.
 
-SQL strategy: batched INSERT…SELECT of trim/lower(payload_json->>'content_hash') into TEMP;
-GROUP BY the full text (no hashtext, left/substr, or Python hash fetches).
+SQL strategy: keyset INSERT…SELECT of trim/lower(payload_json->>'content_hash') into TEMP
+(WHERE evidence.id > last ORDER BY id LIMIT n). No OFFSET rescan. GROUP BY the full text
+(no hashtext, left/substr, or Python hash fetches). Whole-run deadline plus per-statement timeout.
 
 JSON schema (success): ok, read_only_production_tables, database_kind, proposed_streams,
 kind_inventory[], uri_class_inventory[], missing_hash, invalid_hash,
@@ -27,6 +28,7 @@ import json
 import os
 import re
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -60,7 +62,9 @@ TOKEN_COLUMNS = (
 )
 PROPOSED_STREAMS = ("household_email", "household_calendar", "household_sms")
 DEFAULT_STATEMENT_TIMEOUT = "30s"
-DEFAULT_BATCH = 500
+DEFAULT_BATCH = 10000
+DEFAULT_RUN_DEADLINE_S = 180
+KEYSET_START = "00000000-0000-0000-0000-000000000000"
 
 
 class AuditError(RuntimeError):
@@ -97,11 +101,14 @@ def _refuse_persistent_write(sql: str) -> None:
     stripped = sql.strip()
     if stripped.startswith("--"):
         return
-    if not WRITE_HEAD.match(stripped):
+    if re.search(r"\bINSERT\s+INTO\s+i14_audit_", stripped, re.I):
         return
     if TEMP_WRITE_OK.match(stripped):
         return
-    raise AuditError("persistent_write_refused")
+    if WRITE_HEAD.match(stripped) or re.search(
+        r"\b(INSERT|UPDATE|DELETE|MERGE|TRUNCATE)\b", stripped, re.I
+    ):
+        raise AuditError("persistent_write_refused")
 
 
 def uri_class(uri: str | None) -> str:
@@ -152,6 +159,18 @@ def _require_not_memorybox(conn: Any) -> str:
     if name == "memorybox" and not allow:
         raise AuditError("refused_memorybox_dbname")
     return name
+
+
+def emit_progress(event: dict[str, Any]) -> None:
+    payload = dict(event)
+    payload.pop("ok", None)
+    assert_counts_only(payload)
+    print(json.dumps(payload, sort_keys=True), file=sys.stderr, flush=True)
+
+
+def _deadline_guard(deadline_mono: float) -> None:
+    if time.monotonic() >= deadline_mono:
+        raise AuditError("run_deadline")
 
 
 def _begin_audit_transaction(conn: Any) -> None:
@@ -219,41 +238,73 @@ def _create_temp(conn: Any) -> None:
 
 
 _LOAD_SQL = """
-        INSERT INTO i14_audit_hash_rows (
-          evidence_id, source_id, evidence_kind, source_kind, uri_class, content_hash, hash_status
+        WITH ins AS (
+          INSERT INTO i14_audit_hash_rows (
+            evidence_id, source_id, evidence_kind, source_kind, uri_class, content_hash, hash_status
+          )
+          SELECT
+            e.id,
+            e.source_id,
+            e.evidence_kind,
+            COALESCE(s.source_kind, ''),
+            CASE
+              WHEN right(replace(lower(COALESCE(s.uri, '')), '\\', '/'), 5) = '.mbox' THEN 'mbox'
+              WHEN right(replace(lower(COALESCE(s.uri, '')), '\\', '/'), 4) = '.ics' THEN 'ics'
+              WHEN right(replace(lower(COALESCE(s.uri, '')), '\\', '/'), 4) = '.csv' THEN 'csv'
+              ELSE 'other'
+            END,
+            lower(btrim(COALESCE(e.payload_json->>'content_hash', ''))),
+            CASE
+              WHEN btrim(COALESCE(e.payload_json->>'content_hash', '')) = '' THEN 'missing'
+              WHEN lower(btrim(e.payload_json->>'content_hash')) ~ '^[a-f0-9]{64}$' THEN 'ok'
+              ELSE 'invalid'
+            END
+          FROM evidence e
+          LEFT JOIN sources s ON s.id = e.source_id
+          WHERE e.id > %s
+          ORDER BY e.id
+          LIMIT %s
+          RETURNING evidence_id
         )
         SELECT
-          e.id,
-          e.source_id,
-          e.evidence_kind,
-          COALESCE(s.source_kind, ''),
-          CASE
-            WHEN right(replace(lower(COALESCE(s.uri, '')), '\\', '/'), 5) = '.mbox' THEN 'mbox'
-            WHEN right(replace(lower(COALESCE(s.uri, '')), '\\', '/'), 4) = '.ics' THEN 'ics'
-            WHEN right(replace(lower(COALESCE(s.uri, '')), '\\', '/'), 4) = '.csv' THEN 'csv'
-            ELSE 'other'
-          END,
-          lower(btrim(COALESCE(e.payload_json->>'content_hash', ''))),
-          CASE
-            WHEN btrim(COALESCE(e.payload_json->>'content_hash', '')) = '' THEN 'missing'
-            WHEN lower(btrim(e.payload_json->>'content_hash')) ~ '^[a-f0-9]{64}$' THEN 'ok'
-            ELSE 'invalid'
-          END
-        FROM evidence e
-        LEFT JOIN sources s ON s.id = e.source_id
-        ORDER BY e.id
-        LIMIT %s OFFSET %s
+          (SELECT COUNT(*) FROM ins) AS n,
+          (SELECT evidence_id FROM ins ORDER BY evidence_id DESC LIMIT 1) AS m
         """
 
 
-def _load_rows(conn: Any, *, statement_timeout: str, batch_size: int = DEFAULT_BATCH) -> None:
-    row = catalog_execute(conn, "SELECT COUNT(*) AS n FROM evidence").fetchone()
-    total = int(row["n"] if isinstance(row, dict) else row[0])
-    offset = 0
-    while offset < total:
+def _load_rows(
+    conn: Any,
+    *,
+    statement_timeout: str,
+    batch_size: int = DEFAULT_BATCH,
+    deadline_mono: float | None = None,
+) -> int:
+    last_id: Any = KEYSET_START
+    loaded = 0
+    batch_no = 0
+    started = time.monotonic()
+    while True:
+        if deadline_mono is not None:
+            _deadline_guard(deadline_mono)
         _set_timeout(conn, statement_timeout)
-        catalog_execute(conn, _LOAD_SQL, (batch_size, offset))
-        offset += batch_size
+        row = catalog_execute(conn, _LOAD_SQL, (last_id, batch_size)).fetchone()
+        rec = dict(row) if not isinstance(row, dict) else row
+        n = int(rec["n"] or 0)
+        if n <= 0:
+            break
+        last_id = rec["m"]
+        loaded += n
+        batch_no += 1
+        emit_progress(
+            {
+                "stage": "load",
+                "batch": batch_no,
+                "loaded": loaded,
+                "elapsed_ms": int((time.monotonic() - started) * 1000),
+            }
+        )
+        if n < batch_size:
+            break
     catalog_execute(
         conn,
         """
@@ -265,6 +316,14 @@ def _load_rows(conn: Any, *, statement_timeout: str, batch_size: int = DEFAULT_B
         conn,
         "CREATE INDEX i14_audit_hash_src ON i14_audit_hash_rows (source_id, content_hash)",
     )
+    emit_progress(
+        {
+            "stage": "load_indexes",
+            "loaded": loaded,
+            "elapsed_ms": int((time.monotonic() - started) * 1000),
+        }
+    )
+    return loaded
 
 
 def _count_status(conn: Any, status: str) -> int:
@@ -501,18 +560,58 @@ def _rfc_fanout(conn: Any) -> dict[str, Any]:
     }
 
 
+def plan_cost_tree(plan: Any) -> list[dict[str, Any]]:
+    """Sanitized EXPLAIN nodes: node type and costs only."""
+    out: list[dict[str, Any]] = []
+
+    def walk(node: Any) -> None:
+        if not isinstance(node, dict):
+            return
+        rec = {
+            "node": str(node.get("Node Type") or node.get("Strategy") or "unknown"),
+            "startup_cost": node.get("Startup Cost"),
+            "total_cost": node.get("Total Cost"),
+            "plan_rows": node.get("Plan Rows"),
+        }
+        out.append(rec)
+        for child in node.get("Plans") or []:
+            walk(child)
+
+    if isinstance(plan, list) and plan:
+        walk(plan[0].get("Plan") if isinstance(plan[0], dict) else plan[0])
+    elif isinstance(plan, dict):
+        walk(plan.get("Plan") or plan)
+    return out
+
+
 def run_audit(
     conn: Any,
     *,
     stream_map: dict[str, str] | None = None,
     statement_timeout: str = DEFAULT_STATEMENT_TIMEOUT,
     batch_size: int = DEFAULT_BATCH,
+    run_deadline_s: int = DEFAULT_RUN_DEADLINE_S,
 ) -> dict[str, Any]:
+    started = time.monotonic()
+    deadline_mono = started + max(1, int(run_deadline_s))
     _begin_audit_transaction(conn)
     dbname = _require_not_memorybox(conn)
     _set_timeout(conn, statement_timeout)
+    catalog_execute(
+        conn,
+        "SELECT set_config('idle_in_transaction_session_timeout', %s, true)",
+        (f"{max(1, int(run_deadline_s)) * 1000}ms",),
+    )
     _create_temp(conn)
-    _load_rows(conn, statement_timeout=statement_timeout, batch_size=batch_size)
+    emit_progress({"stage": "temp_ready", "elapsed_ms": int((time.monotonic() - started) * 1000)})
+    _deadline_guard(deadline_mono)
+    loaded = _load_rows(
+        conn,
+        statement_timeout=statement_timeout,
+        batch_size=batch_size,
+        deadline_mono=deadline_mono,
+    )
+    _deadline_guard(deadline_mono)
     report = {
         "ok": True,
         "read_only_production_tables": True,
@@ -528,9 +627,14 @@ def run_audit(
         "rfc_own_fanout": _rfc_fanout(conn),
         "stream_map_applied": bool(stream_map),
         "statement_timeout": statement_timeout,
+        "run_deadline_s": int(run_deadline_s),
         "persistent_write_gate": True,
+        "loaded_rows": int(loaded),
+        "elapsed_ms": int((time.monotonic() - started) * 1000),
     }
+    _deadline_guard(deadline_mono)
     assert_counts_only(report)
+    emit_progress({"stage": "complete", "loaded": int(loaded), "elapsed_ms": report["elapsed_ms"]})
     return report
 
 
@@ -554,13 +658,20 @@ def main(argv: list[str] | None = None) -> int:
     import psycopg
     from psycopg.rows import dict_row
 
-    with psycopg.connect(dsn, row_factory=dict_row, autocommit=False) as conn:
+    conn = None
+    try:
+        conn = psycopg.connect(dsn, row_factory=dict_row, autocommit=False)
         try:
             report = run_audit(conn, stream_map=stream_map)
-            conn.rollback()
-        except Exception:
-            conn.rollback()
-            raise
+        finally:
+            try:
+                conn.rollback()
+            finally:
+                conn.close()
+    except AuditError:
+        raise
+    except KeyboardInterrupt as exc:
+        raise AuditError("interrupted") from exc
     print(json.dumps(report, indent=2, sort_keys=True))
     return 0
 
