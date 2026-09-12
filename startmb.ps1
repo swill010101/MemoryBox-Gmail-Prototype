@@ -24,11 +24,15 @@ param(
   [int]$HealthWaitSec = 120,
   [switch]$SkipChrome,
   [switch]$RecreateContainers,
-  [switch]$Restart
+  [switch]$Restart,
+  [string]$RepoRoot = "",
+  [switch]$ProbePython,
+  [switch]$IsolatedRestart
 )
 
 $ErrorActionPreference = "Stop"
-$Root = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
+$here = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
+$Root = if ($RepoRoot) { $RepoRoot } else { $here }
 Set-Location $Root
 
 function Write-Step([string]$Message) {
@@ -126,9 +130,14 @@ function Test-PythonHasServeDeps([string]$Exe) {
 }
 
 function Resolve-Python {
-  $candidates = @()
   $venvPy = Join-Path $Root '.venv\Scripts\python.exe'
-  if (Test-Path -LiteralPath $venvPy) { $candidates += $venvPy }
+  if (Test-Path -LiteralPath $venvPy) {
+    if (Test-PythonHasServeDeps $venvPy) {
+      return $venvPy
+    }
+    throw "Repo .venv python exists but is missing uvicorn+psycopg ($venvPy). Refusing PATH python."
+  }
+  $candidates = @()
   $pathPy = Get-Command python -ErrorAction SilentlyContinue
   if ($pathPy) { $candidates += [string]$pathPy.Source }
   $pyLauncher = Get-Command py -ErrorAction SilentlyContinue
@@ -287,7 +296,7 @@ function Wait-HttpOk([string]$Url, [int]$Seconds) {
 }
 
 function Start-MbRoleWindow([string]$Title, [string]$ChildRole) {
-  $scriptPath = Join-Path $Root "startmb.ps1"
+  $scriptPath = Join-Path $here "startmb.ps1"
   Start-Process -FilePath "powershell.exe" -WorkingDirectory $Root -ArgumentList @(
     "-NoExit",
     "-NoProfile",
@@ -295,6 +304,46 @@ function Start-MbRoleWindow([string]$Title, [string]$ChildRole) {
     "-File", $scriptPath,
     "-Role", $ChildRole
   ) | Out-Null
+}
+
+if ($ProbePython) {
+  $exe = Resolve-Python
+  Write-Output (
+    @{
+      ok = $true
+      python = $exe
+      venv_python = (Join-Path $Root '.venv\Scripts\python.exe')
+    } | ConvertTo-Json -Compress
+  )
+  exit 0
+}
+
+if ($IsolatedRestart) {
+  if (-not $Restart) {
+    throw "IsolatedRestart requires -Restart"
+  }
+  if ($ServePort -in 8790, 8791 -or $WorkerPort -in 8790, 8791) {
+    throw "IsolatedRestart refuses production ports 8790/8791"
+  }
+  $exe = Resolve-Python
+  Write-Step "IsolatedRestart: stopping listeners on :$WorkerPort and :$ServePort"
+  Stop-MbListenPort $WorkerPort
+  Stop-MbListenPort $ServePort
+  Start-Sleep -Seconds 1
+  Write-Output (
+    @{
+      ok = $true
+      python = $exe
+      serve_port = $ServePort
+      worker_port = $WorkerPort
+      serve_listening = [bool](Test-TcpPort "127.0.0.1" $ServePort)
+      worker_listening = [bool](Test-TcpPort "127.0.0.1" $WorkerPort)
+      skipped_docker = $true
+      skipped_chrome = $true
+      skipped_start = $true
+    } | ConvertTo-Json -Compress
+  )
+  exit 0
 }
 
 # Child windows: load env and run one process in the foreground

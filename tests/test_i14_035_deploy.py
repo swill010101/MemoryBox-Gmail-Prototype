@@ -423,6 +423,7 @@ class RuntimeEnvAndMigrate(unittest.TestCase):
         self.assertIn(".venv\\Scripts\\python.exe", startmb)
         self.assertIn("Test-PythonHasServeDeps", startmb)
         self.assertIn("uvicorn=True", startmb)
+        self.assertIn("Refusing PATH python", startmb)
         self.assertLess(
             startmb.index(".venv\\Scripts\\python.exe"),
             startmb.index("Get-Command python"),
