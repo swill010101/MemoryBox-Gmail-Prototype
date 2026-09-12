@@ -1,8 +1,25 @@
 """Read-only I14 cross-extract duplicate audit. Counts only. Never emits hashes or RFC tokens.
 
-Does not seed, backfill, ingest, or write production tables. Creates a session TEMP TABLE,
-aggregates, then rolls back. Refuse dbname memorybox unless MEMORYBOX_I14_AUDIT_ALLOW_MEMORYBOX_DB=1.
-Do not run on FlightSim until founder-authorized.
+Does not seed, backfill, ingest, or write production tables. Session TEMP TABLEs only;
+aggregates in SQL; always rolls back. Refuse dbname memorybox unless
+MEMORYBOX_I14_AUDIT_ALLOW_MEMORYBOX_DB=1. Do not run on FlightSim until founder-authorized.
+
+PostgreSQL forbids CREATE TEMP TABLE under SET TRANSACTION READ ONLY (catalog writes to
+pg_class). The permitted path is therefore: autocommit off, START TRANSACTION (not READ
+ONLY), session TEMP ON COMMIT DROP, execute-gate refusing persistent DML/DDL, rollback on
+success and error. Persistent catalogs are unchanged.
+
+SQL strategy: batched INSERT…SELECT of trim/lower(payload_json->>'content_hash') into TEMP;
+GROUP BY the full text (no hashtext, left/substr, or Python hash fetches).
+
+JSON schema (success): ok, read_only_production_tables, database_kind, proposed_streams,
+kind_inventory[], uri_class_inventory[], missing_hash, invalid_hash,
+within_source_duplicates{colliding_hashes,extra_rows,sources_affected},
+cross_source_same_stream_or_cluster{mode,colliding_hashes,extra_rows,...},
+same_hash_different_streams_or_clusters{colliding_hashes}, rfc_own_fanout,
+stream_map_applied, statement_timeout, persistent_write_gate.
+
+Failure JSON: {ok: false, error: <code>} — never a partial report with ok true.
 """
 from __future__ import annotations
 
@@ -12,10 +29,27 @@ import re
 import sys
 from pathlib import Path
 from typing import Any
-from urllib.parse import unquote
 
 HASH_SHAPE = re.compile(r"^[a-f0-9]{64}$")
 HEX64 = re.compile(r"\b[a-f0-9]{64}\b", re.I)
+UUID_RE = re.compile(
+    r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b",
+    re.I,
+)
+EMAIL_RE = re.compile(r"[^\s@]+@[^\s@]+\.[^\s@]+")
+HEX_PREFIX = re.compile(r"\b[a-f0-9]{16,}\b", re.I)
+TIMEOUT_SHAPE = re.compile(r"^[0-9]+(ms|s|min)?$")
+WRITE_HEAD = re.compile(
+    r"^\s*(INSERT|UPDATE|DELETE|MERGE|TRUNCATE|COPY|CREATE|ALTER|DROP|GRANT|REVOKE|"
+    r"COMMENT|VACUUM|CLUSTER|REINDEX|LOCK)\b",
+    re.I,
+)
+TEMP_WRITE_OK = re.compile(
+    r"^\s*CREATE\s+TEMP(ORARY)?\s+TABLE\s+i14_audit_|"
+    r"^\s*CREATE\s+INDEX\s+i14_audit_|"
+    r"^\s*INSERT\s+INTO\s+i14_audit_",
+    re.I,
+)
 TOKEN_COLUMNS = (
     "rfc_message_id",
     "message_id",
@@ -25,21 +59,54 @@ TOKEN_COLUMNS = (
     "value",
 )
 PROPOSED_STREAMS = ("household_email", "household_calendar", "household_sms")
+DEFAULT_STATEMENT_TIMEOUT = "30s"
+DEFAULT_BATCH = 500
 
 
 class AuditError(RuntimeError):
-    """Hard-stop for the duplicate audit CLI."""
+    """Hard-stop for the duplicate audit CLI. Message is a public error code only."""
 
 
 def catalog_execute(conn: Any, sql: str, params: tuple | list | None = None) -> Any:
     if "%" in sql and not params:
         raise AuditError("unsafe_percent_sql")
-    if not params:
-        return conn.execute(sql)
-    return conn.execute(sql, params)
+    _refuse_persistent_write(sql)
+    try:
+        if not params:
+            return conn.execute(sql)
+        return conn.execute(sql, params)
+    except Exception as exc:
+        if _is_query_canceled(exc):
+            raise AuditError("statement_timeout") from None
+        raise
+
+
+def _is_query_canceled(exc: BaseException) -> bool:
+    try:
+        from psycopg.errors import QueryCanceled
+
+        if isinstance(exc, QueryCanceled):
+            return True
+    except ImportError:
+        pass
+    text = type(exc).__name__.lower() + " " + str(exc).lower()
+    return "querycanceled" in text.replace(" ", "") or "statement timeout" in text or "query_canceled" in text
+
+
+def _refuse_persistent_write(sql: str) -> None:
+    stripped = sql.strip()
+    if stripped.startswith("--"):
+        return
+    if not WRITE_HEAD.match(stripped):
+        return
+    if TEMP_WRITE_OK.match(stripped):
+        return
+    raise AuditError("persistent_write_refused")
 
 
 def uri_class(uri: str | None) -> str:
+    from urllib.parse import unquote
+
     text = unquote((uri or "").strip().lower().replace("\\", "/"))
     if text.endswith(".mbox"):
         return "mbox"
@@ -62,8 +129,20 @@ def classify_hash(raw: Any) -> tuple[str, str]:
 
 def assert_counts_only(payload: dict[str, Any]) -> None:
     blob = json.dumps(payload, default=str)
+    if payload.get("ok") is True and payload.get("error"):
+        raise AuditError("complete_report_must_not_include_error")
     if HEX64.search(blob):
         raise AuditError("audit_output_contains_hash_or_hex64")
+    if UUID_RE.search(blob):
+        raise AuditError("audit_output_contains_uuid")
+    if EMAIL_RE.search(blob):
+        raise AuditError("audit_output_contains_address")
+    if HEX_PREFIX.search(blob):
+        raise AuditError("audit_output_contains_hash_prefix")
+    lowered = blob.lower()
+    for marker in (".mbox", ".ics", "://", "\\\\"):
+        if marker in lowered:
+            raise AuditError("audit_output_contains_uri_or_filename")
 
 
 def _require_not_memorybox(conn: Any) -> str:
@@ -73,6 +152,18 @@ def _require_not_memorybox(conn: Any) -> str:
     if name == "memorybox" and not allow:
         raise AuditError("refused_memorybox_dbname")
     return name
+
+
+def _begin_audit_transaction(conn: Any) -> None:
+    if getattr(conn, "autocommit", False):
+        raise AuditError("autocommit_not_allowed")
+    info = getattr(conn, "info", None)
+    status = getattr(info, "transaction_status", None)
+    name = getattr(status, "name", None) or str(status or "")
+    if str(name).endswith("INERROR"):
+        raise AuditError("aborted_transaction")
+    if str(name).endswith("INTRANS"):
+        raise AuditError("transaction_already_open")
 
 
 def _table_exists(conn: Any, name: str) -> bool:
@@ -104,6 +195,12 @@ def _columns(conn: Any, table: str) -> set[str]:
     return names
 
 
+def _set_timeout(conn: Any, timeout: str) -> None:
+    if not TIMEOUT_SHAPE.fullmatch(timeout):
+        raise AuditError("invalid_statement_timeout")
+    catalog_execute(conn, "SELECT set_config('statement_timeout', %s, true)", (timeout,))
+
+
 def _create_temp(conn: Any) -> None:
     catalog_execute(
         conn,
@@ -121,15 +218,7 @@ def _create_temp(conn: Any) -> None:
     )
 
 
-def _load_rows(conn: Any) -> None:
-    sources = catalog_execute(
-        conn,
-        "SELECT DISTINCT source_id AS s FROM evidence",
-    ).fetchall()
-    ids = [r["s"] if isinstance(r, dict) else r[0] for r in sources]
-    if not ids:
-        ids = [None]
-    sql = """
+_LOAD_SQL = """
         INSERT INTO i14_audit_hash_rows (
           evidence_id, source_id, evidence_kind, source_kind, uri_class, content_hash, hash_status
         )
@@ -152,11 +241,19 @@ def _load_rows(conn: Any) -> None:
           END
         FROM evidence e
         LEFT JOIN sources s ON s.id = e.source_id
-        WHERE e.source_id IS NOT DISTINCT FROM %s
+        ORDER BY e.id
+        LIMIT %s OFFSET %s
         """
-    for sid in ids:
-        catalog_execute(conn, "SET LOCAL statement_timeout = '30s'")
-        catalog_execute(conn, sql, (sid,))
+
+
+def _load_rows(conn: Any, *, statement_timeout: str, batch_size: int = DEFAULT_BATCH) -> None:
+    row = catalog_execute(conn, "SELECT COUNT(*) AS n FROM evidence").fetchone()
+    total = int(row["n"] if isinstance(row, dict) else row[0])
+    offset = 0
+    while offset < total:
+        _set_timeout(conn, statement_timeout)
+        catalog_execute(conn, _LOAD_SQL, (batch_size, offset))
+        offset += batch_size
     catalog_execute(
         conn,
         """
@@ -404,11 +501,18 @@ def _rfc_fanout(conn: Any) -> dict[str, Any]:
     }
 
 
-def run_audit(conn: Any, *, stream_map: dict[str, str] | None = None) -> dict[str, Any]:
+def run_audit(
+    conn: Any,
+    *,
+    stream_map: dict[str, str] | None = None,
+    statement_timeout: str = DEFAULT_STATEMENT_TIMEOUT,
+    batch_size: int = DEFAULT_BATCH,
+) -> dict[str, Any]:
+    _begin_audit_transaction(conn)
     dbname = _require_not_memorybox(conn)
-    catalog_execute(conn, "SET LOCAL statement_timeout = '30s'")
+    _set_timeout(conn, statement_timeout)
     _create_temp(conn)
-    _load_rows(conn)
+    _load_rows(conn, statement_timeout=statement_timeout, batch_size=batch_size)
     report = {
         "ok": True,
         "read_only_production_tables": True,
@@ -423,9 +527,15 @@ def run_audit(conn: Any, *, stream_map: dict[str, str] | None = None) -> dict[st
         "same_hash_different_streams_or_clusters": _cross_cluster_or_stream(conn, stream_map=stream_map),
         "rfc_own_fanout": _rfc_fanout(conn),
         "stream_map_applied": bool(stream_map),
+        "statement_timeout": statement_timeout,
+        "persistent_write_gate": True,
     }
     assert_counts_only(report)
     return report
+
+
+def failure_json(code: str) -> dict[str, Any]:
+    return {"ok": False, "error": str(code)}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -444,7 +554,7 @@ def main(argv: list[str] | None = None) -> int:
     import psycopg
     from psycopg.rows import dict_row
 
-    with psycopg.connect(dsn, row_factory=dict_row) as conn:
+    with psycopg.connect(dsn, row_factory=dict_row, autocommit=False) as conn:
         try:
             report = run_audit(conn, stream_map=stream_map)
             conn.rollback()
@@ -459,5 +569,8 @@ if __name__ == "__main__":
     try:
         raise SystemExit(main())
     except AuditError as exc:
-        print(json.dumps({"ok": False, "error": str(exc)}), file=sys.stderr)
-        raise SystemExit(1) from exc
+        print(json.dumps(failure_json(str(exc))), file=sys.stderr)
+        raise SystemExit(1) from None
+    except Exception:
+        print(json.dumps(failure_json("audit_failed")), file=sys.stderr)
+        raise SystemExit(1) from None
