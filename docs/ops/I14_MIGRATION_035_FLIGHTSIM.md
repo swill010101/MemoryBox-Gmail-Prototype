@@ -1,6 +1,6 @@
 # FlightSim — apply I14 migration 035
 
-**Status:** Script tracked; **not executed** until founder authorization.  
+**Status:** Stage 1 preflight completed. Stage 2 apply **did not run SQL**. Stopped for renewed founder authorization after ops env fix.  
 **Schema-review commit (035 SQL):** `4c13f70aae0d18f217eec4dcf43a98e6b964b14d`  
 **Prior production SHA:** `743c76712cb286ccdae3ad1108fb260dbd04770d`  
 **Release SHA:** the founder-approved ops-pack commit the operator checks out **before** running the script (must be a descendant of `4c13f70` with identical 035 SQL).
@@ -62,7 +62,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\ops\Deploy-I14Migr
 - `/health` unreachable, database not ok, or pending is not exactly `035_p2_i14_communications_lineage.sql` (top-level `ok=false` is expected while 035 is pending)
 - `pg_dump` fails, dump empty, or `pg_restore -l` cannot read it
 - Pending set is not exactly `035_p2_i14_communications_lineage.sql`
-- `python -m memorybox migrate` applies anything else or fails
+- Required runtime settings missing after startmb-equivalent loading (`MEMORYBOX_QDRANT_URL`, `MEMORYBOX_DATABASE_URL`). Checked before backup and migrate.
+- `python -m memorybox migrate` configuration failure (`migrate_not_started`) or SQL/runtime failure (`migrate_failed`); post-apply validation and restart are skipped
 - Post-apply schema contract fails or baseline counts change
 - Health poll (60s) does not reach `ok=true` with pending empty
 - HC email-status not ok or provider is not Namecheap Private Email
@@ -99,3 +100,15 @@ If any 035 table has rows, **do not drop**. Stop and restore from the verified d
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\ops\Deploy-I14Migration035.ps1 -ReleaseSha <same full SHA> -Rollback
 ```
+
+## Deployment record (FlightSim)
+
+**Stage 1 preflight:** completed 2026-09-12 on release `cbf17296d7f1da19a879ef117e50ba2ff5de9e27`. HEAD unchanged. Ledger 001–034, 035 absent, six `comms_*` tables absent, counts evidence=188656 sources=27 `communication_rfc_ids`=287010. `/health` pending exactly 035.
+
+**Verified backup (no SQL applied):** `C:\MemoryBox-backups\pre-i14-035-20260912-092044\memorybox.dump` — 433154420 bytes; `pg_restore -l` succeeded during the failed apply attempt.
+
+**Failed apply:** 2026-09-12 09:20:44 local. Category: **missing required runtime configuration**. `Settings.from_env()` raised `MEMORYBOX_QDRANT_URL is required` before migrate connected to PostgreSQL. **No migration SQL was applied.** Serve remained the existing 743c767 process.
+
+**Cause:** `Deploy-I14Migration035.ps1` loaded dotenv files and defaulted `MEMORYBOX_DATABASE_URL` / `MEMORYBOX_P1_RUNTIME_HOST` only. `startmb.ps1` `Load-MbEnv` also defaults `MEMORYBOX_QDRANT_URL=http://127.0.0.1:6333` (and related non-secret production settings). The failed apply process had no Qdrant URL, so migrate never started.
+
+**Read-only confirmation after failure:** schema_migrations 001–034 only; 035 absent; all six `comms_*` tables absent; counts unchanged; `/health` still reachable with pending 035.

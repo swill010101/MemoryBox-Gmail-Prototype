@@ -240,6 +240,114 @@ def assert_migrate_applied(payload: dict[str, Any]) -> None:
         raise DeployValidationError("migrate_result_not_only_035")
 
 
+# Same non-secret defaults as startmb.ps1 Load-MbEnv (FlightSim production boot).
+STARTMB_NONSECRET_DEFAULTS = {
+    "MEMORYBOX_DATABASE_URL": "postgresql://memorybox:memorybox@127.0.0.1:5432/memorybox",
+    "MEMORYBOX_QDRANT_URL": "http://127.0.0.1:6333",
+    "MEMORYBOX_QDRANT_COLLECTION": "memorybox_evidence",
+    "MEMORYBOX_HOST": "0.0.0.0",
+    "MEMORYBOX_PORT": "8790",
+    "MEMORYBOX_P1_RUNTIME_HOST": "1",
+    "MEMORYBOX_HC_EMAIL_PROVIDER": "privateemail",
+    "MEMORYBOX_HC_USER_EMAIL": "memorybox@marvinbot.net",
+    "MEMORYBOX_RECOGNITION_DRAIN": "1",
+    "MEMORYBOX_PHOTO_PROVIDER": "immich",
+    "MEMORYBOX_VIDEO_PROVIDER": "hvrt",
+    "MEMORYBOX_VIDEO_WORKER_URL": "http://127.0.0.1:8791",
+    "MEMORYBOX_VIDEO_WORKER_HOST": "127.0.0.1",
+    "MEMORYBOX_VIDEO_WORKER_PORT": "8791",
+    "MEMORYBOX_VIDEO_MEDIA_ROOT": r"P:\photos\home videos",
+}
+REQUIRED_RUNTIME_ENV = ("MEMORYBOX_DATABASE_URL", "MEMORYBOX_QDRANT_URL")
+_USERINFO_RE = re.compile(r"(://)([^/@\s]+):([^/@\s]+)@")
+_SECRET_KEY_RE = re.compile(r"(PASSWORD|TOKEN|SECRET|CREDENTIAL|APP_PASSWORD)", re.I)
+
+
+def apply_startmb_nonsecret_defaults(env: dict[str, str]) -> tuple[dict[str, str], dict[str, str]]:
+    out = dict(env)
+    sources: dict[str, str] = {}
+    for key, value in STARTMB_NONSECRET_DEFAULTS.items():
+        current = (out.get(key) or "").strip()
+        if current:
+            sources[key] = "process_or_dotenv"
+        else:
+            out[key] = value
+            sources[key] = "startmb.ps1 Load-MbEnv default"
+    return out, sources
+
+
+def sanitize_endpoint(url: str) -> str:
+    cleaned = _USERINFO_RE.sub(r"\1", (url or "").strip())
+    if "://" not in cleaned:
+        return "set" if cleaned else "missing"
+    rest = cleaned.split("://", 1)[1]
+    hostport = rest.split("/", 1)[0]
+    scheme = cleaned.split("://", 1)[0]
+    return f"{scheme}://{hostport}"
+
+
+def redact_process_text(text: str) -> str:
+    return _USERINFO_RE.sub(r"\1***:***@", text or "")[:800]
+
+
+def assert_runtime_env(env: dict[str, str]) -> dict[str, Any]:
+    missing = [name for name in REQUIRED_RUNTIME_ENV if not (env.get(name) or "").strip()]
+    if missing:
+        raise DeployValidationError("runtime_env_missing:" + ",".join(missing))
+    settings: list[dict[str, str]] = []
+    blob_parts: list[str] = []
+    for name in REQUIRED_RUNTIME_ENV:
+        identity = sanitize_endpoint(env[name])
+        settings.append({"name": name, "endpoint": identity})
+        blob_parts.append(identity)
+    qsrc = "process_or_dotenv"
+    qurl = (env.get("MEMORYBOX_QDRANT_URL") or "").strip()
+    if qurl == STARTMB_NONSECRET_DEFAULTS["MEMORYBOX_QDRANT_URL"]:
+        qsrc = "startmb.ps1 Load-MbEnv default"
+    report = {
+        "ok": True,
+        "settings": settings,
+        "qdrant_source": qsrc,
+        "qdrant_endpoint": sanitize_endpoint(qurl),
+    }
+    dumped = json.dumps(report)
+    if _SECRET_KEY_RE.search(dumped):
+        raise DeployValidationError("runtime_env_report_leaked_secret_name")
+    for part in blob_parts:
+        if "@" in (env.get("MEMORYBOX_DATABASE_URL") or "") and ":" in (env.get("MEMORYBOX_DATABASE_URL") or ""):
+            userinfo = (env.get("MEMORYBOX_DATABASE_URL") or "").split("://", 1)[-1].split("@", 1)[0]
+            if ":" in userinfo and userinfo.split(":", 1)[1] and userinfo.split(":", 1)[1] in dumped:
+                raise DeployValidationError("runtime_env_report_leaked_secret")
+    return report
+
+
+def _is_config_failure(text: str) -> bool:
+    lower = (text or "").lower()
+    return (
+        "memorybox_qdrant_url is required" in lower
+        or "memorybox_database_url is required" in lower
+        or "settings.from_env" in lower
+        or "from_env()" in lower
+    )
+
+
+def interpret_migrate_process(exit_code: int, stdout: str, stderr: str) -> dict[str, Any]:
+    combined = redact_process_text(f"{stdout or ''}\n{stderr or ''}")
+    if int(exit_code) != 0:
+        if _is_config_failure(f"{stdout}\n{stderr}"):
+            raise DeployValidationError("migrate_not_started:configuration:" + combined[:240])
+        raise DeployValidationError("migrate_failed:sql_or_runtime:exit=" + str(exit_code))
+    raw = (stdout or "").strip()
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise DeployValidationError("migrate_invalid_output") from exc
+    if not isinstance(payload, dict):
+        raise DeployValidationError("migrate_invalid_output")
+    assert_migrate_applied(payload)
+    return payload
+
+
 def untracked_collisions(untracked: Iterable[str], incoming_paths: Iterable[str]) -> list[str]:
     incoming = {p.replace("\\", "/").lstrip("./") for p in incoming_paths}
     hits: list[str] = []
@@ -661,6 +769,19 @@ def main(argv: list[str] | None = None) -> int:
         payload = json.loads(sys.stdin.read() or "{}")
         assert_migrate_applied(payload)
         return _emit({"ok": True})
+    if cmd == "assert-runtime-env":
+        import os
+
+        return _emit(assert_runtime_env(dict(os.environ)))
+    if cmd == "interpret-migrate":
+        payload = json.loads(sys.stdin.read() or "{}")
+        return _emit(
+            interpret_migrate_process(
+                int(payload.get("exit_code") or 1),
+                str(payload.get("stdout") or ""),
+                str(payload.get("stderr") or ""),
+            )
+        )
     if cmd == "assert-health":
         payload = json.loads(sys.stdin.read() or "{}")
         assert_health_ok(payload)

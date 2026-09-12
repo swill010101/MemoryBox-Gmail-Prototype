@@ -64,7 +64,30 @@ function Import-FlightSimEnv {
   if (-not $env:MEMORYBOX_DATABASE_URL) {
     $env:MEMORYBOX_DATABASE_URL = 'postgresql://memorybox:memorybox@127.0.0.1:5432/memorybox'
   }
+  if (-not $env:MEMORYBOX_QDRANT_URL) {
+    $env:MEMORYBOX_QDRANT_URL = 'http://127.0.0.1:6333'
+  }
+  if (-not $env:MEMORYBOX_QDRANT_COLLECTION) {
+    $env:MEMORYBOX_QDRANT_COLLECTION = 'memorybox_evidence'
+  }
+  if (-not $env:MEMORYBOX_HOST) { $env:MEMORYBOX_HOST = '0.0.0.0' }
+  if (-not $env:MEMORYBOX_PORT) { $env:MEMORYBOX_PORT = '8790' }
   if (-not $env:MEMORYBOX_P1_RUNTIME_HOST) { $env:MEMORYBOX_P1_RUNTIME_HOST = '1' }
+  if (-not $env:MEMORYBOX_HC_EMAIL_PROVIDER) { $env:MEMORYBOX_HC_EMAIL_PROVIDER = 'privateemail' }
+  if (-not $env:MEMORYBOX_HC_USER_EMAIL) { $env:MEMORYBOX_HC_USER_EMAIL = 'memorybox@marvinbot.net' }
+  if (-not $env:MEMORYBOX_RECOGNITION_DRAIN) { $env:MEMORYBOX_RECOGNITION_DRAIN = '1' }
+  if (-not $env:MEMORYBOX_PHOTO_PROVIDER) { $env:MEMORYBOX_PHOTO_PROVIDER = 'immich' }
+  if (-not $env:MEMORYBOX_VIDEO_PROVIDER) { $env:MEMORYBOX_VIDEO_PROVIDER = 'hvrt' }
+  if (-not $env:MEMORYBOX_VIDEO_WORKER_URL) { $env:MEMORYBOX_VIDEO_WORKER_URL = 'http://127.0.0.1:8791' }
+  if (-not $env:MEMORYBOX_VIDEO_WORKER_HOST) { $env:MEMORYBOX_VIDEO_WORKER_HOST = '127.0.0.1' }
+  if (-not $env:MEMORYBOX_VIDEO_WORKER_PORT) { $env:MEMORYBOX_VIDEO_WORKER_PORT = '8791' }
+  if (-not $env:MEMORYBOX_VIDEO_MEDIA_ROOT) {
+    $env:MEMORYBOX_VIDEO_MEDIA_ROOT = 'P:\photos\home videos'
+  }
+  $immichPath = Join-Path $RepoRoot 'config\immich.env'
+  if (-not $env:MEMORYBOX_IMMICH_ENV -and (Test-Path -LiteralPath $immichPath)) {
+    $env:MEMORYBOX_IMMICH_ENV = $immichPath
+  }
 }
 
 function Resolve-MbPython {
@@ -72,6 +95,24 @@ function Resolve-MbPython {
   $venvPy = Join-Path $RepoRoot '.venv\Scripts\python.exe'
   if (Test-Path -LiteralPath $venvPy) { return $venvPy }
   throw "STOP MemoryBox venv Python not found: $venvPy"
+}
+
+function Invoke-MbMigrate {
+  $py = Resolve-MbPython
+  $outFile = Join-Path $env:TEMP 'mb-i14-035-migrate.stdout.txt'
+  $errFile = Join-Path $env:TEMP 'mb-i14-035-migrate.stderr.txt'
+  Remove-Item -LiteralPath $outFile, $errFile -ErrorAction SilentlyContinue
+  $proc = Start-Process -FilePath $py -ArgumentList @('-m', 'memorybox', 'migrate') -WorkingDirectory $RepoRoot -Wait -PassThru -NoNewWindow -RedirectStandardOutput $outFile -RedirectStandardError $errFile
+  $stdout = ''
+  $stderr = ''
+  if (Test-Path -LiteralPath $outFile) { $stdout = Get-Content -LiteralPath $outFile -Raw -ErrorAction SilentlyContinue }
+  if (Test-Path -LiteralPath $errFile) { $stderr = Get-Content -LiteralPath $errFile -Raw -ErrorAction SilentlyContinue }
+  $payload = @{
+    exit_code = [int]$proc.ExitCode
+    stdout = [string]$stdout
+    stderr = [string]$stderr
+  } | ConvertTo-Json -Compress
+  Invoke-Mb035 -Action 'interpret-migrate' -StdinJson $payload
 }
 
 function Invoke-Mb035 {
@@ -133,6 +174,9 @@ function Save-RollbackDiagnostics([string]$DestDir) {
 
 Import-FlightSimEnv
 $Python = Resolve-MbPython
+Write-Host '=== RUNTIME ENV ==='
+$rt = Invoke-Mb035 'assert-runtime-env'
+Write-Host $rt
 
 Write-Host '=== GIT / RELEASE ==='
 $head = Get-GitText @('rev-parse', 'HEAD')
@@ -220,6 +264,9 @@ if ($PreflightOnly -or $WhatIfPreference) {
 
 if (-not $PSCmdlet.ShouldProcess($RepoRoot, 'Backup and apply 035 without changing Git HEAD')) { return }
 
+$script:MigrateSucceeded = $false
+Invoke-Mb035 'assert-runtime-env' | Out-Host
+
 Write-Host '=== BACKUP ==='
 $stamp = Get-Date -Format yyyyMMdd-HHmmss
 $rootBak = if (Test-Path 'E:\MemoryBox-backups') { 'E:\MemoryBox-backups' } else { 'C:\MemoryBox-backups' }
@@ -250,13 +297,9 @@ $pend = Invoke-Mb035 'pending'
 Write-Host $pend
 
 Write-Host '=== MIGRATE ==='
-$mig = & $Python -m memorybox migrate
+$mig = Invoke-MbMigrate
 Write-Host $mig
-$migObj = $mig | ConvertFrom-Json
-$applied = @($migObj.applied)
-if ($applied.Count -ne 1 -or $applied[0] -ne '035_p2_i14_communications_lineage.sql') {
-  throw "STOP unexpected migrate output: $mig"
-}
+$script:MigrateSucceeded = $true
 
 Write-Host '=== VERIFY SCHEMA ==='
 $verify = ($script:BaselineCounts | & $Python -m memorybox.ops.i14_migration_035 verify-schema)
@@ -267,6 +310,7 @@ if ((Get-GitText @('rev-parse', 'HEAD')) -ne $ReleaseSha.ToLower()) {
   throw 'STOP Git HEAD changed during apply'
 }
 
+if (-not $script:MigrateSucceeded) { throw 'STOP restart_without_migrate_success' }
 Write-Host '=== RESTART SERVE ==='
 Stop-MbServe
 Start-MbServe

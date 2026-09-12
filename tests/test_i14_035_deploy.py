@@ -357,6 +357,73 @@ class ReleaseGate(unittest.TestCase):
         self.assertTrue((ROOT / "scripts" / "ops" / "Deploy-I14Migration035.ps1").is_file())
 
 
+class RuntimeEnvAndMigrate(unittest.TestCase):
+    def test_missing_qdrant_fails_before_backup_migrate(self) -> None:
+        with self.assertRaises(DeployValidationError) as ctx:
+            d035.assert_runtime_env(
+                {"MEMORYBOX_DATABASE_URL": "postgresql://memorybox:s3cret@127.0.0.1:5432/memorybox"}
+            )
+        self.assertIn("runtime_env_missing:MEMORYBOX_QDRANT_URL", str(ctx.exception))
+        text = PS1.read_text(encoding="utf-8")
+        self.assertLess(text.index("assert-runtime-env"), text.index("=== BACKUP ==="))
+        self.assertLess(text.index("=== RUNTIME ENV ==="), text.index("=== BACKUP ==="))
+        self.assertLess(text.index("=== BACKUP ==="), text.index("$mig = Invoke-MbMigrate"))
+
+    def test_production_equivalent_defaults_supply_qdrant(self) -> None:
+        startmb = (ROOT / "startmb.ps1").read_text(encoding="utf-8")
+        self.assertIn('MEMORYBOX_QDRANT_URL = "http://127.0.0.1:6333"', startmb)
+        filled, sources = d035.apply_startmb_nonsecret_defaults({})
+        self.assertEqual(filled["MEMORYBOX_QDRANT_URL"], "http://127.0.0.1:6333")
+        self.assertEqual(sources["MEMORYBOX_QDRANT_URL"], "startmb.ps1 Load-MbEnv default")
+        report = d035.assert_runtime_env(filled)
+        self.assertEqual(report["qdrant_endpoint"], "http://127.0.0.1:6333")
+        self.assertEqual(report["qdrant_source"], "startmb.ps1 Load-MbEnv default")
+
+    def test_secrets_are_not_printed(self) -> None:
+        env = {
+            "MEMORYBOX_DATABASE_URL": "postgresql://memorybox:super-secret-pass@127.0.0.1:5432/memorybox",
+            "MEMORYBOX_QDRANT_URL": "http://127.0.0.1:6333",
+        }
+        report = d035.assert_runtime_env(env)
+        blob = json.dumps(report)
+        self.assertNotIn("super-secret-pass", blob)
+        self.assertNotIn("memorybox:super-secret-pass@", blob)
+        self.assertIn("MEMORYBOX_QDRANT_URL", blob)
+        self.assertEqual(report["settings"][0]["endpoint"], "postgresql://127.0.0.1:5432")
+
+    def test_nonzero_migrate_exit_is_not_json_success(self) -> None:
+        with self.assertRaises(DeployValidationError) as ctx:
+            d035.interpret_migrate_process(
+                1, "", "RuntimeError: MEMORYBOX_QDRANT_URL is required"
+            )
+        self.assertIn("migrate_not_started:configuration", str(ctx.exception))
+        with self.assertRaises(DeployValidationError) as ctx:
+            d035.interpret_migrate_process(2, '{"applied":[]}', "ERROR:  syntax error")
+        self.assertIn("migrate_failed:sql_or_runtime", str(ctx.exception))
+        with self.assertRaises(DeployValidationError) as ctx:
+            d035.interpret_migrate_process(0, "not-json", "")
+        self.assertIn("migrate_invalid_output", str(ctx.exception))
+        with self.assertRaises(DeployValidationError):
+            d035.interpret_migrate_process(0, '{"applied":[]}', "")
+        out = d035.interpret_migrate_process(
+            0, json.dumps({"applied": [d035.MIGRATION_FILENAME]}), ""
+        )
+        self.assertEqual(out["applied"], [d035.MIGRATION_FILENAME])
+
+    def test_no_restart_after_migrate_failure(self) -> None:
+        text = PS1.read_text(encoding="utf-8")
+        self.assertLess(text.index("$mig = Invoke-MbMigrate"), text.index("=== RESTART SERVE ==="))
+        self.assertLess(
+            text.index("restart_without_migrate_success"),
+            text.index("=== RESTART SERVE ==="),
+        )
+        self.assertIn("$script:MigrateSucceeded = $false", text)
+        self.assertIn("$script:MigrateSucceeded = $true", text)
+        true_at = text.index("$script:MigrateSucceeded = $true")
+        restart_at = text.index("=== RESTART SERVE ===")
+        self.assertLess(true_at, restart_at)
+
+
 class ScriptAndRunbook(unittest.TestCase):
     def test_ps1_has_no_internal_apply_checkout(self) -> None:
         text = PS1.read_text(encoding="utf-8")
@@ -372,8 +439,14 @@ class ScriptAndRunbook(unittest.TestCase):
         self.assertNotIn("checkout -B", text)
         self.assertNotIn("git fetch origin", text)
         self.assertIn("checkout --detach $RequiredPrior", text)
-        self.assertIn("$applied = @($migObj.applied)", text)
-        self.assertIn("$applied.Count -ne 1", text)
+        self.assertIn("Invoke-MbMigrate", text)
+        self.assertIn("interpret-migrate", text)
+        self.assertIn("assert-runtime-env", text)
+        self.assertLess(text.index("assert-runtime-env"), text.index("=== BACKUP ==="))
+        self.assertLess(text.index("$mig = Invoke-MbMigrate"), text.index("=== RESTART SERVE ==="))
+        self.assertIn("restart_without_migrate_success", text)
+        self.assertIn("MEMORYBOX_QDRANT_URL = 'http://127.0.0.1:6333'", text)
+        self.assertNotIn("& $Python -m memorybox migrate", text)
         self.assertNotIn("Start-Sleep 8", text)
         rb = RUNBOOK.read_text(encoding="utf-8")
         self.assertIn("git checkout <new full ops-fix SHA>", rb)
@@ -381,6 +454,7 @@ class ScriptAndRunbook(unittest.TestCase):
         self.assertIn("-ReleaseSha <same full SHA>", rb)
         self.assertIn("Do **not** seed", rb)
         self.assertIn("does **not** change Git commits", rb)
+        self.assertIn("No migration SQL was applied", rb)
 
 
 if __name__ == "__main__":
