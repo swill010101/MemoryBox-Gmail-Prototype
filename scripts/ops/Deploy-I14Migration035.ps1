@@ -203,7 +203,9 @@ Write-Host '=== PREFLIGHT LEDGER ==='
 $pre = Invoke-Mb035 'preflight-ledger'
 Write-Host $pre
 $health = Invoke-RestMethod $HealthUrl
-if (-not $health.ok) { throw 'STOP health not ok before deploy' }
+$healthJson = $health | ConvertTo-Json -Depth 8 -Compress
+$healthCheck = Invoke-Mb035 -Action 'assert-health-preflight' -StdinJson $healthJson
+Write-Host $healthCheck
 $preObj = $pre | ConvertFrom-Json
 $script:BaselineCounts = $preObj.counts | ConvertTo-Json -Compress
 Write-Host "BASELINE_COUNTS=$($script:BaselineCounts)"

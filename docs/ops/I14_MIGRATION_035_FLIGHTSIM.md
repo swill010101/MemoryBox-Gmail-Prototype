@@ -23,7 +23,7 @@ Do **not** seed logical sources, backfill mappings, ingest mail/calendar/SMS, me
 - Ops script, Python validator, tests, runbook, and 035 SQL are present for the whole run.
 - Ledger is exactly versions **001–034** with FlightSim filenames for **009** and **025–029**.
 - 035 absent from the ledger; six `comms_*` tables absent.
-- `/health` ok with pending empty.
+- Serve is up on the prior production SHA first so `/health` can be `ok` with pending empty **before** the release checkout. After checkout, top-level `/health` `ok` is false because 035 is pending on disk; the script requires database ok and pending exactly `035_p2_i14_communications_lineage.sql`.
 - Docker container `memorybox-pg` available for `pg_dump`.
 - Serve interpreter is `C:\MemoryBox\.venv\Scripts\python.exe`.
 
@@ -59,7 +59,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\ops\Deploy-I14Migr
 - Ops pack file missing
 - Ledger is not the ordered 001–034 set, 035 is present, or 009/025–029 filenames differ
 - Any `comms_*` table already exists
-- `/health` not ok before apply
+- `/health` unreachable, database not ok, or pending is not exactly `035_p2_i14_communications_lineage.sql` (top-level `ok=false` is expected while 035 is pending)
 - `pg_dump` fails, dump empty, or `pg_restore -l` cannot read it
 - Pending set is not exactly `035_p2_i14_communications_lineage.sql`
 - `python -m memorybox migrate` applies anything else or fails

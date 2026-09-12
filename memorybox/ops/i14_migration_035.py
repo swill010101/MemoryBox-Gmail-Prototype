@@ -250,18 +250,60 @@ def untracked_collisions(untracked: Iterable[str], incoming_paths: Iterable[str]
     return sorted(hits)
 
 
+def _as_str_list(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value] if value else []
+    return [str(x) for x in value]
+
+
 def assert_health_ok(payload: dict[str, Any]) -> None:
-    pending = list(payload.get("migrations", {}).get("pending") or [])
+    pending = _as_str_list((payload.get("migrations") or {}).get("pending"))
     if payload.get("ok") is not True or pending:
         raise DeployValidationError("health_not_ok_or_pending")
 
 
+def _database_ok(payload: dict[str, Any]) -> bool:
+    db = payload.get("database") or {}
+    return db.get("status") == "ok" or db.get("ok") is True
+
+
+def assert_health_pending_only_035(payload: dict[str, Any]) -> dict[str, Any]:
+    """Pre-apply: serve reachable, DB up, pending is exactly 035.
+
+    Top-level /health ok is false whenever pending is non-empty. That is expected
+    after the release checkout puts 035 on disk and must not fail preflight.
+    """
+    mig = payload.get("migrations") or {}
+    pending = _as_str_list(mig.get("pending"))
+    problems: list[str] = []
+    if not _database_ok(payload):
+        problems.append("database_not_ok")
+    if mig.get("status") != "ok":
+        problems.append("migrations_status_not_ok")
+    if pending != [MIGRATION_FILENAME]:
+        problems.append("pending_not_only_035")
+    if problems:
+        raise DeployValidationError(
+            "health_preflight:"
+            + ",".join(problems)
+            + ":"
+            + json.dumps(sanitize_health(payload), sort_keys=True)
+        )
+    out = sanitize_health(payload)
+    out["preflight_ok"] = True
+    return out
+
+
 def sanitize_health(payload: dict[str, Any]) -> dict[str, Any]:
+    db = payload.get("database") or {}
     return {
         "ok": payload.get("ok"),
         "increment": payload.get("increment"),
-        "database_ok": (payload.get("database") or {}).get("ok"),
-        "pending": list((payload.get("migrations") or {}).get("pending") or []),
+        "database_ok": _database_ok(payload),
+        "database_status": db.get("status"),
+        "pending": _as_str_list((payload.get("migrations") or {}).get("pending")),
         "applied_n": len((payload.get("migrations") or {}).get("applied") or []),
     }
 
@@ -623,6 +665,9 @@ def main(argv: list[str] | None = None) -> int:
         payload = json.loads(sys.stdin.read() or "{}")
         assert_health_ok(payload)
         return _emit(sanitize_health(payload))
+    if cmd == "assert-health-preflight":
+        payload = json.loads(sys.stdin.read() or "{}")
+        return _emit(assert_health_pending_only_035(payload))
     if cmd == "assert-email":
         payload = json.loads(sys.stdin.read() or "{}")
         return _emit(assert_email_status(payload))

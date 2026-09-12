@@ -140,6 +140,48 @@ class MigrateAndHealth(unittest.TestCase):
         self.assertIn("health_poll_timeout", str(ctx.exception))
         self.assertIn("pending", str(ctx.exception))
 
+    def test_preflight_health_allows_top_level_false_when_only_035_pending(self) -> None:
+        payload = {
+            "ok": False,
+            "database": {"status": "ok"},
+            "migrations": {
+                "status": "ok",
+                "pending": [d035.MIGRATION_FILENAME],
+                "applied": [{"version": "034"}],
+            },
+        }
+        out = d035.assert_health_pending_only_035(payload)
+        self.assertTrue(out["preflight_ok"])
+        self.assertEqual(out["pending"], [d035.MIGRATION_FILENAME])
+        self.assertFalse(out["ok"])
+        with self.assertRaises(DeployValidationError) as ctx:
+            d035.assert_health_pending_only_035(
+                {
+                    "ok": True,
+                    "database": {"status": "ok"},
+                    "migrations": {"status": "ok", "pending": [], "applied": []},
+                }
+            )
+        self.assertIn("pending_not_only_035", str(ctx.exception))
+        with self.assertRaises(DeployValidationError):
+            d035.assert_health_pending_only_035(
+                {
+                    "ok": False,
+                    "database": {"status": "error"},
+                    "migrations": {
+                        "status": "ok",
+                        "pending": [d035.MIGRATION_FILENAME],
+                        "applied": [],
+                    },
+                }
+            )
+        scalar = json.loads(json.dumps(payload))
+        scalar["migrations"]["pending"] = d035.MIGRATION_FILENAME
+        self.assertEqual(
+            d035.assert_health_pending_only_035(scalar)["pending"],
+            [d035.MIGRATION_FILENAME],
+        )
+
 
 class HcAssertions(unittest.TestCase):
     def test_email_requires_namecheap(self) -> None:
@@ -321,7 +363,9 @@ class ScriptAndRunbook(unittest.TestCase):
         self.assertIn("$ReleaseSha", text)
         self.assertIn("Mandatory = $true", text)
         self.assertIn("-ReleaseSha", RUNBOOK.read_text(encoding="utf-8"))
+        self.assertIn("assert-health-preflight", text)
         self.assertIn("assert-release", text)
+        self.assertNotIn("if (-not $health.ok)", text)
         self.assertIn("function Get-GitText", text)
         self.assertNotRegex(text, r"branch --show-current\)\.Trim\(\)")
         self.assertIn("(detached)", text)
