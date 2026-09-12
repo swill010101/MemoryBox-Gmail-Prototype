@@ -254,21 +254,86 @@ class _Rows:
         return self._rows[0] if self._rows else None
 
 
+class ReleaseGate(unittest.TestCase):
+    def _ok(self, **over: object) -> dict:
+        head = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        payload = {
+            "head": head,
+            "release_sha": head,
+            "origin_sha": head,
+            "schema_is_ancestor": True,
+            "migration_head_oid": "blob-same",
+            "migration_schema_oid": "blob-same",
+            "allow_offline_origin": False,
+            "files_present": d035.OPS_PACK_PATHS,
+        }
+        payload.update(over)
+        return payload
+
+    def test_wrong_release_sha_fails(self) -> None:
+        with self.assertRaises(DeployValidationError) as ctx:
+            d035.assert_release_state(**self._ok(release_sha="bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"))
+        self.assertIn("head_ne_release_sha", str(ctx.exception))
+
+    def test_non_descendant_fails(self) -> None:
+        with self.assertRaises(DeployValidationError) as ctx:
+            d035.assert_release_state(**self._ok(schema_is_ancestor=False))
+        self.assertIn("not_descendant_of_schema_review", str(ctx.exception))
+
+    def test_altered_035_sql_fails(self) -> None:
+        with self.assertRaises(DeployValidationError) as ctx:
+            d035.assert_release_state(
+                **self._ok(migration_head_oid="blob-a", migration_schema_oid="blob-b")
+            )
+        self.assertIn("035_sql_differs_from_schema_review", str(ctx.exception))
+
+    def test_correct_descendant_identical_035_passes(self) -> None:
+        out = d035.assert_release_state(**self._ok())
+        self.assertTrue(out["ok"])
+        self.assertEqual(out["035_blob"], "blob-same")
+
+    def test_real_repo_head_matches_schema_review_blob(self) -> None:
+        import subprocess
+
+        head = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
+        report = d035.inspect_release_repo(ROOT, head, allow_offline_origin=True)
+        self.assertTrue(report["ok"])
+        schema_blob = subprocess.check_output(
+            ["git", "rev-parse", f"{d035.SCHEMA_REVIEW_SHA}:{d035.MIGRATION_RELPATH}"],
+            cwd=ROOT,
+            text=True,
+        ).strip()
+        self.assertEqual(report["035_blob"], schema_blob)
+
+    def test_validation_module_survives_simulated_apply_without_checkout(self) -> None:
+        d035.assert_ops_pack_present(ROOT)
+        from memorybox.ops import i14_migration_035 as again
+
+        again.assert_ops_pack_present(ROOT)
+        self.assertTrue(again.assert_035_contract(_contract_ok())["ok"])
+        self.assertTrue((ROOT / "memorybox" / "ops" / "i14_migration_035.py").is_file())
+        self.assertTrue((ROOT / "scripts" / "ops" / "Deploy-I14Migration035.ps1").is_file())
+
+
 class ScriptAndRunbook(unittest.TestCase):
-    def test_ps1_has_scalar_migrate_check_and_preflight_switch(self) -> None:
+    def test_ps1_has_no_internal_apply_checkout(self) -> None:
         text = PS1.read_text(encoding="utf-8")
+        self.assertIn("$ReleaseSha", text)
+        self.assertIn("Mandatory = $true", text)
+        self.assertIn("-ReleaseSha", RUNBOOK.read_text(encoding="utf-8"))
+        self.assertIn("assert-release", text)
+        self.assertNotIn("checkout -B", text)
+        self.assertNotIn("git fetch origin", text)
+        self.assertIn("checkout --detach $RequiredPrior", text)
         self.assertIn("$applied = @($migObj.applied)", text)
         self.assertIn("$applied.Count -ne 1", text)
-        self.assertIn("035_p2_i14_communications_lineage.sql", text)
-        self.assertIn("PreflightOnly", text)
-        self.assertIn("poll-health", text)
-        self.assertIn("merge-base --is-ancestor", text)
-        self.assertIn("untracked files collide", text.lower())
+        self.assertNotIn("Start-Sleep 8", text)
         rb = RUNBOOK.read_text(encoding="utf-8")
-        self.assertIn("4c13f70aae0d18f217eec4dcf43a98e6b964b14d", rb)
+        self.assertIn("git checkout <new full ops-fix SHA>", rb)
+        self.assertIn("-ReleaseSha <same full SHA> -PreflightOnly", rb)
+        self.assertIn("-ReleaseSha <same full SHA>", rb)
         self.assertIn("Do **not** seed", rb)
-        self.assertIn("-PreflightOnly", rb)
-        self.assertIn("-Rollback", rb)
+        self.assertIn("does **not** change Git commits", rb)
 
 
 if __name__ == "__main__":

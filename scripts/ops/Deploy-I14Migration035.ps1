@@ -1,18 +1,27 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-  Bounded FlightSim deploy of I14 migration 035 only.
+  Bounded FlightSim apply of I14 migration 035 only. Does not change Git HEAD.
 .DESCRIPTION
-  Authorized SHA 4c13f70aae0d18f217eec4dcf43a98e6b964b14d.
+  Operator must already have checked out the founder-approved release SHA.
+  Schema-review commit 4c13f70aae0d18f217eec4dcf43a98e6b964b14d must be an ancestor,
+  and 035 SQL must match that commit's blob.
   Does not seed, backfill, ingest, merge evidence, run Peggy, change UI/Ask, or register tasks.
+.PARAMETER ReleaseSha
+  Full 40-character SHA of the already-checked-out release. Required.
 .PARAMETER PreflightOnly
-  Read-only git/ledger/health/counts checks. No fetch, backup, migrate, or restart.
+  Read-only git/ledger/health/counts checks. No backup, migrate, or restart.
+.PARAMETER AllowOfflineOrigin
+  Skip origin/codex/p2-i14-communications equality. Founder-authorized offline use only.
 .PARAMETER Rollback
-  Reverse a verified empty 035 apply after restoring the prior Git SHA.
+  Stop serve, save diagnostics, check out prior production SHA, reverse empty 035.
 #>
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
+  [Parameter(Mandatory = $true)]
+  [string]$ReleaseSha,
   [switch]$PreflightOnly,
+  [switch]$AllowOfflineOrigin,
   [switch]$Rollback,
   [string]$RepoRoot = '',
   [string]$HealthUrl = 'http://127.0.0.1:8790/health',
@@ -21,7 +30,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $RequiredPrior = '743c76712cb286ccdae3ad1108fb260dbd04770d'
-$RequiredSha = '4c13f70aae0d18f217eec4dcf43a98e6b964b14d'
+$SchemaReviewSha = '4c13f70aae0d18f217eec4dcf43a98e6b964b14d'
 $MigrationFile = '035_p2_i14_communications_lineage.sql'
 
 if (-not $RepoRoot) {
@@ -89,7 +98,6 @@ function Stop-MbServe {
 
 function Start-MbServe {
   $py = Resolve-MbPython
-  # Documented FlightSim serve interpreter is the repo venv, not PATH python / startmb -Role serve.
   Start-Process -FilePath $py -ArgumentList @('-m', 'memorybox', 'serve') -WorkingDirectory $RepoRoot | Out-Null
 }
 
@@ -97,68 +105,87 @@ function Get-UntrackedPaths {
   git -C $RepoRoot ls-files --others --exclude-standard
 }
 
-function Test-UntrackedCollisions([string]$TargetSha, [switch]$RequireTarget) {
-  $untracked = @(Get-UntrackedPaths)
-  Write-Host 'UNTRACKED_FILES'
-  if ($untracked.Count -eq 0) { Write-Host '(none)' } else { $untracked | ForEach-Object { Write-Host $_ } }
-  git -C $RepoRoot cat-file -e "$TargetSha^{commit}" 2>$null
-  if ($LASTEXITCODE -ne 0) {
-    if ($RequireTarget) { throw "STOP target SHA $TargetSha is not present locally" }
-    Write-Host 'TARGET_SHA_NOT_LOCAL: listed untracked files; incoming-tree collision check deferred until fetch'
-    return
-  }
-  $incoming = @(git -C $RepoRoot ls-tree -r --name-only $TargetSha)
-  $hits = @()
-  foreach ($path in $untracked) {
-    $norm = ($path -replace '\\', '/').TrimStart('./')
-    if ($incoming -contains $norm) { $hits += $norm }
-  }
-  if ($hits.Count -gt 0) {
-    throw ("STOP untracked files collide with checkout paths: " + ($hits -join ', '))
-  }
-}
-
 function Assert-GitCleanTracked {
   $dirty = git -C $RepoRoot status --porcelain --untracked-files=no
   if ($dirty) { throw "STOP tracked files dirty:`n$dirty" }
 }
 
-function Test-AllowedStartHead([string]$Head) {
-  if ($Head -eq $RequiredPrior -or $Head -eq $RequiredSha) { return }
-  git -C $RepoRoot merge-base --is-ancestor $RequiredSha $Head
-  if ($LASTEXITCODE -eq 0) { return }
-  throw "STOP unexpected HEAD=$Head expected prior $RequiredPrior, target $RequiredSha, or a descendant of the target"
+function Save-RollbackDiagnostics([string]$DestDir) {
+  New-Item -ItemType Directory -Force -Path $DestDir | Out-Null
+  git -C $RepoRoot rev-parse HEAD | Set-Content -Encoding ascii (Join-Path $DestDir 'head.txt')
+  git -C $RepoRoot status --short | Set-Content -Encoding utf8 (Join-Path $DestDir 'git-status.txt')
+  try {
+    $h = Invoke-RestMethod $HealthUrl
+    @{ ok = [bool]$h.ok; pending = @($h.migrations.pending); applied_n = @($h.migrations.applied).Count } |
+      ConvertTo-Json | Set-Content -Encoding utf8 (Join-Path $DestDir 'health-sanitized.json')
+  } catch {
+    Set-Content -Encoding utf8 (Join-Path $DestDir 'health-sanitized.json') '{"ok":false,"error":"health_unavailable"}'
+  }
 }
 
 Import-FlightSimEnv
 $Python = Resolve-MbPython
 
-Write-Host '=== GIT ==='
+Write-Host '=== GIT / RELEASE ==='
 $head = (git -C $RepoRoot rev-parse HEAD).Trim()
 $branch = (git -C $RepoRoot branch --show-current).Trim()
 Write-Host "HEAD=$head"
 Write-Host "BRANCH=$branch"
+Write-Host "RELEASE_SHA=$ReleaseSha"
 git -C $RepoRoot status --short
 Assert-GitCleanTracked
-Test-UntrackedCollisions $RequiredSha
-Test-AllowedStartHead $head
+$untracked = @(Get-UntrackedPaths)
+Write-Host 'UNTRACKED_FILES'
+if ($untracked.Count -eq 0) { Write-Host '(none)' } else { $untracked | ForEach-Object { Write-Host $_ } }
+
+$releaseArgs = @($ReleaseSha)
+if ($AllowOfflineOrigin) { $releaseArgs += '--offline' }
+$rel = Invoke-Mb035 -Action 'assert-release' -ArgList $releaseArgs
+Write-Host $rel
+Invoke-Mb035 'assert-ops-pack' | Out-Host
 
 if ($Rollback) {
-  if (-not $PSCmdlet.ShouldProcess($RepoRoot, 'Rollback empty 035 and restore prior SHA')) { return }
+  if (-not $PSCmdlet.ShouldProcess($RepoRoot, 'Rollback empty 035 after saving diagnostics')) { return }
   Write-Host '=== ROLLBACK ==='
   Stop-MbServe
-  git -C $RepoRoot checkout -B codex/p2-i13-stage-a $RequiredPrior
+  $stamp = Get-Date -Format yyyyMMdd-HHmmss
+  $rootBak = if (Test-Path 'E:\MemoryBox-backups') { 'E:\MemoryBox-backups' } else { 'C:\MemoryBox-backups' }
+  $diag = Join-Path $rootBak "i14-035-rollback-diag-$stamp"
+  Save-RollbackDiagnostics $diag
+  $rbSql = Join-Path $diag 'rollback-empty-035.sql'
+  & $Python -m memorybox.ops.i14_migration_035 print-rollback-sql | Set-Content -Encoding ascii $rbSql
+  Write-Host "DIAGNOSTICS=$diag"
+  git -C $RepoRoot checkout --detach $RequiredPrior
   if ((git -C $RepoRoot rev-parse HEAD).Trim() -ne $RequiredPrior) { throw 'STOP rollback HEAD mismatch' }
+  git -C $RepoRoot cat-file -e "${RequiredPrior}:memorybox/migrations/$MigrationFile" 2>$null
+  if ($LASTEXITCODE -eq 0) { throw 'STOP 035 unexpectedly present on prior SHA' }
   if (Test-Path -LiteralPath (Join-Path $RepoRoot "memorybox\migrations\$MigrationFile")) {
     throw 'STOP 035 still on disk after restoring prior SHA'
   }
-  Invoke-Mb035 'rollback-empty-035'
+  Get-Content -Raw -LiteralPath $rbSql | docker exec -i memorybox-pg psql -U memorybox -d memorybox -v ON_ERROR_STOP=1
+  if ($LASTEXITCODE -ne 0) { throw 'STOP rollback SQL failed; if tables have rows use the verified dump' }
   Start-MbServe
-  Invoke-Mb035 -Action 'poll-health' -ArgList @($HealthUrl) | Out-Host
+  $deadline = (Get-Date).AddSeconds(60)
+  $h = $null
+  do {
+    try {
+      $h = Invoke-RestMethod $HealthUrl
+      if ($h.ok -and -not @($h.migrations.pending).Count) { break }
+    } catch { $h = $null }
+    Start-Sleep -Seconds 1
+  } while ((Get-Date) -lt $deadline)
+  if (-not $h -or -not $h.ok) { throw 'STOP health not ok after rollback restart' }
   $mail = Invoke-RestMethod 'http://127.0.0.1:8790/historian-capture/email-status'
-  ($mail | ConvertTo-Json -Compress | & $Python -m memorybox.ops.i14_migration_035 assert-email) | Out-Host
+  if (-not $mail.ok -or $mail.provider_key -ne 'namecheap_privateemail_imap_smtp') {
+    throw 'STOP historian-capture email-status failed after rollback'
+  }
   $sched = Invoke-RestMethod 'http://127.0.0.1:8790/admin/api/scheduled-services'
-  ($sched | ConvertTo-Json -Depth 8 -Compress | & $Python -m memorybox.ops.i14_migration_035 assert-scheduled) | Out-Host
+  $hc = @($sched.services | Where-Object { $_.kind -eq 'recurring_service' -and $_.id -eq 'historian_capture_email' })
+  if ($hc.Count -ne 1) { throw 'STOP expected one Historian Capture recurring service after rollback' }
+  if ($hc[0].status -in @('Error', 'Disabled', 'Not configured')) {
+    throw "STOP HC schedule status after rollback: $($hc[0].status)"
+  }
+  if ($hc[0].status -eq 'Delayed') { Write-Host 'HC_SCHEDULE_DELAYED=true' }
   git -C $RepoRoot status --short
   return
 }
@@ -171,14 +198,16 @@ if (-not $health.ok) { throw 'STOP health not ok before deploy' }
 $preObj = $pre | ConvertFrom-Json
 $script:BaselineCounts = $preObj.counts | ConvertTo-Json -Compress
 Write-Host "BASELINE_COUNTS=$($script:BaselineCounts)"
+Invoke-Mb035 'assert-ops-pack' | Out-Host
 
 if ($PreflightOnly -or $WhatIfPreference) {
-  Write-Host 'PREFLIGHT_ONLY: no fetch, backup, migrate, or restart'
+  Write-Host 'PREFLIGHT_ONLY: no backup, migrate, or restart; Git HEAD unchanged'
   git -C $RepoRoot status --short
+  Write-Host "HEAD_UNCHANGED=$((git -C $RepoRoot rev-parse HEAD).Trim())"
   return
 }
 
-if (-not $PSCmdlet.ShouldProcess($RepoRoot, 'Backup, checkout 4c13f70, apply 035, restart serve')) { return }
+if (-not $PSCmdlet.ShouldProcess($RepoRoot, 'Backup and apply 035 without changing Git HEAD')) { return }
 
 Write-Host '=== BACKUP ==='
 $stamp = Get-Date -Format yyyyMMdd-HHmmss
@@ -201,15 +230,8 @@ docker exec memorybox-pg rm -f /tmp/pre-i14-035-verify.dump | Out-Null
 Write-Host "BACKUP_PATH=$($info.FullName)"
 Write-Host "BACKUP_SIZE=$($info.Length)"
 
-Write-Host '=== CHECKOUT ==='
-git -C $RepoRoot fetch origin
-$originSha = (git -C $RepoRoot rev-parse origin/codex/p2-i14-communications).Trim()
-if ($originSha -ne $RequiredSha) { throw "STOP origin SHA $originSha" }
-Test-UntrackedCollisions $RequiredSha -RequireTarget
-git -C $RepoRoot checkout -B codex/p2-i14-communications $RequiredSha
-if ((git -C $RepoRoot rev-parse HEAD).Trim() -ne $RequiredSha) { throw 'STOP HEAD mismatch after checkout' }
-if (-not (Test-Path -LiteralPath (Join-Path $RepoRoot "memorybox\migrations\$MigrationFile"))) {
-  throw 'STOP 035 file missing after checkout'
+if ((git -C $RepoRoot rev-parse HEAD).Trim() -ne $ReleaseSha.ToLower()) {
+  throw 'STOP Git HEAD changed unexpectedly before migrate'
 }
 
 Write-Host '=== PENDING ==='
@@ -229,6 +251,10 @@ Write-Host '=== VERIFY SCHEMA ==='
 $verify = ($script:BaselineCounts | & $Python -m memorybox.ops.i14_migration_035 verify-schema)
 if ($LASTEXITCODE -ne 0) { throw 'STOP schema verification failed' }
 Write-Host $verify
+Invoke-Mb035 'assert-ops-pack' | Out-Host
+if ((git -C $RepoRoot rev-parse HEAD).Trim() -ne $ReleaseSha.ToLower()) {
+  throw 'STOP Git HEAD changed during apply'
+}
 
 Write-Host '=== RESTART SERVE ==='
 Stop-MbServe
@@ -244,7 +270,8 @@ $sched = Invoke-RestMethod 'http://127.0.0.1:8790/admin/api/scheduled-services'
 $schedCheck = ($sched | ConvertTo-Json -Depth 8 -Compress | & $Python -m memorybox.ops.i14_migration_035 assert-scheduled)
 if ($LASTEXITCODE -ne 0) { throw 'STOP scheduled-services assertion failed' }
 Write-Host $schedCheck
+Invoke-Mb035 'assert-ops-pack' | Out-Host
 Write-Host 'FINAL_GIT'
 git -C $RepoRoot status --short
-Write-Host "PRIOR_OR_START=$head DEPLOYED=$((git -C $RepoRoot rev-parse HEAD).Trim()) BACKUP=$($info.FullName) SIZE=$($info.Length)"
-Write-Host 'Done. No seed/backfill/ingest/Peggy/UI/task work was performed.'
+Write-Host "RELEASE_HEAD=$((git -C $RepoRoot rev-parse HEAD).Trim()) BACKUP=$($info.FullName) SIZE=$($info.Length)"
+Write-Host 'Done. No seed/backfill/ingest/Peggy/UI/task work was performed. Git HEAD was not changed by this script.'

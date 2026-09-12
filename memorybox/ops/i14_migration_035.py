@@ -15,8 +15,19 @@ from typing import Any, Callable, Iterable
 from urllib.request import Request
 
 REQUIRED_PRIOR_SHA = "743c76712cb286ccdae3ad1108fb260dbd04770d"
-REQUIRED_SHA = "4c13f70aae0d18f217eec4dcf43a98e6b964b14d"
+SCHEMA_REVIEW_SHA = "4c13f70aae0d18f217eec4dcf43a98e6b964b14d"
+REQUIRED_SHA = SCHEMA_REVIEW_SHA
+MIGRATION_RELPATH = "memorybox/migrations/035_p2_i14_communications_lineage.sql"
 MIGRATION_FILENAME = "035_p2_i14_communications_lineage.sql"
+OPS_PACK_PATHS = (
+    "scripts/ops/Deploy-I14Migration035.ps1",
+    "memorybox/ops/i14_migration_035.py",
+    "memorybox/ops/__init__.py",
+    "tests/test_i14_035_deploy.py",
+    "docs/ops/I14_MIGRATION_035_FLIGHTSIM.md",
+    MIGRATION_RELPATH,
+)
+_FULL_SHA = re.compile(r"^[0-9a-f]{40}$")
 COMMS_TABLES = (
     "comms_logical_sources",
     "comms_source_memberships",
@@ -71,6 +82,101 @@ CHECK_NEEDLES = (
 
 class DeployValidationError(RuntimeError):
     """Hard-stop for 035 deploy validation."""
+
+
+def require_full_sha(value: str, *, label: str) -> str:
+    text = (value or "").strip().lower()
+    if not _FULL_SHA.fullmatch(text):
+        raise DeployValidationError(f"{label}_not_full_sha")
+    return text
+
+
+def assert_ops_pack_present(root: Path) -> None:
+    missing = [rel for rel in OPS_PACK_PATHS if not (root / rel).is_file()]
+    if missing:
+        raise DeployValidationError("ops_pack_missing:" + ",".join(missing))
+
+
+def assert_release_state(
+    *,
+    head: str,
+    release_sha: str,
+    origin_sha: str | None,
+    schema_is_ancestor: bool,
+    migration_head_oid: str,
+    migration_schema_oid: str,
+    allow_offline_origin: bool,
+    files_present: Iterable[str],
+) -> dict[str, Any]:
+    rel = require_full_sha(release_sha, label="release")
+    got = require_full_sha(head, label="head")
+    if got != rel:
+        raise DeployValidationError("head_ne_release_sha")
+    if not schema_is_ancestor:
+        raise DeployValidationError("not_descendant_of_schema_review")
+    if not allow_offline_origin:
+        if not origin_sha:
+            raise DeployValidationError("origin_unresolved")
+        if require_full_sha(origin_sha, label="origin") != rel:
+            raise DeployValidationError("origin_ne_release_sha")
+    if not migration_head_oid or migration_head_oid != migration_schema_oid:
+        raise DeployValidationError("035_sql_differs_from_schema_review")
+    present = {p.replace("\\", "/") for p in files_present}
+    missing = [p for p in OPS_PACK_PATHS if p not in present]
+    if missing:
+        raise DeployValidationError("ops_pack_missing:" + ",".join(missing))
+    return {
+        "ok": True,
+        "release_sha": rel,
+        "schema_review_sha": SCHEMA_REVIEW_SHA,
+        "035_blob": migration_head_oid,
+        "offline_origin": bool(allow_offline_origin),
+    }
+
+
+def inspect_release_repo(
+    repo: Path,
+    release_sha: str,
+    *,
+    allow_offline_origin: bool,
+    git_runner: Callable[..., str] | None = None,
+) -> dict[str, Any]:
+    run = git_runner or (lambda *args, **kwargs: _git(repo, *args, **kwargs))
+    head = run("rev-parse", "HEAD")
+    origin = None
+    if not allow_offline_origin:
+        origin = run("rev-parse", "origin/codex/p2-i14-communications")
+    ancestor_rc = run("merge-base", "--is-ancestor", SCHEMA_REVIEW_SHA, "HEAD", _ok=(0, 1))
+    schema_is_ancestor = ancestor_rc == "0"
+    head_blob = run("rev-parse", f"HEAD:{MIGRATION_RELPATH}")
+    schema_blob = run("rev-parse", f"{SCHEMA_REVIEW_SHA}:{MIGRATION_RELPATH}")
+    present = [p for p in OPS_PACK_PATHS if (repo / p).is_file()]
+    return assert_release_state(
+        head=head,
+        release_sha=release_sha,
+        origin_sha=origin,
+        schema_is_ancestor=schema_is_ancestor,
+        migration_head_oid=head_blob,
+        migration_schema_oid=schema_blob,
+        allow_offline_origin=allow_offline_origin,
+        files_present=present,
+    )
+
+
+def _git(repo: Path, *args: str, _ok: tuple[int, ...] = (0,)) -> str:
+    import subprocess
+
+    proc = subprocess.run(
+        ["git", "-C", str(repo), *args],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if proc.returncode not in _ok:
+        raise DeployValidationError("git_failed:" + " ".join(args))
+    if args[:2] == ("merge-base", "--is-ancestor"):
+        return str(proc.returncode)
+    return (proc.stdout or "").strip()
 
 
 def compact_space(text: str) -> str:
@@ -412,6 +518,33 @@ def collect_schema_snapshot(conn: Any, *, baseline_counts: dict[str, int] | None
     }
 
 
+def rollback_sql() -> str:
+    checks = []
+    for name in COMMS_TABLES:
+        checks.append(
+            f"""
+IF to_regclass('public.{name}') IS NOT NULL THEN
+  IF (SELECT COUNT(*) FROM {name}) <> 0 THEN
+    RAISE EXCEPTION 'rollback_blocked_nonempty:{name}';
+  END IF;
+END IF;"""
+        )
+    drops = "\n".join(f"DROP TABLE IF EXISTS {n};" for n in ROLLBACK_DROP_ORDER)
+    body = "\n".join(checks)
+    return f"""BEGIN;
+DO $mb035$
+BEGIN
+{body}
+END
+$mb035$;
+{drops}
+DELETE FROM schema_migrations
+ WHERE version = '035'
+   AND filename = '{MIGRATION_FILENAME}';
+COMMIT;
+"""
+
+
 def rollback_empty_035(conn: Any, *, file_absent: bool) -> dict[str, Any]:
     if not file_absent:
         raise DeployValidationError("035_file_still_on_disk")
@@ -459,12 +592,29 @@ def main(argv: list[str] | None = None) -> int:
         return _emit(
             {
                 "required_prior_sha": REQUIRED_PRIOR_SHA,
-                "required_sha": REQUIRED_SHA,
+                "schema_review_sha": SCHEMA_REVIEW_SHA,
                 "migration_filename": MIGRATION_FILENAME,
                 "comms_tables": list(COMMS_TABLES),
                 "rollback_drop_order": list(ROLLBACK_DROP_ORDER),
+                "ops_pack_paths": list(OPS_PACK_PATHS),
             }
         )
+    if cmd == "assert-ops-pack":
+        root = Path(__file__).resolve().parents[2]
+        assert_ops_pack_present(root)
+        return _emit({"ok": True, "paths": list(OPS_PACK_PATHS)})
+    if cmd == "assert-release":
+        root = Path(__file__).resolve().parents[2]
+        offline = "--offline" in args
+        sha_args = [a for a in args[1:] if not a.startswith("-")]
+        if not sha_args:
+            raise DeployValidationError("release_sha_missing")
+        return _emit(
+            inspect_release_repo(root, sha_args[0], allow_offline_origin=offline)
+        )
+    if cmd == "print-rollback-sql":
+        print(rollback_sql())
+        return 0
     if cmd == "assert-applied":
         payload = json.loads(sys.stdin.read() or "{}")
         assert_migrate_applied(payload)
