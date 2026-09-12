@@ -10,7 +10,7 @@
 
 This document is the product request for **step 2 only**. Implementation of ingest/UI/tasks remains out of scope until founder sign-off on this PRD **and** a later, separate authorization to build.
 
-**Founder locks (2026-09-12):** Visual Thread Review gate accepted. Logical keys: `household_email`, `household_calendar`, `household_sms`. Competing historical duplicates: **map neither**. Calendar identity remains **unlocked** pending revision/version design. SMS `evidence_kind` is determined by the audit. Next build: read-only duplicate-audit CLI only (not on FlightSim until separately authorized).
+**Founder locks (2026-09-12):** Visual Thread Review gate accepted. Logical keys: `household_email`, `household_calendar`, `household_sms`. Competing historical duplicates: **map neither**. Calendar identity remains **unlocked** pending revision/version design. SMS `evidence_kind` is **`communication`** (`sms_export` / csv). Duplicate audit completed on FlightSim (SHA `47c45f7`, 47.1s). Source→stream mapping is recorded in [PHASE-B-STEP-2-AUDIT-RESULTS.json](PHASE-B-STEP-2-AUDIT-RESULTS.json): assign only large non-test extracts; hold tiny/testish/empty landings. **No production seed.** Next build: disposable identity/ingest fixtures.
 
 ---
 
@@ -164,6 +164,8 @@ Do not attach `household_email` / `household_calendar` / `household_sms` to sour
 `landing_alias` is Admin/status only (same CHECK class as `logical_key`). Exact URI stays on `sources`.
 
 Membership still maps each `sources.id` to **one** stream after inventory. A second mbox is not automatically `household_email`.
+
+**Inventory decision (2026-09-12, counts only; no seed):** assign the large non-testish extracts only: one mbox (91275) → `household_email`; ICS 5745 and ICS 50 → `household_calendar`; one SMS CSV (91557) → `household_sms`. Hold tiny/testish/empty mbox, ICS, and SMS landings and all `artifact_upload` / annotation filesystem rows. Details: [PHASE-B-STEP-2-AUDIT-RESULTS.json](PHASE-B-STEP-2-AUDIT-RESULTS.json).
 
 ---
 
@@ -380,7 +382,7 @@ duplicate audit → logical-source decision → ingest/identity fixtures → rea
 | Second-Person proof | Repeat preview + visual review for a second Person. | No |
 | Production load/publication | Seed, backfill, prepared load, generation publish, Gallery. | **Only after separate founder authorization** |
 
-**This documentation revision recommends stopping until the PRD is accepted; then the next *build* is still the audit CLI only.** Do not implement preview UI, seed, backfill, or ingest in this pass.
+**This documentation revision:** duplicate audit is complete; logical-source mapping is recorded without seeding. Next **build** is disposable identity/ingest fixtures (section 9). Do not seed, backfill, preview UI, or load production.
 
 ---
 
@@ -391,8 +393,9 @@ duplicate audit → logical-source decision → ingest/identity fixtures → rea
 | Q-keys | Which three `logical_key` values? | **Locked:** `household_email`, `household_calendar`, `household_sms`. |
 | Q-multi | Multiple historical rows for one identity/hash? | **Locked:** map **neither** (`needs_canonical_policy`) until a merge increment. |
 | Q-cal | Lock `calendar_uid_dtstart` now? | **Locked no.** Unlock until revision semantics (recommend alternative A; 035 gap; separate review). |
-| Q-sms | What `evidence_kind` is SMS today? | **Locked:** let audit report A decide; do not assume. |
-| Q-next | What to build next? | **Locked:** read-only **audit CLI only**, not on FlightSim until separately authorized. No seed, backfill, ingest, or preview UI. |
+| Q-sms | What `evidence_kind` is SMS today? | **Locked:** `communication` (`sms_export` / csv). |
+| Q-next | What to build next? | **Locked:** disposable **identity/ingest fixtures** only. No production seed, backfill, or preview UI. |
+| Q-map | Which landing files join the three streams? | **Locked:** large non-testish mbox + two non-testish ICS + large SMS CSV. Hold the rest (see audit results JSON). |
 | Q-visual | When may Gallery show comms? | Only after Peggy visual Accept, second-Person proof, and a separate production-load authorization. |
 
 ---

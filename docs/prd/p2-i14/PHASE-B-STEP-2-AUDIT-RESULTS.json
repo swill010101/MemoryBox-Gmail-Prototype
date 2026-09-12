@@ -1,0 +1,81 @@
+{
+  "ok": true,
+  "read_only": true,
+  "audit_sha": "47c45f7aab3e5aa806ec36dfca4376e0469e3fb1",
+  "elapsed_ms": 47104,
+  "loaded_rows": 188656,
+  "statement_timeout": "30s",
+  "run_deadline_s": 180,
+  "missing_hash": 4,
+  "invalid_hash": 0,
+  "within_source_duplicates": {
+    "colliding_hashes": 0,
+    "extra_rows": 0,
+    "sources_affected": 0
+  },
+  "cross_source_same_stream_or_cluster": {
+    "mode": "unassigned_cluster",
+    "colliding_hashes": 7,
+    "extra_rows": 0
+  },
+  "same_hash_different_streams_or_clusters": {
+    "colliding_hashes": 0
+  },
+  "rfc_own_fanout": {
+    "present": true,
+    "token_groups": 13,
+    "extra_evidence_rows": 13
+  },
+  "kind_inventory": [
+    {"evidence_kind": "annotation", "source_kind": "", "rows": 3, "distinct_sources": 0},
+    {"evidence_kind": "annotation", "source_kind": "filesystem", "rows": 1, "distinct_sources": 1},
+    {"evidence_kind": "calendar_event", "source_kind": "ics_import", "rows": 5804, "distinct_sources": 6},
+    {"evidence_kind": "communication", "source_kind": "mbox_import", "rows": 91281, "distinct_sources": 3},
+    {"evidence_kind": "communication", "source_kind": "sms_export", "rows": 91567, "distinct_sources": 2}
+  ],
+  "uri_class_inventory": [
+    {"uri_class": "csv", "source_kind": "sms_export", "rows": 91567, "distinct_sources": 2},
+    {"uri_class": "ics", "source_kind": "ics_import", "rows": 5804, "distinct_sources": 6},
+    {"uri_class": "mbox", "source_kind": "mbox_import", "rows": 91281, "distinct_sources": 3},
+    {"uri_class": "other", "source_kind": "", "rows": 3, "distinct_sources": 0},
+    {"uri_class": "other", "source_kind": "filesystem", "rows": 1, "distinct_sources": 1}
+  ],
+  "sms_evidence_kind": "communication",
+  "sms_source_kind": "sms_export",
+  "proposed_streams": ["household_email", "household_calendar", "household_sms"],
+  "mapping_decision": {
+    "household_email": {
+      "assign": [{"source_kind": "mbox_import", "uri_class": "mbox", "rows": 91275, "testish": false}],
+      "hold": [
+        {"source_kind": "mbox_import", "uri_class": "mbox", "rows": 5, "testish": true},
+        {"source_kind": "mbox_import", "uri_class": "mbox", "rows": 1, "testish": true}
+      ]
+    },
+    "household_calendar": {
+      "assign": [
+        {"source_kind": "ics_import", "uri_class": "ics", "rows": 5745, "testish": false},
+        {"source_kind": "ics_import", "uri_class": "ics", "rows": 50, "testish": false}
+      ],
+      "hold": [
+        {"source_kind": "ics_import", "uri_class": "ics", "rows": 5, "testish": true},
+        {"source_kind": "ics_import", "uri_class": "ics", "rows": 2, "testish": true},
+        {"source_kind": "ics_import", "uri_class": "ics", "rows": 1, "testish": false},
+        {"source_kind": "ics_import", "uri_class": "ics", "rows": 1, "testish": false},
+        {"source_kind": "ics_import", "uri_class": "ics", "rows": 0, "testish": false}
+      ]
+    },
+    "household_sms": {
+      "assign": [{"source_kind": "sms_export", "uri_class": "csv", "rows": 91557, "testish": false}],
+      "hold": [
+        {"source_kind": "sms_export", "uri_class": "csv", "rows": 10, "testish": false},
+        {"source_kind": "sms_export", "uri_class": "csv", "rows": 0, "testish": false}
+      ]
+    },
+    "not_comms_streams": [
+      {"source_kind": "artifact_upload", "count": 13, "rows": 0},
+      {"source_kind": "filesystem", "uri_class": "other", "rows": 1, "evidence_kind": "annotation"}
+    ]
+  },
+  "production_writes": false,
+  "comms_tables_remain_empty": true
+}
