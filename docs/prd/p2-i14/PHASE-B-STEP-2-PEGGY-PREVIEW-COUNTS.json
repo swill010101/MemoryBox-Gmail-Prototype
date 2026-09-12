@@ -1,0 +1,45 @@
+{
+  "case_coverage": {
+    "ambiguous_participant_identity": 1685,
+    "attachment_indicators": 274,
+    "changed_subject": 1101,
+    "duplicate_across_extracts": 0,
+    "forwarded_message": 463,
+    "long_thread": 160,
+    "missing_or_malformed_message_id": 0,
+    "normal_two_person": 966,
+    "quoted_reply_stripping": 1659,
+    "threader_split_or_combine": 0
+  },
+  "case_missing": [
+    "missing_or_malformed_message_id",
+    "duplicate_across_extracts",
+    "threader_split_or_combine"
+  ],
+  "completeness_ok": true,
+  "deliberate_duplicates": 0,
+  "displayed": 5716,
+  "duplicate_classes": {},
+  "eligible": 5716,
+  "excluded": 0,
+  "excluded_reasons": {},
+  "founder_accept_recorded": false,
+  "load_authorization": false,
+  "mark_counts": {
+    "accept_thread": 0,
+    "incorrect_ordering": 0,
+    "incorrect_participant": 0,
+    "merge_with_another": 0,
+    "missing_message": 0,
+    "needs_investigation": 0,
+    "quoted_text_removed_incorrectly": 0,
+    "split_here": 0
+  },
+  "ok": true,
+  "person_gate": "peggy",
+  "production_i14_writes": false,
+  "read_only": true,
+  "second_person_required": true,
+  "thread_count": 1685,
+  "unexplained": 0
+}

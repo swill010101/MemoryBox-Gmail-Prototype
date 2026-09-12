@@ -1,7 +1,7 @@
 # P2-I14 Phase B step 2 — duplicate audit, logical keys, ingest transactions
 
 **Status:** Assessment / PRD. **Not authorized to seed, backfill, ingest, merge, or delete evidence.**  
-**Date:** 2026-09-12 (revised)  
+**Date:** 2026-09-12 (revised; preview tooling)  
 **Branch:** `codex/p2-i14-communications`  
 **Depends on:** Phase B step 1 complete — migration **035 applied** on FlightSim; six `comms_*` tables empty; no production `logical_key` rows.  
 **Runtime at last verify:** HEAD `c4fd641c148f592523fee2fff997edfa2e85b970`; 035 blob `345bd26fa337cb159626c70fbd9e741fa010506f`.  
@@ -10,7 +10,7 @@
 
 This document is the product request for **step 2 only**. Implementation of ingest/UI/tasks remains out of scope until founder sign-off on this PRD **and** a later, separate authorization to build.
 
-**Founder locks (2026-09-12):** Visual Thread Review gate accepted. Logical keys: `household_email`, `household_calendar`, `household_sms`. Competing historical duplicates: **map neither**. Calendar identity remains **unlocked** pending revision/version design. SMS `evidence_kind` is **`communication`** (`sms_export` / csv). Duplicate audit completed on FlightSim (SHA `47c45f7`, 47.1s). Source→stream mapping is recorded in [PHASE-B-STEP-2-AUDIT-RESULTS.json](PHASE-B-STEP-2-AUDIT-RESULTS.json): assign only large non-test extracts; hold tiny/testish/empty landings. **No production seed.** Next build: disposable identity/ingest fixtures.
+**Founder locks (2026-09-12):** Visual Thread Review gate accepted. Logical keys: `household_email`, `household_calendar`, `household_sms`. Competing historical duplicates: **map neither**. Calendar identity remains **unlocked** pending revision/version design. SMS `evidence_kind` is **`communication`** (`sms_export` / csv). Duplicate audit completed on FlightSim (SHA `47c45f7`, 47.1s). Source→stream mapping is recorded in [PHASE-B-STEP-2-AUDIT-RESULTS.json](PHASE-B-STEP-2-AUDIT-RESULTS.json): assign only large non-test extracts; hold tiny/testish/empty landings. Identity fixtures proven on disposable Postgres. **No production seed.** Next: read-only Peggy reconstruction preview (gitignored HTML; counts-only git report).
 
 ---
 
@@ -354,7 +354,7 @@ Overall Peggy (and later second-Person) **Accept** is Tom’s explicit action. P
 | Artifact | Location | Contents |
 | --- | --- | --- |
 | Private HTML/UI + annotations | FlightSim, **gitignored** | Real bodies, addresses, marks. Never commit. |
-| Counts-only review report | Git-suitable JSON/Markdown | Case coverage counts; eligible / displayed / duplicate / excluded / unexplained; accept vs other mark counts; no bodies, addresses, or Message-IDs. |
+| Counts-only review report | Git-suitable JSON/Markdown | Case coverage counts; eligible / displayed / duplicate / excluded / unexplained; accept vs other mark counts; no bodies, addresses, or Message-IDs. Live Peggy run: [PHASE-B-STEP-2-PEGGY-PREVIEW-COUNTS.json](PHASE-B-STEP-2-PEGGY-PREVIEW-COUNTS.json). Private HTML stays under gitignored `working/i14-peggy-preview/`. |
 
 ### 10.7 Blocking rule
 
@@ -382,7 +382,7 @@ duplicate audit → logical-source decision → ingest/identity fixtures → rea
 | Second-Person proof | Repeat preview + visual review for a second Person. | No |
 | Production load/publication | Seed, backfill, prepared load, generation publish, Gallery. | **Only after separate founder authorization** |
 
-**This documentation revision:** duplicate audit is complete; logical-source mapping is recorded without seeding. Next **build** is disposable identity/ingest fixtures (section 9). Do not seed, backfill, preview UI, or load production.
+**This documentation revision:** duplicate audit, mapping, and identity fixtures are complete. Next **build** is the read-only Peggy reconstruction preview (section 10): gitignored HTML, counts-only git report, founder marks. Do not seed, backfill, or load production.
 
 ---
 
@@ -394,7 +394,7 @@ duplicate audit → logical-source decision → ingest/identity fixtures → rea
 | Q-multi | Multiple historical rows for one identity/hash? | **Locked:** map **neither** (`needs_canonical_policy`) until a merge increment. |
 | Q-cal | Lock `calendar_uid_dtstart` now? | **Locked no.** Unlock until revision semantics (recommend alternative A; 035 gap; separate review). |
 | Q-sms | What `evidence_kind` is SMS today? | **Locked:** `communication` (`sms_export` / csv). |
-| Q-next | What to build next? | **Locked:** disposable **identity/ingest fixtures** only. No production seed, backfill, or preview UI. |
+| Q-next | What to build next? | **Locked:** read-only **Peggy reconstruction preview** (section 10). No production seed, backfill, prepared load, or Gallery. |
 | Q-map | Which landing files join the three streams? | **Locked:** large non-testish mbox + two non-testish ICS + large SMS CSV. Hold the rest (see audit results JSON). |
 | Q-visual | When may Gallery show comms? | Only after Peggy visual Accept, second-Person proof, and a separate production-load authorization. |
 

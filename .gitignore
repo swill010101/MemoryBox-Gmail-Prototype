@@ -64,3 +64,7 @@ mockups/MemoryBox_P1_and_Mockup_Screens_PNG.zip
 # Isolated synthetic I13 database validation (never runtime data).
 /.i13-annotation-test-pg/
 /.i13-annotation-test-pg.log
+
+# I14 founder thread review (real bodies/addresses/marks — never commit)
+working/i14-peggy-preview/
+docs/test-output/i14-peggy-preview/
