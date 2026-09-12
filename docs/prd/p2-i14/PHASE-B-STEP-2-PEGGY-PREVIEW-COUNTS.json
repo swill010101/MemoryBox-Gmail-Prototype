@@ -1,10 +1,26 @@
 {
+  "ambiguity_detector": "unverified_header_address",
+  "authorship": {
+    "ambiguous_participant": 908,
+    "canonical_messages": 5716,
+    "display_name_only_peggy_rejected": 0,
+    "no_authenticated_peggy_participation": 1,
+    "peggy_unresolved_direction": 0,
+    "sent_by_authenticated_other": 2778,
+    "sent_by_authenticated_peggy": 2698,
+    "sent_to_peggy_authored_other": 3017,
+    "unverified_recipient": 844,
+    "unverified_sender": 240,
+    "voice_corpus": 2698
+  },
   "case_coverage": {
-    "ambiguous_participant_identity": 1685,
+    "ambiguous_participant_identity": 729,
     "attachment_indicators": 274,
     "changed_subject": 1101,
     "duplicate_across_extracts": 0,
     "forwarded_message": 463,
+    "likely_incorrect_merge": 0,
+    "likely_incorrect_split": 0,
     "long_thread": 160,
     "missing_or_malformed_message_id": 0,
     "normal_two_person": 966,
@@ -14,7 +30,9 @@
   "case_missing": [
     "missing_or_malformed_message_id",
     "duplicate_across_extracts",
-    "threader_split_or_combine"
+    "threader_split_or_combine",
+    "likely_incorrect_split",
+    "likely_incorrect_merge"
   ],
   "completeness_ok": true,
   "deliberate_duplicates": 0,
@@ -23,7 +41,10 @@
   "eligible": 5716,
   "excluded": 0,
   "excluded_reasons": {},
+  "focal_confirmed_addresses": 1,
   "founder_accept_recorded": false,
+  "ledger_unique_addresses": 4,
+  "ledger_unique_people": 3,
   "load_authorization": false,
   "mark_counts": {
     "accept_thread": 0,
@@ -37,6 +58,7 @@
   },
   "ok": true,
   "person_gate": "peggy",
+  "private_review_emitted": false,
   "production_i14_writes": false,
   "read_only": true,
   "second_person_required": true,

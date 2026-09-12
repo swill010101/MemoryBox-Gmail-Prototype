@@ -9,7 +9,6 @@ Refuse dbname memorybox unless MEMORYBOX_I14_PREVIEW_ALLOW_MEMORYBOX_DB=1.
 from __future__ import annotations
 
 import argparse
-import html
 import json
 import os
 import re
@@ -27,6 +26,7 @@ from memorybox.ops.i14_duplicate_audit import (
     UUID_RE,
     WRITE_HEAD,
 )
+from memorybox.ops import i14_thread_review as review
 from memorybox.person.phone_map import normalize_handle
 from memorybox.providers.email_read.mbox_parse import parse_message_ids, thread_fields
 
@@ -41,6 +41,8 @@ CASE_IDS = (
     "attachment_indicators",
     "ambiguous_participant_identity",
     "threader_split_or_combine",
+    "likely_incorrect_split",
+    "likely_incorrect_merge",
 )
 
 MARK_IDS = (
@@ -169,14 +171,6 @@ def message_from_payload(
         to_h = str(to_h or "")
     from_n = normalize_handle(from_h)
     people_ids = [str(x) for x in (payload.get("person_ids") or []) if str(x).strip()]
-    resolution = payload.get("identity_resolution")
-    status_res = ""
-    if isinstance(resolution, dict):
-        status_res = str(resolution.get("status") or resolution.get("resolution_status") or "").lower()
-    elif isinstance(resolution, list) and resolution:
-        first = resolution[0] if isinstance(resolution[0], dict) else {}
-        status_res = str(first.get("status") or first.get("resolution_status") or "").lower()
-    trusted = status_res in {"confirmed", "trusted", "owner_confirmed"}
     return {
         "evidence_id": str(evidence_id),
         "source_id": str(source_id),
@@ -185,8 +179,14 @@ def message_from_payload(
         "timestamp": str(payload.get("sent_at") or ""),
         "from": from_h,
         "from_handle": from_n,
+        "from_parsed": payload.get("from_parsed") or [],
         "to": to_h,
+        "to_parsed": payload.get("to_parsed") or [],
         "cc": payload.get("cc"),
+        "cc_parsed": payload.get("cc_parsed") or [],
+        "bcc": payload.get("bcc"),
+        "bcc_parsed": payload.get("bcc_parsed") or [],
+        "payload": payload,
         "subject": str(payload.get("subject") or ""),
         "body": raw,
         "raw_body": raw,
@@ -200,8 +200,8 @@ def message_from_payload(
         "mailbox_skip": skip,
         "content_hash": (content_hash or str(payload.get("content_hash") or "")).strip().lower(),
         "attachments": bool(_attachment_flag(payload)),
+        "attachment_meta": review.attachment_meta(payload, None),
         "person_ids": people_ids,
-        "identity_trusted": trusted,
         "spam_or_trash": skip in {"spam", "trash"},
     }
 
@@ -344,16 +344,6 @@ def _handles(msg: dict[str, Any]) -> set[str]:
     return found
 
 
-def _attribution(msg: dict[str, Any], *, focal_person_id: str | None) -> dict[str, Any]:
-    trusted = bool(msg.get("identity_trusted") and focal_person_id and focal_person_id in (msg.get("person_ids") or []))
-    return {
-        "from_handle": msg.get("from_handle") or normalize_handle(str(msg.get("from") or "")),
-        "to": msg.get("to"),
-        "bound_focal_person": trusted,
-        "ambiguous": not trusted,
-    }
-
-
 def classify_thread(thread: dict[str, Any], *, all_stems: dict[str, list[str]]) -> list[str]:
     msgs = thread["messages"]
     cases: list[str] = []
@@ -375,15 +365,17 @@ def classify_thread(thread: dict[str, Any], *, all_stems: dict[str, list[str]]) 
         cases.append("missing_or_malformed_message_id")
     if thread.get("duplicate_omitted", 0) > 0:
         cases.append("duplicate_across_extracts")
-    if any(m.get("attachments") for m in msgs):
+    if any(m.get("attachments") or m.get("attachment_meta") for m in msgs):
         cases.append("attachment_indicators")
-    if any(_attribution(m, focal_person_id=thread.get("focal_person_id")).get("ambiguous") for m in msgs):
+    if any(m.get("ambiguous_participant") for m in msgs):
         cases.append("ambiguous_participant_identity")
     vendor_ids = {m.get("vendor_thread_id") for m in msgs if m.get("vendor_thread_id")}
     if len(vendor_ids) > 1:
+        cases.append("likely_incorrect_merge")
         cases.append("threader_split_or_combine")
     stem = next(iter(stems), "")
     if stem and len(all_stems.get(stem) or []) > 1 and any(not m.get("rfc_message_id") for m in msgs):
+        cases.append("likely_incorrect_split")
         if "threader_split_or_combine" not in cases:
             cases.append("threader_split_or_combine")
     return cases
@@ -393,6 +385,7 @@ def reconstruct(
     messages: list[dict[str, Any]],
     *,
     focal_person_id: str | None = None,
+    ledger: review.IdentityLedger | None = None,
 ) -> dict[str, Any]:
     parts = partition_population(messages)
     displayed = parts["displayed"]
@@ -410,21 +403,24 @@ def reconstruct(
         if stem:
             stems[stem].append(cid)
 
+    ident = ledger or review.IdentityLedger(focal_person_id=str(focal_person_id or ""))
     threads: list[dict[str, Any]] = []
     for index, (cid, msgs) in enumerate(sorted(by_cluster.items(), key=lambda kv: kv[0])):
-        compacted = _compact_thread_messages(msgs)
+        compacted = review.annotate_messages(_compact_thread_messages(msgs), ident)
         omitted = sum(dupes_by_displayed[str(m["evidence_id"])] for m in compacted)
         warnings: list[str] = []
         if any(not m.get("rfc_message_id") for m in compacted):
             warnings.append("missing_or_malformed_message_id")
         if omitted:
             warnings.append("duplicate_omitted")
-        if any(_attribution(m, focal_person_id=focal_person_id)["ambiguous"] for m in compacted):
-            warnings.append("ambiguous_participant")
+        if any(m.get("ambiguous_participant") for m in compacted):
+            warnings.append("unverified_participant")
+        if any(m.get("quoted_removed") for m in compacted):
+            warnings.append("quoted_text_removed")
         thread = {
-            "preview_thread_id": f"thread-{index + 1:04d}",
+            "preview_thread_id": f"T-{index + 1:04d}",
             "cluster_key": cid,
-            "focal_person_id": focal_person_id,
+            "focal_person_id": ident.focal_person_id,
             "messages": compacted,
             "message_count": len(compacted),
             "source_evidence_count": len(compacted) + omitted,
@@ -432,20 +428,26 @@ def reconstruct(
             "warnings": warnings,
         }
         thread["cases"] = classify_thread(thread, all_stems=stems)
-        if "threader_split_or_combine" in thread["cases"] and "threader_split_or_combine" not in warnings:
-            warnings.append("threader_split_or_combine")
-            thread["warnings"] = warnings
+        if "likely_incorrect_split" in thread["cases"]:
+            warnings.append("likely_incorrect_split")
+        if "likely_incorrect_merge" in thread["cases"]:
+            warnings.append("likely_incorrect_merge")
+        thread["warnings"] = list(dict.fromkeys(warnings))
+        review.thread_confidence(thread)
         threads.append(thread)
 
     coverage = {cid: 0 for cid in CASE_IDS}
     for thread in threads:
         for cid in thread["cases"]:
-            coverage[cid] += 1
+            if cid in coverage:
+                coverage[cid] += 1
     eligible_n = len(parts["eligible"])
     displayed_n = len(displayed)
     dupe_n = len(parts["duplicates"])
     excl_n = len(parts["excluded"])
     unexplained = eligible_n - displayed_n - dupe_n
+    all_displayed_msgs = [m for t in threads for m in t["messages"]]
+    census = review.authorship_census(all_displayed_msgs)
     return {
         "threads": threads,
         "eligible": eligible_n,
@@ -459,6 +461,12 @@ def reconstruct(
         "case_missing": [cid for cid, n in coverage.items() if n == 0],
         "completeness_ok": unexplained == 0,
         "thread_count": len(threads),
+        "authorship": census,
+        "detector_note": (
+            "ambiguous_participant_identity means an unverified From/To/Cc address "
+            "on the thread after confirmed-contact authentication; it is not a "
+            "display-name miss."
+        ),
     }
 
 
@@ -490,10 +498,16 @@ def counts_report(pack: dict[str, Any], *, marks: dict[str, str] | None = None) 
         "case_missing": list(pack["case_missing"]),
         "excluded_reasons": dict(pack.get("excluded_reasons") or {}),
         "duplicate_classes": dict(pack.get("duplicate_classes") or {}),
+        "authorship": {k: int(v) for k, v in dict(pack.get("authorship") or {}).items()},
+        "ambiguity_detector": "unverified_header_address",
+        "focal_confirmed_addresses": int(pack.get("confirmed_address_count") or 0),
+        "ledger_unique_addresses": int(pack.get("ledger_address_count") or 0),
+        "ledger_unique_people": int(pack.get("ledger_person_count") or 0),
         "mark_counts": mark_counts,
         "founder_accept_recorded": False,
         "second_person_required": True,
         "load_authorization": False,
+        "private_review_emitted": False,
     }
     assert_counts_only(report)
     return report
@@ -515,81 +529,8 @@ def assert_counts_only(payload: dict[str, Any]) -> None:
             raise PreviewError("preview_output_contains_uri_or_token")
 
 
-def render_html(pack: dict[str, Any], *, title: str = "I14 Peggy thread preview") -> str:
-    rows = []
-    for thread in pack["threads"]:
-        msgs_html = []
-        for msg in thread["messages"]:
-            attr = _attribution(msg, focal_person_id=thread.get("focal_person_id"))
-            bound = "focal_person" if attr["bound_focal_person"] else "handle_only"
-            attach = "yes" if msg.get("attachments") else "no"
-            msgs_html.append(
-                f"""<article class="msg">
-<header>from: {html.escape(str(attr.get("from_handle") or ""))} · bound: {html.escape(bound)}
- · {html.escape(str(msg.get("timestamp") or ""))} · attachments: {attach}</header>
-<p class="subj">{html.escape(str(msg.get("subject") or ""))}</p>
-<pre class="cleaned">{html.escape(str(msg.get("cleaned_body") or ""))}</pre>
-<details><summary>immutable original ({int(msg.get("raw_body_chars") or 0)} chars)</summary>
-<pre>{html.escape(str(msg.get("raw_body") or ""))}</pre>
-<p>evidence {html.escape(str(msg.get("evidence_id") or ""))}</p>
-</details>
-</article>"""
-            )
-        mark_btns = "".join(
-            f'<label><input type="radio" name="mark-{html.escape(thread["preview_thread_id"])}" value="{mid}"> {html.escape(mid)}</label>'
-            for mid in MARK_IDS
-        )
-        rows.append(
-            f"""<section class="thread" id="{html.escape(thread['preview_thread_id'])}" data-cases="{html.escape(','.join(thread['cases']))}">
-<h2>{html.escape(thread['preview_thread_id'])}</h2>
-<p>messages: {thread['message_count']} · source evidence: {thread['source_evidence_count']} · omitted duplicates: {thread['duplicate_omitted']}</p>
-<p>cases: {html.escape(', '.join(thread['cases']) or 'none')}</p>
-<p class="warn">warnings: {html.escape(', '.join(thread['warnings']) or 'none')}</p>
-<div class="marks">{mark_btns}</div>
-{''.join(msgs_html)}
-</section>"""
-        )
-    missing = ", ".join(pack.get("case_missing") or []) or "none"
-    return f"""<!DOCTYPE html>
-<html lang="en"><head><meta charset="utf-8"><title>{html.escape(title)}</title>
-<style>
-body {{ font-family: sans-serif; margin: 1rem 2rem; }}
-.banner {{ position: sticky; top: 0; background: #fff; border-bottom: 1px solid #333; padding: .5rem 0; }}
-.fail {{ color: #a00; font-weight: 700; }}
-.thread {{ border-top: 2px solid #333; margin: 1.5rem 0; padding-top: 1rem; }}
-.msg {{ margin: .75rem 0; padding: .5rem; border: 1px solid #ccc; }}
-pre {{ white-space: pre-wrap; }}
-.marks label {{ display: inline-block; margin-right: 1rem; }}
-</style></head><body>
-<div class="banner">
-<h1>{html.escape(title)}</h1>
-<p>Private review fixture. Do not commit. Do not write production I14 tables.</p>
-<p>eligible {pack['eligible']} = displayed {pack['displayed']} + duplicates {pack['deliberate_duplicates']} + excluded {pack['excluded']} · unexplained {pack['unexplained']}
-<span class="{'fail' if pack['unexplained'] else ''}">{'GATE FAIL unexplained loss' if pack['unexplained'] else 'completeness holds'}</span></p>
-<p>threads {pack['thread_count']} · missing representative cases: {html.escape(missing)}</p>
-<p><button type="button" id="export-marks">Export marks JSON</button></p>
-</div>
-{''.join(rows)}
-<script>
-const KEY = "i14-peggy-preview-marks";
-function readMarks() {{
-  const out = {{}};
-  document.querySelectorAll("section.thread").forEach((sec) => {{
-    const checked = sec.querySelector("input[type=radio]:checked");
-    if (checked) out[sec.id] = checked.value;
-  }});
-  return out;
-}}
-document.getElementById("export-marks").onclick = () => {{
-  const blob = new Blob([JSON.stringify(readMarks(), null, 2)], {{type: "application/json"}});
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = "i14-peggy-preview-marks.json";
-  a.click();
-}};
-</script>
-</body></html>
-"""
+def render_html(*_args: Any, **_kwargs: Any) -> str:
+    raise PreviewError("html_review_retired")
 
 
 def _addr_sql(addrs: list[str]) -> tuple[str, list[Any]]:
@@ -653,6 +594,61 @@ def load_confirmed_addresses(conn: Any, person_id: str) -> list[str]:
     if not addrs:
         raise PreviewError("no_confirmed_addresses")
     return sorted(addrs)
+
+
+def load_identity_ledger(conn: Any, *, focal_person_id: str, focal_label: str) -> review.IdentityLedger:
+    ledger = review.IdentityLedger(focal_person_id=str(focal_person_id))
+    rows = catalog_execute(
+        conn,
+        """
+        SELECT p.id::text AS pid, p.display_name AS n, c.value_text AS v
+        FROM person_contact_points c
+        JOIN people p ON p.id = c.person_id
+        WHERE c.contact_kind = 'email' AND c.status = 'confirmed' AND p.status <> 'merged_away'
+        """,
+    ).fetchall()
+    for row in rows:
+        review.add_confirmed_address(
+            ledger,
+            address=str(row.get("v") or ""),
+            person_id=str(row.get("pid") or ""),
+            label=str(row.get("n") or ""),
+        )
+    ident = catalog_execute(
+        conn,
+        """
+        SELECT 1 FROM information_schema.tables
+        WHERE table_schema = 'public' AND table_name = 'communication_identities'
+        """,
+    ).fetchone()
+    if ident:
+        rows = catalog_execute(
+            conn,
+            """
+            SELECT resolved_person_id::text AS pid, address_normalized AS v
+            FROM communication_identities
+            WHERE identity_kind = 'email' AND resolution_status = 'confirmed'
+              AND resolved_person_id IS NOT NULL
+            """,
+        ).fetchall()
+        labels = dict(ledger.person_label)
+        for row in rows:
+            pid = str(row.get("pid") or "")
+            review.add_confirmed_address(
+                ledger,
+                address=str(row.get("v") or ""),
+                person_id=pid,
+                label=labels.get(pid, ""),
+            )
+    review.add_confirmed_address(
+        ledger,
+        address="",
+        person_id=focal_person_id,
+        label=focal_label,
+    )
+    if focal_label:
+        ledger.person_label[str(focal_person_id)] = focal_label
+    return ledger
 
 
 def resolve_person(conn: Any, *, person_id: str | None, person_name: str | None) -> tuple[str, str]:
@@ -740,18 +736,19 @@ def load_messages(conn: Any, *, addresses: list[str]) -> list[dict[str, Any]]:
 def run_from_conn(conn: Any, *, person_id: str | None, person_name: str | None) -> dict[str, Any]:
     require_dbname(conn)
     catalog_execute(conn, "SET LOCAL idle_in_transaction_session_timeout = '120s'")
-    pid, _label = resolve_person(conn, person_id=person_id, person_name=person_name)
+    pid, label = resolve_person(conn, person_id=person_id, person_name=person_name)
     addrs = load_confirmed_addresses(conn, pid)
+    ledger = load_identity_ledger(conn, focal_person_id=pid, focal_label=label)
     messages = load_messages(conn, addresses=addrs)
-    pack = reconstruct(messages, focal_person_id=pid)
+    pack = reconstruct(messages, focal_person_id=pid, ledger=ledger)
     pack["loaded_rows"] = len(messages)
-    pack["address_count"] = len(addrs)
+    pack["confirmed_address_count"] = len(addrs)
+    pack["ledger_address_count"] = len(ledger.address_to_person)
+    pack["ledger_person_count"] = len({p for p in ledger.address_to_person.values()})
     return pack
 
 
-def write_artifacts(pack: dict[str, Any], *, html_path: Path, counts_path: Path | None) -> dict[str, Any]:
-    html_path.parent.mkdir(parents=True, exist_ok=True)
-    html_path.write_text(render_html(pack), encoding="utf-8")
+def write_counts(pack: dict[str, Any], counts_path: Path | None) -> dict[str, Any]:
     report = counts_report(pack)
     if counts_path is not None:
         counts_path.parent.mkdir(parents=True, exist_ok=True)
@@ -762,14 +759,22 @@ def write_artifacts(pack: dict[str, Any], *, html_path: Path, counts_path: Path 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="i14_peggy_preview")
     parser.add_argument("--fixture-json", help="Synthetic messages JSON; skips database")
-    parser.add_argument("--html-out", required=True)
     parser.add_argument("--counts-out")
+    parser.add_argument("--review-out", help="Private TXT tree (refused for production unless emit env is set)")
+    parser.add_argument("--representative-only", action="store_true")
+    parser.add_argument("--census-only", action="store_true")
     parser.add_argument("--person-id")
     parser.add_argument("--person-name", default="Peggy George")
+    parser.add_argument("--html-out", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
-    html_out = Path(args.html_out)
+    if args.html_out:
+        raise PreviewError("html_review_retired")
+    if args.review_out and not args.fixture_json and not args.census_only:
+        if os.environ.get("MEMORYBOX_I14_REVIEW_EMIT_PRIVATE", "").strip() != "1":
+            raise PreviewError("private_review_emit_not_authorized")
     counts_out = Path(args.counts_out) if args.counts_out else None
-    if args.fixture_json:
+
+    def _pack_from_fixture() -> dict[str, Any]:
         raw = json.loads(Path(args.fixture_json).read_text(encoding="utf-8"))
         messages = []
         for row in raw:
@@ -783,25 +788,44 @@ def main(argv: list[str] | None = None) -> int:
                 )
             else:
                 messages.append(row)
-        pack = reconstruct(messages)
-        report = write_artifacts(pack, html_path=html_out, counts_path=counts_out)
-        print(json.dumps(report, indent=2, sort_keys=True))
-        return 0
-    dsn = os.environ.get("MEMORYBOX_DATABASE_URL")
-    if not dsn:
-        raise PreviewError("MEMORYBOX_DATABASE_URL_missing")
-    import psycopg
-    from psycopg.rows import dict_row
+        return reconstruct(messages)
 
-    conn = psycopg.connect(dsn, row_factory=dict_row, autocommit=False)
-    try:
-        pack = run_from_conn(conn, person_id=args.person_id, person_name=args.person_name)
-    finally:
+    if args.fixture_json:
+        pack = _pack_from_fixture()
+    else:
+        dsn = os.environ.get("MEMORYBOX_DATABASE_URL")
+        if not dsn:
+            raise PreviewError("MEMORYBOX_DATABASE_URL_missing")
+        import psycopg
+        from psycopg.rows import dict_row
+
+        conn = psycopg.connect(dsn, row_factory=dict_row, autocommit=False)
         try:
-            conn.rollback()
+            pack = run_from_conn(conn, person_id=args.person_id, person_name=args.person_name)
         finally:
-            conn.close()
-    report = write_artifacts(pack, html_path=html_out, counts_path=counts_out)
+            try:
+                conn.rollback()
+            finally:
+                conn.close()
+    if args.review_out and not args.census_only:
+        meta = review.write_review_tree(
+            pack, Path(args.review_out), representative_only=bool(args.representative_only)
+        )
+        pack["private_review_meta"] = {
+            "packet_files": len(meta.get("packet_files") or []),
+            "thread_count_written": meta.get("thread_count_written"),
+            "original_files": meta.get("original_files"),
+            "representative_coverage": {
+                k: ("present" if v != "not_present_in_corpus" else v)
+                for k, v in dict(meta.get("representative_coverage") or {}).items()
+            },
+        }
+    report = write_counts(pack, counts_out)
+    if pack.get("private_review_meta"):
+        report = dict(report)
+        report["private_review_emitted"] = True
+        report["representative_coverage"] = pack["private_review_meta"]["representative_coverage"]
+        assert_counts_only(report)
     print(json.dumps(report, indent=2, sort_keys=True))
     return 0
 

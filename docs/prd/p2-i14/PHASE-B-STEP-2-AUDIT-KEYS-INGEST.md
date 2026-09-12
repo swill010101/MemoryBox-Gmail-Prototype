@@ -294,9 +294,36 @@ This gate is **not** a production write path. Reconstruction runs as a **disposa
 
 1. Build reconstructed email threads in a disposable or read-only preview only (local FlightSim; existing `evidence` / RFC tables may be **read**).
 2. Do not persist preview threads as I14 lineage or prepared rows.
-3. Render a founder-reviewable HTML/UI fixture from **real Peggy** email evidence, locally on FlightSim.
+3. Render founder-reviewable **UTF-8 TXT packets** from real Peggy email evidence, locally on FlightSim (gitignored). Do **not** emit a monolithic HTML or one enormous TXT file.
 4. Keep the fixture **private and gitignored**. Do not commit message bodies, personal addresses, or founder annotations that contain them.
 5. After Peggy is explicitly accepted, **repeat** the same gate for a **second canonical Person** before general production publication.
+
+**Two products (do not collapse):**
+
+| Product | Contents | Use |
+| --- | --- | --- |
+| Canonical communication thread | Every reconstructed message, any sender, chronological | MemoryBox communications, Gallery context, visual review |
+| Peggy-authored voice corpus | Only messages whose **From address** is a confirmed unique Peggy contact | Later Peggy narrative / Words of a Life. Mail **to** Peggy is not her voice. |
+
+Authentication is **address-ledger only** (`person_contact_points` / confirmed `communication_identities`, unique person). Display names and nicknames (Peggy / Peggo / PegLeg) are labels **after** authentication. Unverified senders stay unverified.
+
+### 10.1a Private review tree (FlightSim, gitignored)
+
+Proposed path: `working/i14-thread-review/` (never commit).
+
+| File | Role |
+| --- | --- |
+| `README.txt` | Navigation + founder marks |
+| `INDEX.txt` | One searchable line per thread (no bodies/addresses in the git report; private INDEX may include date range only plus counts) |
+| `packet-NNN.txt` | About **25** canonical threads each; full prepared From/To/Cc/Date/Subject/authorship/cleaned text |
+| `originals/T-NNNN-M-NN.txt` | One immutable original; open by Evidence-ref only |
+| `MARKS.txt` | Accept / Split / Merge / Incorrect participant / Incorrect ordering / Quoted text removed incorrectly / Missing message / Needs investigation |
+
+Production generation of this tree requires a **separate** founder authorization (`MEMORYBOX_I14_REVIEW_EMIT_PRIVATE=1`). Census-only counts may run without emitting the tree.
+
+Each prepared message must show: From (display + address), To (all), Cc when present, Date (local America/Chicago + timezone), Subject, authorship status (authenticated Peggy / authenticated other Person / unverified), cleaned authored text, attachment filename/type when present, Evidence-ref. Each thread shows BEGIN/END THREAD, stable review id, chronology, date range, participants, evidence/duplicate/excluded counts, threading and identity confidence, warnings.
+
+Visually distinguish Peggy-authored messages (`Voice corpus: yes`) without dropping non-Peggy messages from the canonical thread.
 
 ### 10.2 Representative cases (must appear in the Peggy set)
 
@@ -353,8 +380,8 @@ Overall Peggy (and later second-Person) **Accept** is Tom’s explicit action. P
 
 | Artifact | Location | Contents |
 | --- | --- | --- |
-| Private HTML/UI + annotations | FlightSim, **gitignored** | Real bodies, addresses, marks. Never commit. |
-| Counts-only review report | Git-suitable JSON/Markdown | Case coverage counts; eligible / displayed / duplicate / excluded / unexplained; accept vs other mark counts; no bodies, addresses, or Message-IDs. Live Peggy run: [PHASE-B-STEP-2-PEGGY-PREVIEW-COUNTS.json](PHASE-B-STEP-2-PEGGY-PREVIEW-COUNTS.json). Private HTML stays under gitignored `working/i14-peggy-preview/`. |
+| Private TXT packets + originals + marks | FlightSim `working/i14-thread-review/`, **gitignored** | Real bodies, addresses, marks. Never commit. HTML preview is retired. |
+| Counts-only review report | Git-suitable JSON | Case coverage; eligible / displayed / duplicate / excluded / unexplained; authorship census; no bodies, addresses, or Message-IDs. |
 
 ### 10.7 Blocking rule
 
@@ -377,7 +404,7 @@ duplicate audit → logical-source decision → ingest/identity fixtures → rea
 | Duplicate audit | Read-only temp-table hash/RFC counts; source inventory. | No |
 | Logical-source decision | Lock keys; map sources to streams from inventory. | No seed until later authorization |
 | Ingest/identity fixtures | Disposable Postgres only; transaction/alias/historical rules. | No |
-| Read-only Peggy preview | Reconstruct threads from existing evidence; gitignored HTML. | No |
+| Read-only Peggy preview | Reconstruct threads; gitignored TXT packets after separate emit auth. | No |
 | Founder visual review | Marks in section 10.5; counts-only git report. | No |
 | Second-Person proof | Repeat preview + visual review for a second Person. | No |
 | Production load/publication | Seed, backfill, prepared load, generation publish, Gallery. | **Only after separate founder authorization** |
@@ -394,7 +421,7 @@ duplicate audit → logical-source decision → ingest/identity fixtures → rea
 | Q-multi | Multiple historical rows for one identity/hash? | **Locked:** map **neither** (`needs_canonical_policy`) until a merge increment. |
 | Q-cal | Lock `calendar_uid_dtstart` now? | **Locked no.** Unlock until revision semantics (recommend alternative A; 035 gap; separate review). |
 | Q-sms | What `evidence_kind` is SMS today? | **Locked:** `communication` (`sms_export` / csv). |
-| Q-next | What to build next? | **Locked:** read-only **Peggy reconstruction preview** (section 10). No production seed, backfill, prepared load, or Gallery. |
+| Q-next | What to build next? | **Locked:** founder **authorizes private TXT generation** after reviewing this redesign. No production seed, backfill, prepared load, or Gallery. |
 | Q-map | Which landing files join the three streams? | **Locked:** large non-testish mbox + two non-testish ICS + large SMS CSV. Hold the rest (see audit results JSON). |
 | Q-visual | When may Gallery show comms? | Only after Peggy visual Accept, second-Person proof, and a separate production-load authorization. |
 

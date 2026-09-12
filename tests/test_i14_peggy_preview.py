@@ -8,6 +8,7 @@ import unittest
 from pathlib import Path
 
 from memorybox.ops import i14_peggy_preview as preview
+from memorybox.ops import i14_thread_review as review
 from memorybox.ops.i14_peggy_preview import PreviewError
 
 HASH = "ab" * 32
@@ -61,11 +62,10 @@ class PeggyPreviewSynthetic(unittest.TestCase):
         self.assertNotIn("@", blob)
         self.assertNotIn("alice", blob.lower())
         self.assertNotIn("SECRET", blob)
-        html_doc = preview.render_html(pack)
-        self.assertIn("accept_thread", html_doc)
-        self.assertIn("needs_investigation", html_doc)
-        self.assertIn("completeness holds", html_doc)
-        self.assertIn("immutable original", html_doc)
+        sample = review.format_thread_txt(pack["threads"][0])
+        self.assertIn("BEGIN THREAD", sample)
+        self.assertIn("From:", sample)
+        self.assertIn("To:", sample)
 
     def test_same_subject_does_not_merge_unthreaded(self) -> None:
         a = _msg(1, rfc_message_id=None, message_id="", subject="Picnic", content_hash="33" * 32)
@@ -133,17 +133,16 @@ class PeggyPreviewSynthetic(unittest.TestCase):
         corpus = _all_case_messages()
         with tempfile.TemporaryDirectory() as tmp:
             fixture = Path(tmp) / "fix.json"
-            html_out = Path(tmp) / "preview.html"
             counts = Path(tmp) / "counts.json"
             fixture.write_text(json.dumps(corpus, default=str), encoding="utf-8")
             rc = preview.main(
-                ["--fixture-json", str(fixture), "--html-out", str(html_out), "--counts-out", str(counts)]
+                ["--fixture-json", str(fixture), "--counts-out", str(counts), "--review-out", str(Path(tmp) / "review")]
             )
             self.assertEqual(rc, 0)
             report = json.loads(counts.read_text(encoding="utf-8"))
             preview.assert_counts_only(report)
-            self.assertTrue(html_out.exists())
-            self.assertIn("I14 Peggy", html_out.read_text(encoding="utf-8"))
+            self.assertTrue((Path(tmp) / "review" / "INDEX.txt").exists())
+            self.assertIn("BEGIN THREAD", (Path(tmp) / "review" / "packet-001.txt").read_text(encoding="utf-8"))
 
 
 def _all_case_messages() -> list[dict]:
