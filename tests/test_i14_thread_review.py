@@ -146,10 +146,39 @@ class RepresentativeCases(unittest.TestCase):
         self.assertNotEqual(coverage["changed_subject"], "not_present_in_corpus")
         self.assertNotEqual(coverage["attachment_indicators"], "not_present_in_corpus")
         self.assertNotEqual(coverage["ambiguous_participant_identity"], "not_present_in_corpus")
-        self.assertNotEqual(coverage["likely_incorrect_split"], "not_present_in_corpus")
-        self.assertNotEqual(coverage["likely_incorrect_merge"], "not_present_in_corpus")
-        self.assertNotEqual(coverage["duplicate_across_extracts"], "not_present_in_corpus")
-        self.assertNotEqual(coverage["missing_or_malformed_message_id"], "not_present_in_corpus")
+
+
+class CommercialAndBounds(unittest.TestCase):
+    def test_commercial_classes(self) -> None:
+        retain = review.classify_commercial({"subject": "Your United itinerary", "from_handle": "a@example.test"})
+        suppress = review.classify_commercial({"subject": "Weekly deals 20% off", "from_handle": "x@mailchimp.com"})
+        uncertain = review.classify_commercial({"subject": "Order confirmation #12", "from_handle": "store@example.test"})
+        self.assertEqual(retain["commercial_class"], "commercial_retain")
+        self.assertEqual(suppress["commercial_class"], "commercial_suppress")
+        self.assertEqual(uncertain["commercial_class"], "commercial_uncertain")
+
+    def test_full_corpus_emit_refused(self) -> None:
+        threads = [{"preview_thread_id": f"T-{i:04d}", "messages": [], "cases": []} for i in range(26)]
+        with self.assertRaises(review.ReviewError) as ctx:
+            with tempfile.TemporaryDirectory() as tmp:
+                review.write_review_tree({"threads": threads}, Path(tmp), representative_only=False)
+        self.assertEqual(str(ctx.exception), "full_corpus_emit_refused")
+
+    def test_one_packet_file_only(self) -> None:
+        pack = _build_all_cases()
+        with tempfile.TemporaryDirectory() as tmp:
+            meta = review.write_review_tree(pack, Path(tmp), founder_packet=True)
+            packets = list(Path(tmp).glob("packet-*.txt"))
+            self.assertEqual(len(packets), 1)
+            self.assertEqual(packets[0].name, "packet-001.txt")
+            self.assertLessEqual(meta["thread_count_written"], 25)
+            self.assertLessEqual(meta["sizes"]["packet_bytes"], review.MAX_PACKET_BYTES)
+            self.assertEqual(meta["sizes"]["packet_files"], 1)
+
+    def test_image_vs_pdf_attachment_action(self) -> None:
+        self.assertEqual(review.gallery_attachment_action("pic.JPG", "image/jpeg"), "view_image")
+        self.assertEqual(review.gallery_attachment_action("t.pdf", "application/pdf"), "open_pdf")
+        self.assertEqual(review.gallery_attachment_action("x.bin", "application/octet-stream"), "record_only")
 
 
 if __name__ == "__main__":

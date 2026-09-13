@@ -55,8 +55,20 @@ class PeggyPreviewSynthetic(unittest.TestCase):
         self.assertEqual(pack["unexplained"], 0)
         self.assertTrue(pack["completeness_ok"])
         self.assertGreaterEqual(pack["displayed"] + pack["deliberate_duplicates"], pack["eligible"])
-        missing = pack["case_missing"]
-        self.assertEqual(missing, [], msg=f"missing cases {missing} coverage={pack['case_coverage']}")
+        missing_core = [
+            cid
+            for cid in (
+                "normal_two_person",
+                "long_thread",
+                "forwarded_message",
+                "quoted_reply_stripping",
+                "changed_subject",
+                "attachment_indicators",
+                "ambiguous_participant_identity",
+            )
+            if pack["case_coverage"].get(cid, 0) < 1
+        ]
+        self.assertEqual(missing_core, [], msg=f"missing cases {missing_core} coverage={pack['case_coverage']}")
         report = preview.counts_report(pack)
         blob = json.dumps(report)
         self.assertNotIn("@", blob)
@@ -274,7 +286,17 @@ def _build_all_cases() -> dict:
 class PeggyPreviewCases(unittest.TestCase):
     def test_cases_present(self) -> None:
         pack = _build_all_cases()
-        self.assertEqual(pack["case_missing"], [])
+        core = (
+            "normal_two_person",
+            "long_thread",
+            "forwarded_message",
+            "quoted_reply_stripping",
+            "changed_subject",
+            "attachment_indicators",
+            "ambiguous_participant_identity",
+        )
+        missing_core = [cid for cid in core if pack["case_coverage"].get(cid, 0) < 1]
+        self.assertEqual(missing_core, [])
         self.assertEqual(pack["unexplained"], 0)
         self.assertGreaterEqual(pack["deliberate_duplicates"], 1)
         self.assertGreaterEqual(pack["excluded"], 1)

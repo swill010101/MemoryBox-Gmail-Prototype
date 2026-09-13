@@ -43,6 +43,15 @@ CASE_IDS = (
     "threader_split_or_combine",
     "likely_incorrect_split",
     "likely_incorrect_merge",
+    "multiple_participants",
+    "peggy_voice",
+    "to_peggy_other_author",
+    "no_peggy_participation",
+    "commercial_retain",
+    "commercial_suppress",
+    "commercial_uncertain",
+    "boundary_candidate_split",
+    "boundary_candidate_merge",
 )
 
 MARK_IDS = (
@@ -436,6 +445,8 @@ def reconstruct(
         review.thread_confidence(thread)
         threads.append(thread)
 
+    review.enrich_thread_cases(threads)
+
     coverage = {cid: 0 for cid in CASE_IDS}
     for thread in threads:
         for cid in thread["cases"]:
@@ -486,7 +497,8 @@ def counts_report(pack: dict[str, Any], *, marks: dict[str, str] | None = None) 
         "ok": True,
         "read_only": True,
         "production_i14_writes": False,
-        "person_gate": "peggy",
+        "person_gate": "pilot_1",
+        "person_pilot": 1,
         "eligible": int(pack["eligible"]),
         "displayed": int(pack["displayed"]),
         "deliberate_duplicates": int(pack["deliberate_duplicates"]),
@@ -762,6 +774,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--counts-out")
     parser.add_argument("--review-out", help="Private TXT tree (refused for production unless emit env is set)")
     parser.add_argument("--representative-only", action="store_true")
+    parser.add_argument("--founder-packet", action="store_true", help="Emit one bounded Person Pilot 1 packet")
     parser.add_argument("--census-only", action="store_true")
     parser.add_argument("--person-id")
     parser.add_argument("--person-name", default="Peggy George")
@@ -809,14 +822,19 @@ def main(argv: list[str] | None = None) -> int:
                 conn.close()
     if args.review_out and not args.census_only:
         meta = review.write_review_tree(
-            pack, Path(args.review_out), representative_only=bool(args.representative_only)
+            pack,
+            Path(args.review_out),
+            representative_only=bool(args.representative_only or args.founder_packet),
+            founder_packet=bool(args.founder_packet or args.representative_only),
         )
         pack["private_review_meta"] = {
-            "packet_files": len(meta.get("packet_files") or []),
+            "packet_files": 1,
             "thread_count_written": meta.get("thread_count_written"),
             "original_files": meta.get("original_files"),
+            "sizes": meta.get("sizes") or {},
+            "load_contract": meta.get("load_contract"),
             "representative_coverage": {
-                k: ("present" if v != "not_present_in_corpus" else v)
+                k: ("present" if str(v).startswith("T-") else v)
                 for k, v in dict(meta.get("representative_coverage") or {}).items()
             },
         }
@@ -825,6 +843,8 @@ def main(argv: list[str] | None = None) -> int:
         report = dict(report)
         report["private_review_emitted"] = True
         report["representative_coverage"] = pack["private_review_meta"]["representative_coverage"]
+        report["packet_sizes"] = pack["private_review_meta"].get("sizes") or {}
+        report["load_contract"] = pack["private_review_meta"].get("load_contract")
         assert_counts_only(report)
     print(json.dumps(report, indent=2, sort_keys=True))
     return 0
@@ -834,6 +854,9 @@ if __name__ == "__main__":
     try:
         raise SystemExit(main())
     except PreviewError as exc:
+        print(json.dumps({"ok": False, "error": str(exc)}), file=sys.stderr)
+        raise SystemExit(1) from None
+    except review.ReviewError as exc:
         print(json.dumps({"ok": False, "error": str(exc)}), file=sys.stderr)
         raise SystemExit(1) from None
     except Exception:

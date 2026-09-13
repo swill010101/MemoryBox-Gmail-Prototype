@@ -20,7 +20,34 @@ from memorybox.person.phone_map import normalize_handle
 
 REVIEW_TZ = ZoneInfo("America/Chicago")
 PACKET_THREADS = 25
+MAX_PACKET_THREADS = 25
+MAX_PACKET_BYTES = 1_500_000
+MAX_ORIGINAL_BYTES = 200_000
+MAX_LONG_THREAD_FOR_PACKET = 16
 PEGGY_DISPLAY_HINTS = re.compile(r"\b(peggy|peggo|pegleg|peg\s*leg|peg)\b", re.I)
+COMMERCIAL_RETAIN = re.compile(
+    r"\b(itinerary|boarding\s*pass|e-?ticket|check-?in|reservation|booking|"
+    r"confirmation\s*(number|code)|flight|hotel|cruise|rental\s*car|"
+    r"medical|appointment|concert|festival|admission)\b",
+    re.I,
+)
+COMMERCIAL_SUPPRESS = re.compile(
+    r"\b(unsubscribe|newsletter|promo(?:tion)?|% off|special offer|weekly\s+deals|"
+    r"flash sale|coupon|rewards?\s+points|your\s+receipt|order\s+has\s+shipped|"
+    r"package\s+delivered|password\s+reset|verify\s+your\s+email)\b",
+    re.I,
+)
+COMMERCIAL_UNCERTAIN = re.compile(
+    r"\b(order\s+confirmation|invoice|statement|tracking\s+number|payment\s+received)\b",
+    re.I,
+)
+SUPPRESS_HOST = re.compile(
+    r"(mailchimp|sendgrid|constantcontact|cmail\d+|sparkpost|marketing\.|promo\.|"
+    r"deals\.|news\.|info@noreply)",
+    re.I,
+)
+IMAGE_EXT = re.compile(r"\.(jpe?g|png|gif|webp|heic|bmp|tiff?)$", re.I)
+PDF_EXT = re.compile(r"\.pdf$", re.I)
 
 AUTH_PEGGY = "authenticated_peggy"
 AUTH_OTHER = "authenticated_other"
@@ -38,28 +65,33 @@ FOUNDER MARKS (write one line per thread in MARKS.txt)
   T-0001  needs_investigation
 """.strip()
 
-README_TEXT = """I14 Peggy visual thread review (private)
+README_TEXT = """I14 Phase B — Prepared Communications and Threads
+Person Pilot 1 review packet (private, gitignored)
 
-This folder is gitignored. It is not a production I14 write and is not Gallery.
+This is not migration 035 validation and not the I11A Peggy Narrative.
+035 does not store threads. This packet prototypes the future prepared layer.
+
+Open (one file at a time)
+  1. Open README.txt (this file).
+  2. Open INDEX.txt and search for a thread id (T-NNNN).
+  3. Open packet-001.txt only. Do not open a second packet; there is only one.
+  4. To see an immutable original, open exactly originals/<Evidence-ref>.txt
+     for that message. Close it before opening another original.
+
+Bounds
+  At most 25 threads in packet-001.txt. Full corpus is not in this folder.
+  If a file would exceed size limits it is not written (fail closed).
 
 Two products
-  1. Canonical communication thread (this packet): every message in order,
-     regardless of sender. This is what MemoryBox communications / Gallery
-     context must preserve.
-  2. Peggy-authored voice corpus: only messages whose From address is a
-     confirmed unique contact for Peggy. Mail sent TO Peggy is not her voice.
+  Canonical thread: every message, every participant, chronological.
+  Voice corpus: From address is a confirmed unique Pilot 1 contact only.
 
-Navigation
-  INDEX.txt              one line per thread (searchable)
-  packet-NNN.txt         about 25 canonical threads each; full prepared text
-  originals/T-NNNN-M-NN.txt
-                         immutable original for one message; open by Evidence-ref
-  MARKS.txt              your marks (template in this README)
+Commercial labels (Gallery default only; archive unchanged)
+  commercial_retain    life evidence (travel, medical, meaningful events)
+  commercial_suppress  ads/newsletters/routine receipts — hide by default
+  commercial_uncertain keep but do not auto-display until resolved
 
-Open one original without the archive
-  Each prepared message has Evidence-ref T-NNNN-M-NN.
-  Open exactly originals/T-NNNN-M-NN.txt. Do not open other originals.
-
+Marks: see MARKS.txt
 Do not commit this folder.
 """.strip()
 
@@ -71,11 +103,26 @@ REQUIRED_PACKET_CASES = (
     "changed_subject",
     "attachment_indicators",
     "ambiguous_participant_identity",
+    "multiple_participants",
+    "peggy_voice",
+    "to_peggy_other_author",
+    "no_peggy_participation",
+    "commercial_retain",
+    "commercial_suppress",
+    "commercial_uncertain",
+    "boundary_candidate_split",
+    "boundary_candidate_merge",
     "likely_incorrect_split",
     "likely_incorrect_merge",
     "duplicate_across_extracts",
     "missing_or_malformed_message_id",
 )
+
+
+class ReviewError(RuntimeError):
+    def __init__(self, code: str):
+        super().__init__(code)
+        self.code = code
 
 
 @dataclass
@@ -176,6 +223,48 @@ def attachment_meta(payload: dict[str, Any] | None, msg: dict[str, Any] | None =
     return out
 
 
+def gallery_attachment_action(filename: str, mime: str) -> str:
+    blob = f"{filename} {mime}".lower()
+    if IMAGE_EXT.search(filename) or mime.lower() in {
+        "image/jpeg",
+        "image/png",
+        "image/gif",
+        "image/webp",
+        "image/heic",
+        "image/bmp",
+        "image/tiff",
+    }:
+        return "view_image"
+    if PDF_EXT.search(filename) or "pdf" in mime.lower():
+        return "open_pdf"
+    if mime.startswith("text/") or filename.lower().endswith((".txt", ".doc", ".docx")):
+        return "open_document"
+    return "record_only"
+
+
+def classify_commercial(msg: dict[str, Any]) -> dict[str, str]:
+    subject = str(msg.get("subject") or "")
+    from_addr = ""
+    parties = msg.get("from_parties") or []
+    if parties:
+        from_addr = str(parties[0].get("address") or "")
+    elif msg.get("from_handle"):
+        from_addr = str(msg.get("from_handle"))
+    host = from_addr.split("@")[-1] if "@" in from_addr else from_addr
+    retain = bool(COMMERCIAL_RETAIN.search(subject))
+    suppress = bool(COMMERCIAL_SUPPRESS.search(subject) or SUPPRESS_HOST.search(from_addr) or SUPPRESS_HOST.search(host))
+    uncertain = bool(COMMERCIAL_UNCERTAIN.search(subject))
+    if retain:
+        label = "commercial_retain"
+    elif suppress and not retain:
+        label = "commercial_suppress"
+    elif uncertain:
+        label = "commercial_uncertain"
+    else:
+        label = "not_commercial"
+    return {"commercial_class": label, "from_host_class": "suppressed_host" if SUPPRESS_HOST.search(from_addr) else "ordinary"}
+
+
 def format_review_date(raw: str | None) -> str:
     text = str(raw or "").strip()
     if not text:
@@ -238,7 +327,7 @@ def classify_message(msg: dict[str, Any], ledger: IdentityLedger) -> dict[str, A
     else:
         direction = "peggy_unresolved_direction"
 
-    return {
+    ident = {
         "from_parties": from_b,
         "to_parties": to_b,
         "cc_parties": cc_b,
@@ -254,6 +343,10 @@ def classify_message(msg: dict[str, Any], ledger: IdentityLedger) -> dict[str, A
         "ambiguous_participant": unverified_sender or unverified_recipient or (not from_b),
         "attachment_meta": attachment_meta(msg.get("payload") if isinstance(msg.get("payload"), dict) else {}, msg),
     }
+    ident.update(classify_commercial({**msg, **ident}))
+    for att in ident["attachment_meta"]:
+        att["gallery_action"] = gallery_attachment_action(str(att.get("filename") or ""), str(att.get("mime_type") or ""))
+    return ident
 
 
 def annotate_messages(messages: list[dict[str, Any]], ledger: IdentityLedger) -> list[dict[str, Any]]:
@@ -278,6 +371,10 @@ def authorship_census(messages: list[dict[str, Any]]) -> dict[str, int]:
         "voice_corpus",
         "canonical_messages",
         "ambiguous_participant",
+        "commercial_retain",
+        "commercial_suppress",
+        "commercial_uncertain",
+        "not_commercial",
     )
     counts = {k: 0 for k in keys}
     counts["canonical_messages"] = len(messages)
@@ -297,6 +394,11 @@ def authorship_census(messages: list[dict[str, Any]]) -> dict[str, int]:
             counts["voice_corpus"] += 1
         if msg.get("ambiguous_participant"):
             counts["ambiguous_participant"] += 1
+        cclass = str(msg.get("commercial_class") or "not_commercial")
+        if cclass in counts:
+            counts[cclass] += 1
+        else:
+            counts["not_commercial"] += 1
     return counts
 
 
@@ -351,13 +453,17 @@ def format_thread_txt(thread: dict[str, Any]) -> str:
         f"warnings: {', '.join(warnings) if warnings else 'none'}",
         f"cases: {', '.join(thread.get('cases') or []) or 'none'}",
         f"voice_corpus_messages: {sum(1 for m in msgs if m.get('voice_corpus'))}",
+        f"commercial: {thread.get('commercial_summary') or 'mixed_or_none'}",
         "-" * 78,
     ]
     for i, msg in enumerate(msgs, start=1):
         ref = evidence_ref(tid, i)
         atts = msg.get("attachment_meta") or []
         if atts:
-            att_s = "; ".join(f"{a.get('filename')} ({a.get('mime_type')})" for a in atts)
+            att_s = "; ".join(
+                f"{a.get('filename')} ({a.get('mime_type')}; {a.get('gallery_action') or 'record_only'}; linked, not copied)"
+                for a in atts
+            )
         else:
             att_s = "none"
         cleaned = str(msg.get("cleaned_body") if msg.get("cleaned_body") is not None else msg.get("body") or "")
@@ -371,6 +477,7 @@ def format_thread_txt(thread: dict[str, Any]) -> str:
                 f"Subject: {msg.get('subject') or '(none)'}",
                 f"Authorship: {msg.get('authorship_label') or 'unverified'}",
                 f"Voice corpus: {'yes' if msg.get('voice_corpus') else 'no'}",
+                f"Commercial: {msg.get('commercial_class') or 'not_commercial'}",
                 f"Attachments: {att_s}",
                 f"Evidence-ref: {ref}",
                 "Cleaned authored text:",
@@ -393,7 +500,8 @@ def index_line(thread: dict[str, Any]) -> str:
     ident = thread.get("identity_confidence") or "unknown"
     return (
         f"{tid} | {start}..{end} | msgs {len(msgs)} | ident {ident} | "
-        f"voice {sum(1 for m in msgs if m.get('voice_corpus'))} | cases {cases} | warn {warn}"
+        f"voice {sum(1 for m in msgs if m.get('voice_corpus'))} | "
+        f"comm {thread.get('commercial_summary') or '-'} | cases {cases} | warn {warn}"
     )
 
 
@@ -418,6 +526,103 @@ def thread_confidence(thread: dict[str, Any]) -> None:
         thread["identity_confidence"] = "mixed"
 
 
+def _subject_stem(subject: str) -> str:
+    return re.sub(r"^\s*((re|fwd?|fw)\s*:)+\s*", "", (subject or "").strip().lower())
+
+
+def enrich_thread_cases(threads: list[dict[str, Any]]) -> None:
+    stems: dict[str, list[str]] = {}
+    for thread in threads:
+        msgs = list(thread.get("messages") or [])
+        addrs: set[str] = set()
+        commercials: set[str] = set()
+        for msg in msgs:
+            for row in (msg.get("from_parties") or []) + (msg.get("to_parties") or []) + (msg.get("cc_parties") or []):
+                if row.get("address"):
+                    addrs.add(str(row["address"]))
+            commercials.add(str(msg.get("commercial_class") or "not_commercial"))
+        cases = list(thread.get("cases") or [])
+        if len(addrs) >= 3:
+            cases.append("multiple_participants")
+        if any(m.get("voice_corpus") for m in msgs):
+            cases.append("peggy_voice")
+        if any(m.get("direction") == "sent_to_peggy_authored_other" for m in msgs):
+            cases.append("to_peggy_other_author")
+        if any(m.get("direction") == "no_authenticated_peggy_participation" for m in msgs):
+            cases.append("no_peggy_participation")
+        for label in ("commercial_retain", "commercial_suppress", "commercial_uncertain"):
+            if label in commercials:
+                cases.append(label)
+        gaps = False
+        prev = None
+        for msg in msgs:
+            ts = str(msg.get("timestamp") or "")
+            if prev and ts and ts[:10] and prev[:10]:
+                try:
+                    d0 = datetime.fromisoformat(prev.replace("Z", "+00:00")[:19])
+                    d1 = datetime.fromisoformat(ts.replace("Z", "+00:00")[:19])
+                    if abs((d1 - d0).days) >= 14:
+                        gaps = True
+                except ValueError:
+                    pass
+            prev = ts
+        if gaps:
+            cases.append("boundary_candidate_merge")
+            thread.setdefault("warnings", []).append("boundary_candidate_merge")
+        stem = _subject_stem(str((msgs[0].get("subject") if msgs else "") or ""))
+        if stem:
+            stems.setdefault(stem, []).append(str(thread.get("preview_thread_id")))
+        life = [c for c in commercials if c != "not_commercial"]
+        if len(life) == 1:
+            thread["commercial_summary"] = next(iter(life))
+        elif life:
+            thread["commercial_summary"] = "mixed"
+        else:
+            thread["commercial_summary"] = "not_commercial"
+        thread["cases"] = list(dict.fromkeys(cases))
+    for stem, ids in stems.items():
+        if len(ids) < 2:
+            continue
+        for thread in threads:
+            if thread.get("preview_thread_id") in ids:
+                cases = list(thread.get("cases") or [])
+                cases.append("boundary_candidate_split")
+                thread["cases"] = list(dict.fromkeys(cases))
+                warns = list(thread.get("warnings") or [])
+                warns.append("boundary_candidate_split")
+                thread["warnings"] = list(dict.fromkeys(warns))
+
+
+def _prefer_small(threads: list[dict[str, Any]], case: str) -> dict[str, Any] | None:
+    hits = [t for t in threads if case in (t.get("cases") or [])]
+    if not hits:
+        return None
+    if case == "long_thread":
+        bounded = [t for t in hits if 8 <= len(t.get("messages") or []) <= MAX_LONG_THREAD_FOR_PACKET]
+        hits = bounded or hits
+    return sorted(hits, key=lambda t: (len(t.get("messages") or []), str(t.get("preview_thread_id"))))[0]
+
+
+def select_founder_packet(threads: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], dict[str, str]]:
+    selected: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    coverage: dict[str, str] = {}
+    for case in REQUIRED_PACKET_CASES:
+        hit = _prefer_small(threads, case)
+        if not hit:
+            coverage[case] = "not_present_in_corpus"
+            continue
+        tid = str(hit.get("preview_thread_id"))
+        coverage[case] = tid
+        if tid not in seen:
+            if len(selected) >= MAX_PACKET_THREADS:
+                coverage[case] = "omitted_packet_thread_limit"
+                continue
+            selected.append(hit)
+            seen.add(tid)
+    return selected, coverage
+
+
 def packet_chunks(threads: list[dict[str, Any]], *, size: int = PACKET_THREADS) -> list[list[dict[str, Any]]]:
     if size < 1:
         size = PACKET_THREADS
@@ -425,71 +630,102 @@ def packet_chunks(threads: list[dict[str, Any]], *, size: int = PACKET_THREADS) 
 
 
 def select_representative(threads: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], dict[str, str]]:
-    selected: list[dict[str, Any]] = []
-    seen: set[str] = set()
-    coverage: dict[str, str] = {}
-    for case in REQUIRED_PACKET_CASES:
-        hit = next((t for t in threads if case in (t.get("cases") or [])), None)
-        if hit:
-            tid = str(hit.get("preview_thread_id"))
-            if tid not in seen:
-                selected.append(hit)
-                seen.add(tid)
-            coverage[case] = tid
-        else:
-            coverage[case] = "not_present_in_corpus"
-    return selected, coverage
+    return select_founder_packet(threads)
 
 
-def write_review_tree(pack: dict[str, Any], out_dir: Path, *, representative_only: bool = False) -> dict[str, Any]:
+def _original_text(thread: dict[str, Any], msg: dict[str, Any], index: int) -> str:
+    tid = str(thread.get("preview_thread_id"))
+    ref = evidence_ref(tid, index)
+    body = str(msg.get("raw_body") or msg.get("body") or "")
+    header = "\n".join(
+        [
+            f"Evidence-ref: {ref}",
+            f"Date: {format_review_date(msg.get('timestamp'))}",
+            f"Subject: {msg.get('subject') or ''}",
+            f"From: {_format_party_line(msg.get('from_parties') or [])}",
+            f"To: {_format_party_line(msg.get('to_parties') or [])}",
+            f"Cc: {_format_party_line(msg.get('cc_parties') or [], empty='(none)')}",
+            "",
+        ]
+    )
+    raw = header + body + "\n"
+    encoded = raw.encode("utf-8")
+    if len(encoded) > MAX_ORIGINAL_BYTES:
+        raise ReviewError("original_exceeds_limit")
+    return raw
+
+
+def write_review_tree(
+    pack: dict[str, Any],
+    out_dir: Path,
+    *,
+    representative_only: bool = False,
+    founder_packet: bool = False,
+) -> dict[str, Any]:
     out_dir.mkdir(parents=True, exist_ok=True)
     originals = out_dir / "originals"
     originals.mkdir(exist_ok=True)
     threads = list(pack.get("threads") or [])
     for thread in threads:
         thread_confidence(thread)
-    if representative_only:
-        chosen, coverage = select_representative(threads)
-        chunks = [chosen] if chosen else [[]]
+    enrich_thread_cases(threads)
+    if founder_packet or representative_only:
+        chosen, coverage = select_founder_packet(threads)
     else:
-        coverage = {c: "full_corpus" for c in REQUIRED_PACKET_CASES}
-        _, coverage_sel = select_representative(threads)
-        coverage = coverage_sel
-        chunks = packet_chunks(threads)
+        if len(threads) > MAX_PACKET_THREADS:
+            raise ReviewError("full_corpus_emit_refused")
         chosen = threads
+        coverage = {c: "small_set" for c in REQUIRED_PACKET_CASES}
+    if len(chosen) > MAX_PACKET_THREADS:
+        raise ReviewError("packet_thread_limit")
+    bodies = [format_thread_txt(t) for t in chosen]
+    packet = "\n".join(bodies)
+    packet_bytes = len(packet.encode("utf-8"))
+    while packet_bytes > MAX_PACKET_BYTES and len(chosen) > 1:
+        dropped = chosen.pop()
+        coverage["dropped_for_size"] = str(dropped.get("preview_thread_id"))
+        packet = "\n".join(format_thread_txt(t) for t in chosen)
+        packet_bytes = len(packet.encode("utf-8"))
+    if packet_bytes > MAX_PACKET_BYTES:
+        raise ReviewError("packet_exceeds_limit")
+    for extra in out_dir.glob("packet-*.txt"):
+        extra.unlink()
     (out_dir / "README.txt").write_text(README_TEXT + "\n\n" + MARK_HELP + "\n", encoding="utf-8")
     (out_dir / "MARKS.txt").write_text("# one mark per line: T-0001  accept_thread\n", encoding="utf-8")
-    index_lines = [index_line(t) for t in (chosen if representative_only else threads)]
+    index_lines = [index_line(t) for t in chosen]
     (out_dir / "INDEX.txt").write_text("\n".join(index_lines) + ("\n" if index_lines else ""), encoding="utf-8")
-    packet_files: list[str] = []
-    for pi, chunk in enumerate(chunks, start=1):
-        name = f"packet-{pi:03d}.txt"
-        body = "\n".join(format_thread_txt(t) for t in chunk)
-        (out_dir / name).write_text(body, encoding="utf-8")
-        packet_files.append(name)
-        for thread in chunk:
-            tid = str(thread.get("preview_thread_id"))
-            for i, msg in enumerate(thread.get("messages") or [], start=1):
-                ref = evidence_ref(tid, i)
-                original = "\n".join(
-                    [
-                        f"Evidence-ref: {ref}",
-                        f"Date: {format_review_date(msg.get('timestamp'))}",
-                        f"Subject: {msg.get('subject') or ''}",
-                        f"From: {_format_party_line(msg.get('from_parties') or [])}",
-                        f"To: {_format_party_line(msg.get('to_parties') or [])}",
-                        f"Cc: {_format_party_line(msg.get('cc_parties') or [], empty='(none)')}",
-                        "",
-                        str(msg.get("raw_body") or msg.get("body") or ""),
-                        "",
-                    ]
-                )
-                (originals / f"{ref}.txt").write_text(original, encoding="utf-8")
+    (out_dir / "packet-001.txt").write_text(packet, encoding="utf-8")
+    original_sizes: list[int] = []
+    for thread in chosen:
+        tid = str(thread.get("preview_thread_id"))
+        for i, msg in enumerate(thread.get("messages") or [], start=1):
+            text = _original_text(thread, msg, i)
+            path = originals / f"{evidence_ref(tid, i)}.txt"
+            path.write_text(text, encoding="utf-8")
+            original_sizes.append(path.stat().st_size)
+    sizes = {
+        "packet_bytes": (out_dir / "packet-001.txt").stat().st_size,
+        "index_bytes": (out_dir / "INDEX.txt").stat().st_size,
+        "readme_bytes": (out_dir / "README.txt").stat().st_size,
+        "original_files": len(original_sizes),
+        "original_bytes_total": int(sum(original_sizes)),
+        "original_bytes_max": int(max(original_sizes) if original_sizes else 0),
+        "thread_count_written": len(chosen),
+        "message_count_written": int(sum(len(t.get("messages") or []) for t in chosen)),
+        "packet_files": 1,
+        "limits": {
+            "max_threads": MAX_PACKET_THREADS,
+            "max_packet_bytes": MAX_PACKET_BYTES,
+            "max_original_bytes": MAX_ORIGINAL_BYTES,
+        },
+    }
     return {
-        "packet_files": packet_files,
-        "thread_count_written": len(chosen if representative_only else threads),
+        "packet_files": ["packet-001.txt"],
+        "thread_count_written": len(chosen),
         "representative_coverage": coverage,
-        "original_files": len(list(originals.glob("*.txt"))),
+        "original_files": len(original_sizes),
+        "sizes": sizes,
+        "load_contract": "open INDEX then packet-001.txt; open one originals/Evidence-ref.txt at a time",
     }
 
 
