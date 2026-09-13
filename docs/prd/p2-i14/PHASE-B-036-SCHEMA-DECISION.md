@@ -1,13 +1,42 @@
 # P2-I14 Phase B — schema decision (migration 036)
 
-**Status:** SQL registered in the repository. **Not applied** on Desktop or FlightSim.  
+**Status:** SQL registered; contract checks 1–3 corrected. **Not applied.**  
 **Date:** 2026-09-13  
 **Branch:** `codex/p2-i14-communications`  
 **File:** `memorybox/migrations/036_p2_i14_prepared_communications.sql`  
-**Depends on:** migration **035** (unchanged).  
-**Gates complete:** Person Pilot 1 and Person Pilot 2 packets accepted.
+**Depends on:** migration **035** (unchanged).
 
-Founder authorized **repository promotion only**. Do not check out FlightSim for 036, do not run `migrate` for 036, do not load rows, do not publish, do not change Gallery/Ask/I11A.
+## `scope_key`
+
+**Exact value:** `household_email` only (`CHECK` + default).
+
+It names the **source stream grain**, not a Person. Production has one prepared email generation per `comms_logical_sources` row whose `logical_key = household_email` and `source_kind = email`. Unique active generation is `(logical_source_id)` where `is_active`. There is no `person_id` on the generation table. A Person name or UUID cannot be stored as `scope_key`. Binding a calendar/SMS logical source raises `prepared_generation_must_use_household_email_source`.
+
+Peggy and Sue were validation pilots. An email involving both exists **once**. `Show me Peggy` and `Show me Sue` reach it through `comms_prepared_participants.person_id`.
+
+## Communication identity vs Person identity
+
+| Id | Meaning |
+| --- | --- |
+| `canonical_record_id` | 035 communication identity → immutable `evidence`. Required on **every** message at activation. |
+| `person_id` | Optional known MemoryBox participant. Unknown From/To/Cc stay `NULL`. Not required to prepare or publish. |
+
+Activation treatment:
+
+- Gallery-eligible, suppress-default, uncertain, and quality-flagged messages: all stored; all need `canonical_record_id`; Person Ask uses trusted participant links only.
+- Voice: `voice_corpus` plus authenticated **From** `person_id`. To/Cc never qualifies authored voice.
+- Missing Person does not block publication.
+
+## Activation
+
+`comms_prepared_assert_generation_ready` runs **before** any supersede. Failure leaves the prior active generation unchanged.
+
+## Participant and attachment rules
+
+Exactly one From (unique index; missing From refused at activation). Unique `(message_id, role, lower(btrim(address)))`. Authenticated requires `person_id`; unverified forbids it. Attachments: `parent_evidence_id` = message original; `attachment_evidence_id` optional distinct row.
+
+Prepared `cleaned_authored_text` / `forward_block` cannot contain `https?://`.
+
 
 ## Problem and success
 

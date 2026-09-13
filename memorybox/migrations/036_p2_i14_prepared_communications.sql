@@ -1,5 +1,5 @@
--- P2-I14 Phase B migration 036: prepared email generations, threads, messages,
--- participants, and attachment metadata. Additive derived store only.
+-- P2-I14 Phase B migration 036: prepared household-email generations, threads,
+-- messages, participants, and attachment metadata. Additive derived store only.
 --
 -- Do not apply on Desktop or FlightSim until founder apply authorization.
 -- Do not INSERT production or family rows. New generations start unpublished
@@ -7,23 +7,34 @@
 -- person_contact_points, or communication_rfc_ids. Do not replay 025-029.
 -- Do not modify 035 SQL bytes.
 --
+-- Production grain: one prepared corpus per household_email logical source.
+-- Peggy/Sue were validation pilots only. There is no Person-scoped generation.
+-- Messages are stored once. People retrieve them through participants.
+-- canonical_record_id is 035 communication identity, not Person identity.
+-- person_id is optional known-participant linkage. Unknown addresses stay.
+--
 -- Calendar prepared grain and SMS episodes are out of this file.
 --
 -- Publication is generation-atomic. Child rows have no published flag.
 -- Gallery consumers must use comms_prepared_active_generations (is_active).
 -- Direct published/is_active writes are rejected unless
 -- comms_prepared_activate_generation() is running.
+-- Activation validates first; failure does not supersede a prior generation.
 --
 -- Rollback (derived objects only; never drop 001-035 or evidence):
 --   1. VIEW comms_prepared_active_generations
 --   2. FUNCTION comms_prepared_activate_generation
---   3. TRIGGER/FUNCTION comms_prepared_guard_activation
---   4. TRIGGER/FUNCTION comms_prepared_message_generation_guard
---   5. comms_prepared_attachments
---   6. comms_prepared_participants
---   7. comms_prepared_messages
---   8. comms_prepared_threads
---   9. comms_prepared_generations
+--   3. FUNCTION comms_prepared_assert_generation_ready
+--   4. TRIGGER/FUNCTION comms_prepared_guard_activation
+--   5. TRIGGER/FUNCTION comms_prepared_generation_scope_guard
+--   6. TRIGGER/FUNCTION comms_prepared_message_generation_guard
+--   7. TRIGGER/FUNCTION comms_prepared_participant_normalize
+--   8. TRIGGER/FUNCTION comms_prepared_attachment_parent_guard
+--   9. comms_prepared_attachments
+--  10. comms_prepared_participants
+--  11. comms_prepared_messages
+--  12. comms_prepared_threads
+--  13. comms_prepared_generations
 
 CREATE TABLE IF NOT EXISTS comms_prepared_generations (
     id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -31,8 +42,8 @@ CREATE TABLE IF NOT EXISTS comms_prepared_generations (
         CHECK (char_length(btrim(algo_version)) BETWEEN 1 AND 80),
     logical_source_id   UUID
         REFERENCES comms_logical_sources (id) ON DELETE RESTRICT,
-    scope_key           TEXT NOT NULL DEFAULT 'email'
-        CHECK (scope_key = 'email'),
+    scope_key           TEXT NOT NULL DEFAULT 'household_email'
+        CHECK (scope_key = 'household_email'),
     source_kind         TEXT NOT NULL DEFAULT 'email'
         CHECK (source_kind IN ('email')),
     published           BOOLEAN NOT NULL DEFAULT FALSE,
@@ -54,6 +65,7 @@ CREATE TABLE IF NOT EXISTS comms_prepared_generations (
             AND is_active
             AND logical_source_id IS NOT NULL
             AND checksum IS NOT NULL
+            AND scope_key = 'household_email'
         )
         OR (
             status <> 'published'
@@ -68,13 +80,15 @@ CREATE INDEX IF NOT EXISTS idx_comms_prepared_generations_logical
     ON comms_prepared_generations (logical_source_id, created_at DESC);
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_comms_prepared_one_active
-    ON comms_prepared_generations (logical_source_id, scope_key)
+    ON comms_prepared_generations (logical_source_id)
     WHERE is_active;
 
 COMMENT ON TABLE comms_prepared_generations IS
-    'One prepared-email build. Starts unpublished. Activate only via comms_prepared_activate_generation.';
+    'Source-wide household email prepared build. Not a Person corpus. No person_id.';
+COMMENT ON COLUMN comms_prepared_generations.scope_key IS
+    'Stream grain inside a logical source. Locked to household_email so a Person name or UUID cannot open a second prepared corpus.';
 COMMENT ON COLUMN comms_prepared_generations.is_active IS
-    'Exactly one active generation per logical source and email scope. Unpublished rows cannot be active.';
+    'Exactly one active generation per household_email logical source. Unpublished rows cannot be active.';
 COMMENT ON COLUMN comms_prepared_generations.published IS
     'True only for the atomically activated generation. Child rows are not published separately.';
 
@@ -141,9 +155,9 @@ CREATE INDEX IF NOT EXISTS idx_comms_prepared_threads_generation
     ON comms_prepared_threads (generation_id, earliest_at);
 
 COMMENT ON TABLE comms_prepared_threads IS
-    'Canonical email thread for one generation. People attach through participants, not duplicated messages.';
+    'Canonical household-email thread. People attach through participants, not duplicated messages.';
 COMMENT ON COLUMN comms_prepared_threads.gallery_eligibility IS
-    'Default Gallery retrieval only. Never deletes immutable evidence.';
+    'Default Person-Ask retrieval only, via trusted participant person_id links. Never deletes evidence.';
 COMMENT ON COLUMN comms_prepared_threads.provenance IS
     'Structured reconstruction provenance. Not message bodies.';
 
@@ -223,26 +237,30 @@ CREATE TABLE IF NOT EXISTS comms_prepared_messages (
             AND identity_quality = 'resolved'
             AND authorship = 'authenticated_focal'
         )
+    ),
+    CHECK (
+        cleaned_authored_text !~* 'https?://'
+        AND forward_block !~* 'https?://'
     )
 );
 
 CREATE INDEX IF NOT EXISTS idx_comms_prepared_messages_thread
     ON comms_prepared_messages (thread_id, ordinal);
 CREATE INDEX IF NOT EXISTS idx_comms_prepared_messages_sent
-    ON comms_prepared_messages (generation_id, sent_at);
+    ON comms_prepared_messages (generation_id, sent_at, evidence_id);
 CREATE INDEX IF NOT EXISTS idx_comms_prepared_messages_canonical
     ON comms_prepared_messages (canonical_record_id);
 
 COMMENT ON TABLE comms_prepared_messages IS
-    'One evidence message once per generation. Cleaned text is the new contribution only.';
+    'One communication once per household-email generation. Not stored per Person.';
 COMMENT ON COLUMN comms_prepared_messages.sent_at IS
-    'Authoritative payload sent_at as timestamptz. Tie-break is evidence_id. Ordinal assigned after that sort.';
+    'Authoritative payload sent_at as timestamptz after UTC-instant normalization. Tie-break is evidence_id.';
 COMMENT ON COLUMN comms_prepared_messages.canonical_record_id IS
-    'Optional 035 canonical identity. Nullable until identity backfill.';
+    '035 communication identity. Nullable while building. Required on every message before activation. Not a Person id.';
 COMMENT ON COLUMN comms_prepared_messages.quote_contamination_flagged IS
-    'Distinguishable remaining quote risk. Never voice-eligible. Gallery may show later under founder tolerance.';
+    'Distinguishable remaining quote risk. Never voice-eligible.';
 COMMENT ON COLUMN comms_prepared_messages.cleaned_authored_text IS
-    'Must not store tracking, login, unsubscribe, or marketing link text from the original.';
+    'New contribution only. Tracking, login, unsubscribe, and marketing URLs are not stored.';
 
 CREATE TABLE IF NOT EXISTS comms_prepared_participants (
     id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -273,6 +291,17 @@ CREATE TABLE IF NOT EXISTS comms_prepared_participants (
     )
 );
 
+CREATE UNIQUE INDEX IF NOT EXISTS uq_comms_prepared_one_from
+    ON comms_prepared_participants (message_id)
+    WHERE role = 'from';
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_comms_prepared_participant_addr
+    ON comms_prepared_participants (
+        message_id,
+        role,
+        lower(btrim(address_normalized))
+    );
+
 CREATE INDEX IF NOT EXISTS idx_comms_prepared_participants_message
     ON comms_prepared_participants (message_id);
 CREATE INDEX IF NOT EXISTS idx_comms_prepared_participants_person
@@ -280,36 +309,48 @@ CREATE INDEX IF NOT EXISTS idx_comms_prepared_participants_person
     WHERE person_id IS NOT NULL;
 
 COMMENT ON TABLE comms_prepared_participants IS
-    'From/To/Cc for one prepared message. Multiple People share the message; they do not duplicate it.';
+    'From/To/Cc for one prepared message. Unknown addresses keep person_id NULL. Several People share one message.';
+COMMENT ON COLUMN comms_prepared_participants.person_id IS
+    'Optional known MemoryBox Person. Not required to prepare or publish. Ask/Gallery Person retrieval uses trusted links only.';
 
 CREATE TABLE IF NOT EXISTS comms_prepared_attachments (
-    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    message_id          UUID NOT NULL
+    id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    message_id              UUID NOT NULL
         REFERENCES comms_prepared_messages (id) ON DELETE CASCADE,
-    evidence_id         UUID NOT NULL
+    parent_evidence_id      UUID NOT NULL
         REFERENCES evidence (id) ON DELETE RESTRICT,
-    attachment_ordinal  INTEGER NOT NULL
+    attachment_evidence_id  UUID
+        REFERENCES evidence (id) ON DELETE RESTRICT,
+    attachment_ordinal      INTEGER NOT NULL
         CHECK (attachment_ordinal >= 1),
-    filename            TEXT NOT NULL DEFAULT '',
-    mime_type           TEXT NOT NULL DEFAULT '',
-    disposition         TEXT NOT NULL DEFAULT 'attachment'
+    filename                TEXT NOT NULL DEFAULT '',
+    mime_type               TEXT NOT NULL DEFAULT '',
+    disposition             TEXT NOT NULL DEFAULT 'attachment'
         CHECK (disposition IN ('inline', 'attachment', 'unknown')),
-    byte_size           BIGINT
+    byte_size               BIGINT
         CHECK (byte_size IS NULL OR byte_size >= 0),
-    source_locator      TEXT NOT NULL DEFAULT '',
-    gallery_action      TEXT NOT NULL
+    source_locator          TEXT NOT NULL DEFAULT '',
+    gallery_action          TEXT NOT NULL
         CHECK (gallery_action IN (
             'view_image', 'open_pdf', 'open_document', 'record_only'
         )),
-    created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE (message_id, attachment_ordinal)
+    created_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (message_id, attachment_ordinal),
+    CHECK (
+        attachment_evidence_id IS NULL
+        OR attachment_evidence_id IS DISTINCT FROM parent_evidence_id
+    )
 );
 
 CREATE INDEX IF NOT EXISTS idx_comms_prepared_attachments_message
     ON comms_prepared_attachments (message_id);
 
 COMMENT ON TABLE comms_prepared_attachments IS
-    'Attachment metadata and immutable evidence linkage. No copied binary content.';
+    'Attachment metadata. parent_evidence_id is the message original. attachment_evidence_id is set only when a distinct attachment evidence row exists.';
+COMMENT ON COLUMN comms_prepared_attachments.parent_evidence_id IS
+    'Immutable parent communication evidence. Required. Does not claim the attachment is its own evidence row.';
+COMMENT ON COLUMN comms_prepared_attachments.attachment_evidence_id IS
+    'Optional distinct evidence row for the bytes. Null when the archive is reached only via source_locator.';
 COMMENT ON COLUMN comms_prepared_attachments.source_locator IS
     'Pointer into the archive. The archive remains authoritative.';
 COMMENT ON COLUMN comms_prepared_attachments.gallery_action IS
@@ -320,10 +361,11 @@ SELECT *
 FROM comms_prepared_generations
 WHERE is_active
   AND published
-  AND status = 'published';
+  AND status = 'published'
+  AND scope_key = 'household_email';
 
 COMMENT ON VIEW comms_prepared_active_generations IS
-    'The only generation-level set Gallery may treat as current. Empty while unpublished.';
+    'The only generation Gallery may treat as current household email. Empty while unpublished.';
 
 CREATE OR REPLACE FUNCTION comms_prepared_guard_activation()
 RETURNS trigger
@@ -343,6 +385,36 @@ CREATE TRIGGER trg_comms_prepared_guard_activation
     BEFORE INSERT OR UPDATE ON comms_prepared_generations
     FOR EACH ROW
     EXECUTE PROCEDURE comms_prepared_guard_activation();
+
+CREATE OR REPLACE FUNCTION comms_prepared_generation_scope_guard()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    src_kind TEXT;
+    src_key TEXT;
+BEGIN
+    IF NEW.scope_key IS DISTINCT FROM 'household_email' THEN
+        RAISE EXCEPTION 'prepared_scope_must_be_household_email';
+    END IF;
+    IF NEW.logical_source_id IS NOT NULL THEN
+        SELECT source_kind, logical_key
+          INTO src_kind, src_key
+          FROM comms_logical_sources
+         WHERE id = NEW.logical_source_id;
+        IF src_kind IS DISTINCT FROM 'email'
+           OR src_key IS DISTINCT FROM 'household_email' THEN
+            RAISE EXCEPTION 'prepared_generation_must_use_household_email_source';
+        END IF;
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER trg_comms_prepared_generation_scope_guard
+    BEFORE INSERT OR UPDATE ON comms_prepared_generations
+    FOR EACH ROW
+    EXECUTE PROCEDURE comms_prepared_generation_scope_guard();
 
 CREATE OR REPLACE FUNCTION comms_prepared_message_generation_guard()
 RETURNS trigger
@@ -366,14 +438,115 @@ CREATE TRIGGER trg_comms_prepared_message_generation_guard
     FOR EACH ROW
     EXECUTE PROCEDURE comms_prepared_message_generation_guard();
 
+CREATE OR REPLACE FUNCTION comms_prepared_participant_normalize()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    NEW.address_normalized := lower(btrim(NEW.address_normalized));
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER trg_comms_prepared_participant_normalize
+    BEFORE INSERT OR UPDATE ON comms_prepared_participants
+    FOR EACH ROW
+    EXECUTE PROCEDURE comms_prepared_participant_normalize();
+
+CREATE OR REPLACE FUNCTION comms_prepared_attachment_parent_guard()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    msg_evidence UUID;
+BEGIN
+    SELECT evidence_id INTO msg_evidence
+    FROM comms_prepared_messages
+    WHERE id = NEW.message_id;
+    IF msg_evidence IS NULL OR msg_evidence IS DISTINCT FROM NEW.parent_evidence_id THEN
+        RAISE EXCEPTION 'attachment_parent_must_match_message_evidence';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER trg_comms_prepared_attachment_parent_guard
+    BEFORE INSERT OR UPDATE ON comms_prepared_attachments
+    FOR EACH ROW
+    EXECUTE PROCEDURE comms_prepared_attachment_parent_guard();
+
+CREATE OR REPLACE FUNCTION comms_prepared_assert_generation_ready(p_id UUID)
+RETURNS void
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM comms_prepared_messages m
+        WHERE m.generation_id = p_id
+          AND m.canonical_record_id IS NULL
+    ) THEN
+        RAISE EXCEPTION 'canonical_record_required_for_activation';
+    END IF;
+    IF EXISTS (
+        SELECT 1
+        FROM comms_prepared_messages m
+        JOIN comms_prepared_generations g ON g.id = m.generation_id
+        LEFT JOIN comms_record_identities c ON c.id = m.canonical_record_id
+        WHERE m.generation_id = p_id
+          AND (
+                c.id IS NULL
+                OR c.evidence_id IS DISTINCT FROM m.evidence_id
+                OR c.logical_source_id IS DISTINCT FROM g.logical_source_id
+                OR c.source_kind IS DISTINCT FROM 'email'
+          )
+    ) THEN
+        RAISE EXCEPTION 'canonical_record_must_match_evidence_and_source';
+    END IF;
+    IF EXISTS (
+        SELECT 1
+        FROM comms_prepared_messages m
+        WHERE m.generation_id = p_id
+          AND NOT EXISTS (
+              SELECT 1
+              FROM comms_prepared_participants p
+              WHERE p.message_id = m.id
+                AND p.role = 'from'
+          )
+    ) THEN
+        RAISE EXCEPTION 'exactly_one_from_required_for_activation';
+    END IF;
+    IF EXISTS (
+        SELECT 1
+        FROM comms_prepared_messages m
+        WHERE m.generation_id = p_id
+          AND m.voice_corpus
+          AND NOT EXISTS (
+              SELECT 1
+              FROM comms_prepared_participants p
+              WHERE p.message_id = m.id
+                AND p.role = 'from'
+                AND p.identity_confidence = 'authenticated_focal'
+                AND p.person_id IS NOT NULL
+          )
+    ) THEN
+        RAISE EXCEPTION 'voice_requires_authenticated_from_person';
+    END IF;
+END;
+$$;
+
+COMMENT ON FUNCTION comms_prepared_assert_generation_ready(UUID) IS
+    'Activation-time communication-identity and From/voice checks. Does not require person_id on every participant.';
+
 CREATE OR REPLACE FUNCTION comms_prepared_activate_generation(p_id UUID)
 RETURNS void
 LANGUAGE plpgsql
 AS $$
 DECLARE
     rec comms_prepared_generations%ROWTYPE;
+    src_kind TEXT;
+    src_key TEXT;
 BEGIN
-    PERFORM set_config('memorybox.comms_prepared_activate', '1', true);
     SELECT * INTO rec
     FROM comms_prepared_generations
     WHERE id = p_id
@@ -390,17 +563,26 @@ BEGIN
     IF rec.checksum IS NULL THEN
         RAISE EXCEPTION 'checksum_required';
     END IF;
-    PERFORM 1
-    FROM comms_logical_sources
-    WHERE id = rec.logical_source_id
-    FOR UPDATE;
+    IF rec.scope_key IS DISTINCT FROM 'household_email' THEN
+        RAISE EXCEPTION 'prepared_scope_must_be_household_email';
+    END IF;
+    SELECT source_kind, logical_key
+      INTO src_kind, src_key
+      FROM comms_logical_sources
+     WHERE id = rec.logical_source_id
+     FOR UPDATE;
+    IF src_kind IS DISTINCT FROM 'email'
+       OR src_key IS DISTINCT FROM 'household_email' THEN
+        RAISE EXCEPTION 'prepared_generation_must_use_household_email_source';
+    END IF;
+    PERFORM comms_prepared_assert_generation_ready(p_id);
+    PERFORM set_config('memorybox.comms_prepared_activate', '1', true);
     UPDATE comms_prepared_generations
     SET is_active = FALSE,
         published = FALSE,
         status = CASE WHEN is_active THEN 'superseded' ELSE status END,
         updated_at = now()
     WHERE logical_source_id = rec.logical_source_id
-      AND scope_key = rec.scope_key
       AND id <> p_id
       AND is_active;
     UPDATE comms_prepared_generations
@@ -413,4 +595,4 @@ END;
 $$;
 
 COMMENT ON FUNCTION comms_prepared_activate_generation(UUID) IS
-    'Atomically activate one validated generation and supersede the previous active generation for the same logical source/scope.';
+    'Validate communication identity and participants, then atomically replace the active household_email generation. Prior active generation is unchanged if validation fails.';

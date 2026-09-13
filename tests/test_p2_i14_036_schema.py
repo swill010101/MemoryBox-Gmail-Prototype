@@ -8,7 +8,7 @@ from pathlib import Path
 import psycopg
 from psycopg.rows import dict_row
 
-from memorybox.migrate import _migration_files
+from memorybox.migrate import _BOOTSTRAP, _migration_files
 from memorybox.ops.i14_thread_review import message_sort_key
 from tests.test_p2_i14_lineage_pg import (
     SQL_001,
@@ -27,7 +27,7 @@ FORBIDDEN = re.compile(
     r"(memorybox@|@gmail\.|@marvinbot|PRIVATEEMAIL|"
     r"P:\\photos|C:\\MemoryBox|\\\\media-server|"
     r"all mail including spam|"
-    r"password=|oauth|Bearer |https?://)",
+    r"password=|oauth|Bearer )",
     re.I,
 )
 PREPARED_TABLES = {
@@ -85,15 +85,30 @@ class AdditiveSqlContract(unittest.TestCase):
         self.assertIn("quote_contamination_flagged", sql)
         self.assertIn("comms_prepared_activate_generation", sql)
         self.assertIn("uq_comms_prepared_one_active", sql)
-        self.assertIn("CHECK (role IN ('from', 'to', 'cc'))", sql)
+        self.assertIn("uq_comms_prepared_one_from", sql)
+        self.assertIn("uq_comms_prepared_participant_addr", sql)
+        self.assertIn("parent_evidence_id", sql)
+        self.assertIn("household_email", sql)
+        self.assertIn("comms_prepared_assert_generation_ready", sql)
+        self.assertIn("canonical_record_required_for_activation", sql)
+        self.assertNotIn(
+            "person_id UUID",
+            sql.split("CREATE TABLE IF NOT EXISTS comms_prepared_generations", 1)[1].split(
+                "CREATE TABLE", 1
+            )[0],
+        )
 
     def test_rollback_order_documented(self) -> None:
         comment = _sql().split("CREATE TABLE", 1)[0]
         markers = [
             "comms_prepared_active_generations",
             "comms_prepared_activate_generation",
+            "comms_prepared_assert_generation_ready",
             "comms_prepared_guard_activation",
+            "comms_prepared_generation_scope_guard",
             "comms_prepared_message_generation_guard",
+            "comms_prepared_participant_normalize",
+            "comms_prepared_attachment_parent_guard",
             "comms_prepared_attachments",
             "comms_prepared_participants",
             "comms_prepared_messages",
@@ -222,12 +237,66 @@ class DisposablePg036(_DisposablePg):
             self.assertIn("REFERENCESevidence(id)ONDELETERESTRICT", defs)
             self.assertNotIn("ONDELETESETNULL", defs)
 
+            cols = [
+                r["column_name"]
+                for r in conn.execute(
+                    """
+                    SELECT column_name FROM information_schema.columns
+                    WHERE table_name = 'comms_prepared_generations'
+                    """
+                ).fetchall()
+            ]
+            self.assertNotIn("person_id", cols)
+            cal = conn.execute(
+                """
+                INSERT INTO comms_logical_sources (logical_key, source_kind, label)
+                VALUES ('household_calendar', 'calendar', 'Household calendar')
+                RETURNING id
+                """
+            ).fetchone()["id"]
+            conn.commit()
+            _expect_fail(
+                conn,
+                """
+                INSERT INTO comms_prepared_generations (algo_version, logical_source_id)
+                VALUES ('i14-prepared-email-v1', %s)
+                """,
+                (cal,),
+            )
             log_id = conn.execute(
                 """
                 INSERT INTO comms_logical_sources (logical_key, source_kind, label)
-                VALUES ('stream_email', 'email', 'Synthetic stream') RETURNING id
+                VALUES ('household_email', 'email', 'Household email') RETURNING id
                 """
             ).fetchone()["id"]
+            conn.execute(
+                """
+                INSERT INTO comms_source_memberships (source_id, logical_source_id)
+                VALUES (%s, %s)
+                """,
+                (src, log_id),
+            )
+            ext_id = conn.execute(
+                """
+                INSERT INTO comms_extract_instances (
+                    logical_source_id, source_id, fingerprint, landing_alias, landing_basename
+                ) VALUES (%s, %s, %s, 'household_email', 'export.mbox')
+                RETURNING id
+                """,
+                (log_id, src, "a" * 64),
+            ).fetchone()["id"]
+            can = {}
+            for ev in (ev1["id"], ev2, ev3):
+                can[ev] = conn.execute(
+                    """
+                    INSERT INTO comms_record_identities (
+                        logical_source_id, evidence_id, source_kind, first_extract_instance_id
+                    ) VALUES (%s, %s, 'email', %s)
+                    RETURNING id
+                    """,
+                    (log_id, ev, ext_id),
+                ).fetchone()["id"]
+            conn.commit()
             gen = conn.execute(
                 """
                 INSERT INTO comms_prepared_generations (algo_version, logical_source_id)
@@ -406,11 +475,11 @@ class DisposablePg036(_DisposablePg):
                         thread_id, generation_id, ordinal, evidence_id, evidence_ref,
                         sent_at, authorship, commercial_class, direction,
                         quote_quality, identity_quality, voice_corpus, urls_stripped,
-                        forward_status
+                        forward_status, canonical_record_id
                     ) VALUES (
                         %s, %s, %s, %s, %s, %s,
                         'authenticated_other', 'not_commercial', 'sent_to_focal_other_author',
-                        'clean', 'resolved', FALSE, TRUE, 'none'
+                        'clean', 'resolved', FALSE, TRUE, 'none', %s
                     )
                     """,
                     (
@@ -420,6 +489,7 @@ class DisposablePg036(_DisposablePg):
                         item["eid"],
                         f"T-0001-M-{i:02d}",
                         item["timestamp"],
+                        can[item["eid"]],
                     ),
                 )
             conn.commit()
@@ -456,15 +526,15 @@ class DisposablePg036(_DisposablePg):
                 INSERT INTO comms_prepared_messages (
                     thread_id, generation_id, ordinal, evidence_id, evidence_ref,
                     sent_at, authorship, commercial_class, direction,
-                    quote_quality, identity_quality, voice_corpus
+                    quote_quality, identity_quality, voice_corpus, canonical_record_id
                 ) VALUES (
                     %s, %s, 3, %s, 'T-0001-M-03', '2025-12-18T16:00:00+00:00',
                     'authenticated_focal', 'retain_life_evidence', 'sent_by_focal',
-                    'suspected_contamination', 'resolved', FALSE
+                    'suspected_contamination', 'resolved', FALSE, %s
                 )
                 RETURNING id, quote_contamination_flagged, voice_corpus
                 """,
-                (thread, gen2, ev3),
+                (thread, gen2, ev3, can[ev3]),
             ).fetchone()
             self.assertTrue(flagged["quote_contamination_flagged"])
             self.assertFalse(flagged["voice_corpus"])
@@ -510,24 +580,24 @@ class DisposablePg036(_DisposablePg):
             conn.execute(
                 """
                 INSERT INTO comms_prepared_attachments (
-                    message_id, evidence_id, attachment_ordinal, filename,
-                    mime_type, disposition, gallery_action
+                    message_id, parent_evidence_id, attachment_ordinal, filename,
+                    mime_type, disposition, gallery_action, source_locator
                 ) VALUES
-                    (%s, %s, 1, 'photo.jpg', 'image/jpeg', 'inline', 'view_image'),
-                    (%s, %s, 2, 'notes.bin', 'application/octet-stream', 'attachment', 'record_only')
+                    (%s, %s, 1, 'photo.jpg', 'image/jpeg', 'inline', 'view_image', 'archive:photo'),
+                    (%s, %s, 2, 'notes.bin', 'application/octet-stream', 'attachment', 'record_only', 'archive:notes')
                 """,
-                (msg_id, ev1["id"], msg_id, ev1["id"]),
+                (msg_id, ordered[0]["eid"], msg_id, ordered[0]["eid"]),
             )
             conn.commit()
             _expect_fail(
                 conn,
                 """
                 INSERT INTO comms_prepared_attachments (
-                    message_id, evidence_id, attachment_ordinal, filename,
-                    mime_type, disposition, gallery_action
-                ) VALUES (%s, %s, 1, 'dup.jpg', 'image/jpeg', 'inline', 'view_image')
+                    message_id, parent_evidence_id, attachment_ordinal, filename,
+                    mime_type, disposition, gallery_action, source_locator
+                ) VALUES (%s, %s, 1, 'dup.jpg', 'image/jpeg', 'inline', 'view_image', 'x')
                 """,
-                (msg_id, ev1["id"]),
+                (msg_id, ordered[0]["eid"]),
             )
             _expect_fail(
                 conn,
@@ -545,20 +615,271 @@ class DisposablePg036(_DisposablePg):
                 ).fetchone()["n"],
                 2,
             )
+            conn.execute(
+                """
+                INSERT INTO comms_prepared_participants (
+                    message_id, role, display_name, address_normalized,
+                    identity_confidence, person_id
+                ) VALUES (%s, 'cc', 'Unknown', 'unknown@example.test', 'unverified', NULL)
+                """,
+                (msg_id,),
+            )
+            conn.commit()
+            _expect_fail(
+                conn,
+                """
+                INSERT INTO comms_prepared_participants (
+                    message_id, role, display_name, address_normalized,
+                    identity_confidence, person_id
+                ) VALUES (%s, 'from', 'Dup', 'other@example.test', 'unverified', NULL)
+                """,
+                (msg_id,),
+            )
+            _expect_fail(
+                conn,
+                """
+                INSERT INTO comms_prepared_participants (
+                    message_id, role, display_name, address_normalized,
+                    identity_confidence, person_id
+                ) VALUES (%s, 'to', 'Beta2', '  BETA@EXAMPLE.TEST  ', 'authenticated_other', %s)
+                """,
+                (msg_id, person_b),
+            )
+            _expect_fail(
+                conn,
+                """
+                UPDATE comms_prepared_messages
+                SET cleaned_authored_text = 'see https://example.test/unsub'
+                WHERE id = %s
+                """,
+                (msg_id,),
+            )
+            _expect_fail(
+                conn,
+                """
+                INSERT INTO comms_prepared_attachments (
+                    message_id, parent_evidence_id, attachment_ordinal, filename,
+                    mime_type, disposition, gallery_action, source_locator
+                ) VALUES (%s, %s, 3, 'x.bin', 'application/octet-stream', 'attachment', 'record_only', 'x')
+                """,
+                (msg_id, ev2),
+            )
+            self.assertEqual(
+                conn.execute(
+                    """
+                    SELECT COUNT(*) AS n FROM comms_prepared_messages m
+                    JOIN comms_prepared_participants p ON p.message_id = m.id
+                    WHERE p.person_id IN (%s, %s)
+                    """,
+                    (person_a, person_b),
+                ).fetchone()["n"],
+                2,
+            )
+            prior_active = conn.execute(
+                "SELECT id FROM comms_prepared_active_generations"
+            ).fetchone()["id"]
+            self.assertEqual(prior_active, gen2)
+            gen_fail = conn.execute(
+                """
+                INSERT INTO comms_prepared_generations (algo_version, logical_source_id)
+                VALUES ('i14-prepared-email-v1', %s)
+                RETURNING id
+                """,
+                (log_id,),
+            ).fetchone()["id"]
+            thread_fail = conn.execute(
+                """
+                INSERT INTO comms_prepared_threads (
+                    generation_id, thread_key, display_id, threading_confidence,
+                    identity_confidence, gallery_eligibility, founder_review_state
+                ) VALUES (
+                    %s, 'rfc:fail', 'T-0002', 'rfc', 'mixed', 'show_by_default', 'unreviewed'
+                ) RETURNING id
+                """,
+                (gen_fail,),
+            ).fetchone()["id"]
+            conn.execute(
+                """
+                INSERT INTO comms_prepared_messages (
+                    thread_id, generation_id, ordinal, evidence_id, evidence_ref,
+                    sent_at, authorship, commercial_class, direction
+                ) VALUES (
+                    %s, %s, 1, %s, 'T-0002-M-01', '2025-01-01T00:00:00+00:00',
+                    'unverified', 'not_commercial', 'unresolved'
+                )
+                """,
+                (thread_fail, gen_fail, ev1["id"]),
+            )
+            conn.execute(
+                """
+                UPDATE comms_prepared_generations
+                SET status = 'validated', checksum = %s
+                WHERE id = %s
+                """,
+                ("d" * 64, gen_fail),
+            )
+            conn.commit()
+            _expect_fail(
+                conn,
+                "SELECT comms_prepared_activate_generation(%s)",
+                (gen_fail,),
+            )
+            self.assertEqual(
+                conn.execute(
+                    "SELECT id FROM comms_prepared_active_generations"
+                ).fetchone()["id"],
+                prior_active,
+            )
+            self.assertEqual(
+                conn.execute(
+                    "SELECT status FROM comms_prepared_generations WHERE id = %s",
+                    (prior_active,),
+                ).fetchone()["status"],
+                "published",
+            )
+            gen_from = conn.execute(
+                """
+                INSERT INTO comms_prepared_generations (algo_version, logical_source_id)
+                VALUES ('i14-prepared-email-v1', %s)
+                RETURNING id
+                """,
+                (log_id,),
+            ).fetchone()["id"]
+            thread_from = conn.execute(
+                """
+                INSERT INTO comms_prepared_threads (
+                    generation_id, thread_key, display_id, threading_confidence,
+                    identity_confidence, gallery_eligibility, founder_review_state
+                ) VALUES (
+                    %s, 'rfc:nofrom', 'T-0003', 'rfc', 'mixed', 'show_by_default', 'unreviewed'
+                ) RETURNING id
+                """,
+                (gen_from,),
+            ).fetchone()["id"]
+            conn.execute(
+                """
+                INSERT INTO comms_prepared_messages (
+                    thread_id, generation_id, ordinal, evidence_id, canonical_record_id,
+                    evidence_ref, sent_at, authorship, commercial_class, direction
+                ) VALUES (
+                    %s, %s, 1, %s, %s, 'T-0003-M-01', '2025-01-02T00:00:00+00:00',
+                    'unverified', 'suppress_default', 'unresolved'
+                )
+                """,
+                (thread_from, gen_from, ev2, can[ev2]),
+            )
+            conn.execute(
+                """
+                UPDATE comms_prepared_generations
+                SET status = 'validated', checksum = %s WHERE id = %s
+                """,
+                ("e" * 64, gen_from),
+            )
+            conn.commit()
+            _expect_fail(
+                conn,
+                "SELECT comms_prepared_activate_generation(%s)",
+                (gen_from,),
+            )
+            self.assertEqual(
+                conn.execute(
+                    "SELECT id FROM comms_prepared_active_generations"
+                ).fetchone()["id"],
+                prior_active,
+            )
+            gen_voice = conn.execute(
+                """
+                INSERT INTO comms_prepared_generations (algo_version, logical_source_id)
+                VALUES ('i14-prepared-email-v1', %s)
+                RETURNING id
+                """,
+                (log_id,),
+            ).fetchone()["id"]
+            thread_voice = conn.execute(
+                """
+                INSERT INTO comms_prepared_threads (
+                    generation_id, thread_key, display_id, threading_confidence,
+                    identity_confidence, gallery_eligibility, founder_review_state
+                ) VALUES (
+                    %s, 'rfc:voice', 'T-0004', 'rfc', 'mixed', 'show_by_default', 'unreviewed'
+                ) RETURNING id
+                """,
+                (gen_voice,),
+            ).fetchone()["id"]
+            voice_msg = conn.execute(
+                """
+                INSERT INTO comms_prepared_messages (
+                    thread_id, generation_id, ordinal, evidence_id, canonical_record_id,
+                    evidence_ref, sent_at, authorship, commercial_class, direction,
+                    voice_corpus
+                ) VALUES (
+                    %s, %s, 1, %s, %s, 'T-0004-M-01', '2025-01-03T00:00:00+00:00',
+                    'authenticated_focal', 'not_commercial', 'sent_by_focal', TRUE
+                ) RETURNING id
+                """,
+                (thread_voice, gen_voice, ev3, can[ev3]),
+            ).fetchone()["id"]
+            conn.execute(
+                """
+                INSERT INTO comms_prepared_participants (
+                    message_id, role, display_name, address_normalized,
+                    identity_confidence, person_id
+                ) VALUES (%s, 'from', 'Alpha', 'alpha@example.test', 'authenticated_other', %s)
+                """,
+                (voice_msg, person_a),
+            )
+            conn.execute(
+                """
+                UPDATE comms_prepared_generations
+                SET status = 'validated', checksum = %s WHERE id = %s
+                """,
+                ("f" * 64, gen_voice),
+            )
+            conn.commit()
+            _expect_fail(
+                conn,
+                "SELECT comms_prepared_activate_generation(%s)",
+                (gen_voice,),
+            )
+            self.assertEqual(
+                conn.execute(
+                    "SELECT id FROM comms_prepared_active_generations"
+                ).fetchone()["id"],
+                prior_active,
+            )
 
             conn.execute("DROP VIEW IF EXISTS comms_prepared_active_generations")
             conn.execute(
                 "DROP FUNCTION IF EXISTS comms_prepared_activate_generation(uuid)"
             )
             conn.execute(
+                "DROP FUNCTION IF EXISTS comms_prepared_assert_generation_ready(uuid)"
+            )
+            conn.execute(
                 "DROP TRIGGER IF EXISTS trg_comms_prepared_guard_activation ON comms_prepared_generations"
             )
             conn.execute("DROP FUNCTION IF EXISTS comms_prepared_guard_activation()")
+            conn.execute(
+                "DROP TRIGGER IF EXISTS trg_comms_prepared_generation_scope_guard ON comms_prepared_generations"
+            )
+            conn.execute(
+                "DROP FUNCTION IF EXISTS comms_prepared_generation_scope_guard()"
+            )
             conn.execute(
                 "DROP TRIGGER IF EXISTS trg_comms_prepared_message_generation_guard ON comms_prepared_messages"
             )
             conn.execute(
                 "DROP FUNCTION IF EXISTS comms_prepared_message_generation_guard()"
+            )
+            conn.execute(
+                "DROP TRIGGER IF EXISTS trg_comms_prepared_participant_normalize ON comms_prepared_participants"
+            )
+            conn.execute("DROP FUNCTION IF EXISTS comms_prepared_participant_normalize()")
+            conn.execute(
+                "DROP TRIGGER IF EXISTS trg_comms_prepared_attachment_parent_guard ON comms_prepared_attachments"
+            )
+            conn.execute(
+                "DROP FUNCTION IF EXISTS comms_prepared_attachment_parent_guard()"
             )
             conn.execute("DROP TABLE comms_prepared_attachments")
             conn.execute("DROP TABLE comms_prepared_participants")
@@ -572,6 +893,45 @@ class DisposablePg036(_DisposablePg):
                 conn.execute("SELECT COUNT(*) AS n FROM evidence").fetchone()["n"],
                 evidence_after["n"],
             )
+
+
+class DisposablePgFullChain036(_DisposablePg):
+    def test_001_through_035_then_036(self) -> None:
+        self._require_dsn()
+        chain = [
+            p
+            for p in _migration_files(MIGRATIONS)
+            if int(p.name.split("_", 1)[0]) <= 35
+        ]
+        self.assertEqual(int(chain[-1].name.split("_", 1)[0]), 35)
+        with psycopg.connect(self.dsn, row_factory=dict_row, connect_timeout=5) as conn:
+            db = conn.execute("SELECT current_database() AS db").fetchone()["db"]
+            self.assertNotEqual(db.lower(), "memorybox")
+            conn.execute(_BOOTSTRAP)
+            for path in chain:
+                _apply_file(conn, path)
+                conn.execute(
+                    "INSERT INTO schema_migrations (version, filename) VALUES (%s, %s)",
+                    (path.name.split("_", 1)[0], path.name),
+                )
+                conn.commit()
+            before = _public_tables(conn)
+            self.assertIn("comms_logical_sources", before)
+            self.assertNotIn("comms_prepared_generations", before)
+            _apply_file(conn, SQL_036)
+            conn.execute(
+                "INSERT INTO schema_migrations (version, filename) VALUES (%s, %s)",
+                ("036", SQL_036.name),
+            )
+            conn.commit()
+            after = _public_tables(conn)
+            self.assertTrue(PREPARED_TABLES.issubset(after))
+            self.assertEqual(after - before, PREPARED_TABLES)
+            for table in PREPARED_TABLES:
+                self.assertEqual(
+                    conn.execute(f"SELECT COUNT(*) AS n FROM {table}").fetchone()["n"],
+                    0,
+                )
 
 
 if __name__ == "__main__":

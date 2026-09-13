@@ -18,7 +18,7 @@ Physical names are `comms_prepared_*`. Intent below.
 | --- | --- |
 | `id` | Generation identity |
 | `algo_version` | Reconstruction + compaction + commercial classifier version |
-| `logical_source_id` | Household stream (035 membership), when seeded |
+| `scope_key` | Locked `household_email`. Source stream grain, not a Person. |
 | `published` / `is_active` | False until `comms_prepared_activate_generation`. Gallery reads the active view only. |
 
 ### `comms_prepared_threads`
@@ -76,7 +76,8 @@ Physical names are `comms_prepared_*`. Intent below.
 
 | Field | Intent |
 | --- | --- |
-| `message_id` / `evidence_id` | Exact message + immutable original |
+| `parent_evidence_id` | Immutable parent communication evidence (the message original) |
+| `attachment_evidence_id` | Optional distinct evidence row; null when only `source_locator` is used |
 | `attachment_ordinal` / `disposition` | Order and inline vs attachment |
 | `filename` / `mime_type` / `byte_size` | Metadata |
 | `source_locator` | Pointer into archive; **do not copy bytes** |
