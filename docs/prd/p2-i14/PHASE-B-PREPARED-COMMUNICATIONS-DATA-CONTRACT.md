@@ -2,7 +2,7 @@
 
 **Status:** Design proposal only. **Do not author a migration.**  
 **Not 035.** Migration 035 stores lineage/identity tables, not threads or cleaned text.  
-**Gate:** Person Pilot 1 visual review (Peggy). Person Pilot 2 is Sue. Distinct from I11A Peggy Narrative / Words of a Life.
+**Gate:** Person Pilot 1 representative packet **accepted** (2026-09-13). Person Pilot 2 is Sue (blocked until a confirmed unique email exists). Distinct from I11A Peggy Narrative / Words of a Life.
 
 Explore Person Ask (`Show me Peggy` / `Show me Sue`) later attaches **meaningful** prepared communication cards after photos without a Communications click. Canonical threads keep full conversational context. Narrative later uses **authenticated Pilot-authored** text only. A new Ask abandons unfinished background communications retrieval.
 

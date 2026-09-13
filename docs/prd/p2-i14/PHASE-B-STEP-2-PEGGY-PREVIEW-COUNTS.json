@@ -55,12 +55,13 @@
   "excluded": 0,
   "excluded_reasons": {},
   "focal_confirmed_addresses": 1,
-  "founder_accept_recorded": false,
+  "founder_accept_recorded": true,
   "ledger_unique_addresses": 4,
   "ledger_unique_people": 3,
   "load_authorization": false,
+  "load_contract": "open INDEX then packet-001.txt; open one originals/Evidence-ref.txt at a time",
   "mark_counts": {
-    "accept_thread": 0,
+    "accept_thread": 10,
     "incorrect_ordering": 0,
     "incorrect_participant": 0,
     "merge_with_another": 0,
@@ -70,6 +71,33 @@
     "split_here": 0
   },
   "ok": true,
+  "packet_accept": {
+    "accepted_threads": 10,
+    "duplicate_thread_lines": 1,
+    "extra_in_marks_file": 0,
+    "founder_stated_all_accepted": true,
+    "marks_lines": 10,
+    "marks_unique_threads": 9,
+    "missing_from_marks_file": 1,
+    "packet_threads": 10,
+    "scope": "pilot_1_representative_packet"
+  },
+  "packet_sizes": {
+    "index_bytes": 2661,
+    "limits": {
+      "max_original_bytes": 200000,
+      "max_packet_bytes": 1500000,
+      "max_threads": 25
+    },
+    "message_count_written": 20,
+    "original_bytes_max": 8966,
+    "original_bytes_total": 73987,
+    "original_files": 20,
+    "packet_bytes": 49391,
+    "packet_files": 1,
+    "readme_bytes": 1631,
+    "thread_count_written": 10
+  },
   "person_gate": "pilot_1",
   "person_pilot": 1,
   "prepared_quote_residue": {
@@ -131,7 +159,7 @@
       }
     }
   },
-  "private_review_emitted": false,
+  "private_review_emitted": true,
   "production_i14_writes": false,
   "raw_quote_markers": {
     "any_quote_or_forward_marker": {

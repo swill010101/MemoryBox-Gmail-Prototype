@@ -56,6 +56,30 @@ class AuthorshipLedger(unittest.TestCase):
         self.assertEqual(nickname_only["authorship"], review.UNVERIFIED)
         self.assertTrue(nickname_only["display_name_only_peggy_rejected"])
 
+    def test_focal_label_is_not_hardcoded_peggy(self) -> None:
+        ledger = review.IdentityLedger(focal_person_id="person-sue")
+        review.add_confirmed_address(ledger, address="sue@example.test", person_id="person-sue", label="Sue Example")
+        sent_by = review.classify_message(
+            {
+                "from": "Sue Example <sue@example.test>",
+                "to": ["Alice Example <alice@example.test>"],
+                "from_parsed": [{"display_name": "Sue Example", "address": "sue@example.test", "normalized": "sue@example.test"}],
+                "to_parsed": [{"display_name": "Alice Example", "address": "alice@example.test", "normalized": "alice@example.test"}],
+            },
+            ledger,
+        )
+        self.assertEqual(sent_by["authorship_label"], "authenticated Sue")
+        self.assertTrue(sent_by["voice_corpus"])
+
+    def test_parse_marks_counts_unique_accepts(self) -> None:
+        parsed = review.parse_marks(
+            "T-0001  accept_thread\nT-0624  accept_thread\nT-0001  accept_thread\n"
+        )
+        self.assertEqual(parsed["mark_lines"], 3)
+        self.assertEqual(parsed["unique_threads"], 2)
+        self.assertEqual(parsed["accept_unique"], 2)
+        self.assertEqual(parsed["duplicate_thread_lines"], 1)
+
     def test_ambiguous_is_not_universal_when_ledger_binds(self) -> None:
         ledger = self._ledger()
         a = _msg(
@@ -174,6 +198,14 @@ class CommercialAndBounds(unittest.TestCase):
             self.assertLessEqual(meta["thread_count_written"], 25)
             self.assertLessEqual(meta["sizes"]["packet_bytes"], review.MAX_PACKET_BYTES)
             self.assertEqual(meta["sizes"]["packet_files"], 1)
+
+    def test_existing_marks_are_not_clobbered(self) -> None:
+        pack = _build_all_cases()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "MARKS.txt").write_text("T-0001  accept_thread\n", encoding="utf-8")
+            review.write_review_tree(pack, root, founder_packet=True)
+            self.assertEqual((root / "MARKS.txt").read_text(encoding="utf-8"), "T-0001  accept_thread\n")
 
     def test_image_vs_pdf_attachment_action(self) -> None:
         self.assertEqual(review.gallery_attachment_action("pic.JPG", "image/jpeg"), "view_image")

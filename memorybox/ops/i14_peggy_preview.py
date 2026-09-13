@@ -514,8 +514,8 @@ def counts_report(pack: dict[str, Any], *, marks: dict[str, str] | None = None) 
         "ok": True,
         "read_only": True,
         "production_i14_writes": False,
-        "person_gate": "pilot_1",
-        "person_pilot": 1,
+        "person_gate": str(pack.get("person_gate") or f"pilot_{int(pack.get('person_pilot') or 1)}"),
+        "person_pilot": int(pack.get("person_pilot") or 1),
         "eligible": int(pack["eligible"]),
         "displayed": int(pack["displayed"]),
         "deliberate_duplicates": int(pack["deliberate_duplicates"]),
@@ -551,11 +551,19 @@ def counts_report(pack: dict[str, Any], *, marks: dict[str, str] | None = None) 
         "ledger_unique_addresses": int(pack.get("ledger_address_count") or 0),
         "ledger_unique_people": int(pack.get("ledger_person_count") or 0),
         "mark_counts": mark_counts,
-        "founder_accept_recorded": False,
-        "second_person_required": True,
+        "founder_accept_recorded": bool(pack.get("founder_accept_recorded")),
+        "second_person_required": bool(pack.get("second_person_required", True)),
         "load_authorization": False,
-        "private_review_emitted": False,
+        "private_review_emitted": bool(pack.get("private_review_emitted")),
     }
+    if pack.get("packet_sizes"):
+        report["packet_sizes"] = pack.get("packet_sizes")
+    if pack.get("load_contract"):
+        report["load_contract"] = pack.get("load_contract")
+    if pack.get("representative_coverage"):
+        report["representative_coverage"] = dict(pack.get("representative_coverage") or {})
+    if pack.get("packet_accept"):
+        report["packet_accept"] = dict(pack.get("packet_accept") or {})
     assert_counts_only(report)
     return report
 
@@ -780,7 +788,13 @@ def load_messages(conn: Any, *, addresses: list[str]) -> list[dict[str, Any]]:
     return out
 
 
-def run_from_conn(conn: Any, *, person_id: str | None, person_name: str | None) -> dict[str, Any]:
+def run_from_conn(
+    conn: Any,
+    *,
+    person_id: str | None,
+    person_name: str | None,
+    person_pilot: int = 1,
+) -> dict[str, Any]:
     require_dbname(conn)
     catalog_execute(conn, "SET LOCAL idle_in_transaction_session_timeout = '120s'")
     pid, label = resolve_person(conn, person_id=person_id, person_name=person_name)
@@ -792,6 +806,9 @@ def run_from_conn(conn: Any, *, person_id: str | None, person_name: str | None) 
     pack["confirmed_address_count"] = len(addrs)
     pack["ledger_address_count"] = len(ledger.address_to_person)
     pack["ledger_person_count"] = len({p for p in ledger.address_to_person.values()})
+    pack["person_pilot"] = int(person_pilot)
+    pack["person_gate"] = f"pilot_{int(person_pilot)}"
+    pack["second_person_required"] = True
     return pack
 
 
@@ -809,10 +826,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--counts-out")
     parser.add_argument("--review-out", help="Private TXT tree (refused for production unless emit env is set)")
     parser.add_argument("--representative-only", action="store_true")
-    parser.add_argument("--founder-packet", action="store_true", help="Emit one bounded Person Pilot 1 packet")
+    parser.add_argument("--founder-packet", action="store_true", help="Emit one bounded Person Pilot packet")
     parser.add_argument("--census-only", action="store_true")
     parser.add_argument("--person-id")
     parser.add_argument("--person-name", default="Peggy George")
+    parser.add_argument("--person-pilot", type=int, default=1)
     parser.add_argument("--html-out", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
     if args.html_out:
@@ -849,12 +867,19 @@ def main(argv: list[str] | None = None) -> int:
 
         conn = psycopg.connect(dsn, row_factory=dict_row, autocommit=False)
         try:
-            pack = run_from_conn(conn, person_id=args.person_id, person_name=args.person_name)
+            pack = run_from_conn(
+                conn,
+                person_id=args.person_id,
+                person_name=args.person_name,
+                person_pilot=int(args.person_pilot),
+            )
         finally:
             try:
                 conn.rollback()
             finally:
                 conn.close()
+    pack["person_pilot"] = int(args.person_pilot)
+    pack["person_gate"] = f"pilot_{int(args.person_pilot)}"
     if args.review_out and not args.census_only:
         meta = review.write_review_tree(
             pack,
@@ -873,14 +898,11 @@ def main(argv: list[str] | None = None) -> int:
                 for k, v in dict(meta.get("representative_coverage") or {}).items()
             },
         }
+        pack["private_review_emitted"] = True
+        pack["representative_coverage"] = pack["private_review_meta"]["representative_coverage"]
+        pack["packet_sizes"] = pack["private_review_meta"].get("sizes") or {}
+        pack["load_contract"] = pack["private_review_meta"].get("load_contract")
     report = write_counts(pack, counts_out)
-    if pack.get("private_review_meta"):
-        report = dict(report)
-        report["private_review_emitted"] = True
-        report["representative_coverage"] = pack["private_review_meta"]["representative_coverage"]
-        report["packet_sizes"] = pack["private_review_meta"].get("sizes") or {}
-        report["load_contract"] = pack["private_review_meta"].get("load_contract")
-        assert_counts_only(report)
     print(json.dumps(report, indent=2, sort_keys=True))
     return 0
 

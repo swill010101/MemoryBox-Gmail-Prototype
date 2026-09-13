@@ -66,7 +66,7 @@ FOUNDER MARKS (write one line per thread in MARKS.txt)
 """.strip()
 
 README_TEXT = """I14 Phase B — Prepared Communications and Threads
-Person Pilot 1 review packet (private, gitignored)
+Person Pilot {person_pilot} review packet (private, gitignored)
 
 This is not migration 035 validation and not the I11A Peggy Narrative.
 035 does not store threads. This packet prototypes the future prepared layer.
@@ -84,7 +84,7 @@ Bounds
 
 Two products
   Canonical thread: every message, every participant, chronological.
-  Voice corpus: From address is a confirmed unique Pilot 1 contact only.
+  Voice corpus: From address is a confirmed unique Pilot contact only.
 
 Commercial labels (Gallery default only; archive unchanged)
   commercial_retain    life evidence (travel, medical, meaningful events)
@@ -94,6 +94,36 @@ Commercial labels (Gallery default only; archive unchanged)
 Marks: see MARKS.txt
 Do not commit this folder.
 """.strip()
+
+
+MARK_LINE = re.compile(r"^(T-\d{4})\s+(\S+)")
+
+
+def parse_marks(text: str) -> dict[str, Any]:
+    """Counts-only parse of MARKS.txt. Does not copy private thread bodies."""
+    lines = 0
+    unique: dict[str, str] = {}
+    mark_counts: dict[str, int] = {}
+    for raw in (text or "").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        m = MARK_LINE.match(line)
+        if not m:
+            continue
+        lines += 1
+        tid, mark = m.group(1), m.group(2)
+        unique[tid] = mark
+        mark_counts[mark] = mark_counts.get(mark, 0) + 1
+    return {
+        "mark_lines": lines,
+        "unique_threads": len(unique),
+        "accept_unique": sum(1 for v in unique.values() if v == "accept_thread"),
+        "duplicate_thread_lines": max(0, lines - len(unique)),
+        "mark_counts": mark_counts,
+        "thread_ids": sorted(unique),
+    }
+
 
 REQUIRED_PACKET_CASES = (
     "normal_two_person",
@@ -142,12 +172,23 @@ class IdentityLedger:
         if not pid:
             return {"status": UNVERIFIED, "person_id": "", "label": ""}
         if pid == self.focal_person_id:
-            return {"status": AUTH_PEGGY, "person_id": pid, "label": self.person_label.get(pid) or "Peggy"}
+            return {
+                "status": AUTH_PEGGY,
+                "person_id": pid,
+                "label": self.person_label.get(pid) or focal_short_name(self),
+            }
         return {
             "status": AUTH_OTHER,
             "person_id": pid,
             "label": self.person_label.get(pid) or "Person",
         }
+
+
+def focal_short_name(ledger: IdentityLedger) -> str:
+    label = str(ledger.person_label.get(ledger.focal_person_id) or "").strip()
+    if label:
+        return label.split()[0]
+    return "Pilot"
 
 
 def add_confirmed_address(ledger: IdentityLedger, *, address: str, person_id: str, label: str = "") -> None:
@@ -286,6 +327,16 @@ def _peggy_display_hint(display: str) -> bool:
     return bool(PEGGY_DISPLAY_HINTS.search(display or ""))
 
 
+def _focal_display_hint(display: str, ledger: IdentityLedger) -> bool:
+    label = str(ledger.person_label.get(ledger.focal_person_id) or "")
+    if re.search(r"peggy", label, re.I) or not label.strip():
+        return _peggy_display_hint(display)
+    first = focal_short_name(ledger)
+    if len(first) < 3:
+        return False
+    return bool(re.search(rf"\b{re.escape(first)}\b", display or "", re.I))
+
+
 def classify_message(msg: dict[str, Any], ledger: IdentityLedger) -> dict[str, Any]:
     parties = extract_parties(msg.get("payload") if isinstance(msg.get("payload"), dict) else {}, msg)
     def _bind_list(rows: list[dict[str, str]]) -> list[dict[str, Any]]:
@@ -301,8 +352,9 @@ def classify_message(msg: dict[str, Any], ledger: IdentityLedger) -> dict[str, A
     bcc_b = _bind_list(parties["bcc"])
     sender = from_b[0] if from_b else {"status": UNVERIFIED, "address": "", "display": "", "person_id": "", "label": ""}
     authorship = sender["status"]
+    focal = focal_short_name(ledger)
     if authorship == AUTH_PEGGY:
-        authorship_label = "authenticated Peggy"
+        authorship_label = f"authenticated {focal}"
     elif authorship == AUTH_OTHER:
         authorship_label = f"authenticated other Person ({sender.get('label') or 'Person'})"
     else:
@@ -316,7 +368,7 @@ def classify_message(msg: dict[str, Any], ledger: IdentityLedger) -> dict[str, A
     recipients = to_b + cc_b + bcc_b
     unverified_sender = authorship == UNVERIFIED
     unverified_recipient = any(r.get("status") == UNVERIFIED for r in recipients)
-    display_only = (not peggy_from) and _peggy_display_hint(str(sender.get("display") or ""))
+    display_only = (not peggy_from) and _focal_display_hint(str(sender.get("display") or ""), ledger)
 
     if peggy_from:
         direction = "sent_by_authenticated_peggy"
@@ -411,7 +463,7 @@ def _format_party_line(rows: list[dict[str, Any]], *, empty: str = "(none)") -> 
         addr = str(row.get("address") or "")
         status = str(row.get("status") or UNVERIFIED)
         if status == AUTH_PEGGY:
-            tag = "authenticated Peggy"
+            tag = f"authenticated {str(row.get('label') or 'Pilot').split()[0]}"
         elif status == AUTH_OTHER:
             tag = f"authenticated other Person ({row.get('label') or 'Person'})"
         else:
@@ -697,8 +749,14 @@ def write_review_tree(
         raise ReviewError("packet_exceeds_limit")
     for extra in out_dir.glob("packet-*.txt"):
         extra.unlink()
-    (out_dir / "README.txt").write_text(README_TEXT + "\n\n" + MARK_HELP + "\n", encoding="utf-8")
-    (out_dir / "MARKS.txt").write_text("# one mark per line: T-0001  accept_thread\n", encoding="utf-8")
+    (out_dir / "README.txt").write_text(
+        README_TEXT.format(person_pilot=int(pack.get("person_pilot") or 1)) + "\n\n" + MARK_HELP + "\n",
+        encoding="utf-8",
+    )
+    marks_path = out_dir / "MARKS.txt"
+    prior_marks = marks_path.read_text(encoding="utf-8") if marks_path.exists() else ""
+    if not re.search(r"^T-\d{4}\b", prior_marks, re.M):
+        marks_path.write_text("# one mark per line: T-0001  accept_thread\n", encoding="utf-8")
     index_lines = [index_line(t) for t in chosen]
     (out_dir / "INDEX.txt").write_text("\n".join(index_lines) + ("\n" if index_lines else ""), encoding="utf-8")
     (out_dir / "packet-001.txt").write_text(packet, encoding="utf-8")

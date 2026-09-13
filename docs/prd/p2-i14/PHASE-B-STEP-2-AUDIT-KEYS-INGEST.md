@@ -421,7 +421,7 @@ duplicate audit → logical-source decision → ingest/identity fixtures → rea
 | Q-multi | Multiple historical rows for one identity/hash? | **Locked:** map **neither** (`needs_canonical_policy`) until a merge increment. |
 | Q-cal | Lock `calendar_uid_dtstart` now? | **Locked no.** Unlock until revision semantics (recommend alternative A; 035 gap; separate review). |
 | Q-sms | What `evidence_kind` is SMS today? | **Locked:** `communication` (`sms_export` / csv). |
-| Q-next | What to build next? | **Stop** for Person Pilot 1 visual review of `working/i14-thread-review/`. No Sue packet, no 036 migration, no production load. |
+| Q-next | What to build next? | Person Pilot 1 representative packet accepted (10/10). Person Pilot 2 (Sue) is blocked: no confirmed email identity. No 036 migration, no production load. |
 | Q-map | Which landing files join the three streams? | **Locked:** large non-testish mbox + two non-testish ICS + large SMS CSV. Hold the rest (see audit results JSON). |
 | Q-visual | When may Gallery show comms? | Only after Peggy visual Accept, second-Person proof, and a separate production-load authorization. |
 
