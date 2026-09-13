@@ -189,5 +189,179 @@ class PreparedTextCleaning(unittest.TestCase):
         self.assertTrue(all("financial status" not in v for v in peggy_voice))
 
 
+class PreparedPolicyRegressions(unittest.TestCase):
+    def test_utc_offset_sort_puts_earlier_instant_first(self) -> None:
+        early = {"timestamp": "2025-12-18T14:57:13+00:00", "evidence_id": "b"}
+        late = {"timestamp": "2025-12-18T09:13:25-06:00", "evidence_id": "a"}
+        ordered = sorted([late, early], key=review.message_sort_key)
+        self.assertEqual([m["evidence_id"] for m in ordered], ["b", "a"])
+        lex = sorted([late, early], key=review.string_sort_key)
+        self.assertEqual([m["evidence_id"] for m in lex], ["a", "b"])
+
+    def test_missing_timestamp_sorts_last(self) -> None:
+        missing = {"timestamp": "", "evidence_id": "z"}
+        present = {"timestamp": "2025-12-18T08:00:00-06:00", "evidence_id": "a"}
+        ordered = sorted([missing, present], key=review.message_sort_key)
+        self.assertEqual([m["evidence_id"] for m in ordered], ["a", "z"])
+
+    def test_forward_wrapper_still_strips_on_wrote(self) -> None:
+        raw = (
+            "I am thinking of you.\n\n"
+            "On Thu, Dec 18, 2025 at 8:24 AM Person Example <a@example.test> wrote:\n"
+            "earlier condolence that is already in the thread\n\n"
+            "Begin forwarded message:\n\n"
+            + ("relayed chain already represented separately in an earlier evidence message. " * 4)
+        )
+        chain = "relayed chain already represented separately in an earlier evidence message. " * 4
+        prep = prepare_message_text(
+            raw,
+            subject="Fwd: news",
+            prior_authored=[chain],
+        )
+        self.assertIn("I am thinking of you.", prep.authored)
+        self.assertNotIn("wrote:", prep.authored)
+        self.assertEqual(prep.forward_omitted, "duplicate_of_thread_message")
+        raw = (
+            "Thank you for writing.\n\n"
+            "On Thu, Dec 18, 2025 at 8:24 AM Person Example\n"
+            "<person@example.test> wrote:\n"
+            "the previous condolence text\n"
+        )
+        prep = prepare_message_text(raw, subject="Re: news")
+        self.assertIn("Thank you for writing.", prep.authored)
+        self.assertNotIn("wrote:", prep.authored)
+        self.assertNotIn("previous condolence", prep.authored)
+
+    def test_fwd_subject_with_reply_history_is_not_forward_block(self) -> None:
+        prior = "original condolence from the first sender in this thread " * 2
+        raw = f"My new reply.\n\nOn Thu, Dec 18, 2025 at 8:24 AM A <a@example.test> wrote:\n{prior}\n"
+        prep = prepare_message_text(raw, subject="Fwd: family news", prior_authored=[prior])
+        self.assertEqual(prep.forward_block, "")
+        self.assertIn("My new reply.", prep.authored)
+        self.assertNotIn("original condolence", prep.authored)
+
+    def test_new_forward_kept_when_not_in_thread(self) -> None:
+        raw = (
+            "See below.\n\nBegin forwarded message:\n\n"
+            "From: Desk <desk@example.test>\n"
+            "Your flight AA123 confirmation number ABCDE is attached.\n"
+        )
+        prep = prepare_message_text(raw, subject="Fwd: itinerary")
+        self.assertIn("See below.", prep.authored)
+        self.assertIn("AA123", prep.forward_block)
+        self.assertIn("ABCDE", prep.forward_block)
+
+    def test_duplicate_forward_omitted_when_original_already_in_thread(self) -> None:
+        original = "Southwest Rapid Rewards program policy announcement body " * 3
+        raw = f"Big changes.\n\nBegin forwarded message:\n\n{original}"
+        prep = prepare_message_text(raw, subject="Fwd: policy", prior_authored=[original])
+        self.assertEqual(prep.forward_block, "")
+        self.assertEqual(prep.forward_omitted, "duplicate_of_thread_message")
+        self.assertIn("Big changes", prep.authored)
+
+    def test_southwest_marketing_forward_stripped_and_suppressed(self) -> None:
+        raw = (
+            "Big changes.\n\nBegin forwarded message:\n\n"
+            "Rapid Rewards policy update. Buy points today.\n"
+            "https://email.southwest.com/click?utm_source=blast&unsubscribe=1\n"
+            "Log in to your account https://southwest.com/login\n"
+            "To unsubscribe click here. Privacy policy. Terms of carriage.\n"
+        )
+        msg = {
+            "subject": "Fwd: Rapid Rewards",
+            "raw_body": raw,
+            "cleaned_body": "Big changes.",
+            "forward_block": raw.split("Begin forwarded message:")[-1],
+            "from_handle": "tom@example.test",
+        }
+        cls = review.classify_commercial(msg)
+        self.assertEqual(cls["commercial_class"], "commercial_suppress")
+        # Marketing copy may say "itinerary" / "check-in" without a real trip.
+        noisy = dict(msg)
+        noisy["raw_body"] = raw + "\nSee the itinerary online. Check-In now.\n"
+        self.assertEqual(review.classify_commercial(noisy)["commercial_class"], "commercial_suppress")
+        prep = prepare_message_text(raw, subject="Fwd: Rapid Rewards")
+        self.assertIn("Big changes", prep.authored)
+        self.assertNotIn("http", prep.authored)
+        self.assertNotIn("utm_", prep.forward_block)
+        row = dict(msg)
+        row["cleaned_body"] = prep.authored
+        row["forward_block"] = prep.forward_block
+        row.update(review.classify_commercial(row))
+        if row["commercial_class"] == "commercial_suppress":
+            row["forward_block"] = ""
+        self.assertEqual(row["forward_block"], "")
+        self.assertNotIn("unsubscribe", row["cleaned_body"].lower())
+
+    def test_itinerary_forward_keeps_facts_without_urls(self) -> None:
+        raw = (
+            "Our trip.\n\nBegin forwarded message:\n\n"
+            "Your itinerary: flight AA123 confirmation number XYZ99 May 12.\n"
+            "https://airline.example.test/checkin?utm_source=mail\n"
+            "To unsubscribe click here.\n"
+        )
+        prep = prepare_message_text(raw, subject="Fwd: itinerary")
+        cls = review.classify_commercial(
+            {
+                "subject": "Fwd: itinerary",
+                "cleaned_body": prep.authored,
+                "forward_block": prep.forward_block,
+                "raw_body": raw,
+            }
+        )
+        self.assertEqual(cls["commercial_class"], "commercial_retain")
+        self.assertIn("AA123", prep.forward_block)
+        self.assertIn("XYZ99", prep.forward_block)
+        self.assertNotIn("http", prep.forward_block)
+        self.assertNotIn("utm_", prep.forward_block)
+
+    def test_reconstruct_orders_mixed_offsets(self) -> None:
+        ledger = review.IdentityLedger(focal_person_id="person-sue")
+        review.add_confirmed_address(ledger, address="sue@example.test", person_id="person-sue", label="Sue Example")
+        review.add_confirmed_address(ledger, address="tom@example.test", person_id="person-tom", label="Tom Example")
+        a = preview.message_from_payload(
+            evidence_id="00000000-0000-4000-8000-000000000001",
+            source_id="11111111-1111-4111-8111-111111111111",
+            payload={
+                "evidence_channel": "email",
+                "subject": "Re: news",
+                "from": "Tom <tom@example.test>",
+                "to": ["Sue <sue@example.test>"],
+                "from_parsed": [{"display_name": "Tom", "address": "tom@example.test", "normalized": "tom@example.test"}],
+                "to_parsed": [{"display_name": "Sue", "address": "sue@example.test", "normalized": "sue@example.test"}],
+                "sent_at": "2025-12-18T09:13:25-06:00",
+                "body_text": "Later reply at 09:13.",
+                "rfc_message_id": "<later@example.test>",
+                "in_reply_to_ids": ["<early@example.test>"],
+                "content_hash": "11" * 32,
+            },
+        )
+        b = preview.message_from_payload(
+            evidence_id="00000000-0000-4000-8000-000000000002",
+            source_id="11111111-1111-4111-8111-111111111111",
+            payload={
+                "evidence_channel": "email",
+                "subject": "Re: news",
+                "from": "Sue <sue@example.test>",
+                "to": ["Tom <tom@example.test>"],
+                "from_parsed": [{"display_name": "Sue", "address": "sue@example.test", "normalized": "sue@example.test"}],
+                "to_parsed": [{"display_name": "Tom", "address": "tom@example.test", "normalized": "tom@example.test"}],
+                "sent_at": "2025-12-18T14:57:13+00:00",
+                "body_text": "Earlier reply at 08:57.",
+                "rfc_message_id": "<early@example.test>",
+                "content_hash": "22" * 32,
+            },
+        )
+        pack = preview.reconstruct([a, b], ledger=ledger)
+        msgs = pack["threads"][0]["messages"]
+        self.assertEqual([m["cleaned_body"] for m in msgs], ["Earlier reply at 08:57.", "Later reply at 09:13."])
+
+    def test_original_unchanged_when_sanitizing(self) -> None:
+        raw = "Hi\n\nBegin forwarded message:\n\nhttps://click.example.test/x?utm_source=1\n"
+        snapshot = raw
+        prepare_message_text(raw, subject="Fwd: x")
+        self.assertEqual(raw, snapshot)
+
+
 if __name__ == "__main__":
     unittest.main()

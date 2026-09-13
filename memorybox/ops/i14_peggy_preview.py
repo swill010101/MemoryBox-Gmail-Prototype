@@ -293,10 +293,7 @@ def partition_population(messages: list[dict[str, Any]]) -> dict[str, Any]:
     displayed: list[dict[str, Any]] = []
     duplicates: list[dict[str, Any]] = []
     for key, group in by_key.items():
-        group_sorted = sorted(
-            group,
-            key=lambda m: (str(m.get("timestamp") or ""), str(m.get("evidence_id") or "")),
-        )
+        group_sorted = sorted(group, key=review.message_sort_key)
         displayed.append(group_sorted[0])
         for extra in group_sorted[1:]:
             duplicates.append({**extra, "duplicate_of": group_sorted[0]["evidence_id"], "dupe_key_class": key.split(":", 1)[0]})
@@ -313,7 +310,7 @@ def partition_population(messages: list[dict[str, Any]]) -> dict[str, Any]:
 def _compact_thread_messages(msgs: list[dict[str, Any]]) -> list[dict[str, Any]]:
     from memorybox.ops.i14_prepared_text import prepare_message_text
 
-    ordered = sorted(msgs, key=lambda m: (str(m.get("timestamp") or ""), str(m.get("evidence_id") or "")))
+    ordered = sorted(msgs, key=review.message_sort_key)
     prior: list[str] = []
     out: list[dict[str, Any]] = []
     for msg in ordered:
@@ -331,6 +328,13 @@ def _compact_thread_messages(msgs: list[dict[str, Any]]) -> list[dict[str, Any]]
         row["clean_method"] = prep.method
         row["signature_removed"] = prep.signature_removed
         row["list_footer_removed"] = prep.list_footer_removed
+        row["urls_stripped"] = prep.urls_stripped
+        row["forward_omitted"] = prep.forward_omitted
+        commercial = review.classify_commercial(row)
+        row.update(commercial)
+        if row.get("commercial_class") == "commercial_suppress" and row.get("forward_block"):
+            row["forward_omitted"] = row.get("forward_omitted") or "commercial_suppress"
+            row["forward_block"] = ""
         if prep.authored:
             prior.append(prep.authored)
         if len(raw.strip()) >= 40:
@@ -422,6 +426,7 @@ def reconstruct(
     threads: list[dict[str, Any]] = []
     for index, (cid, msgs) in enumerate(sorted(by_cluster.items(), key=lambda kv: kv[0])):
         compacted = review.annotate_messages(_compact_thread_messages(msgs), ident)
+        compacted = sorted(compacted, key=review.message_sort_key)
         omitted = sum(dupes_by_displayed[str(m["evidence_id"])] for m in compacted)
         warnings: list[str] = []
         if any(not m.get("rfc_message_id") for m in compacted):
@@ -473,6 +478,7 @@ def reconstruct(
     quote_residue = residue_census(all_displayed_msgs)
     raw_markers = raw_marker_census(all_displayed_msgs)
     prepared_actions = action_census(all_displayed_msgs)
+    prepared_policy = review.prepared_policy_census(threads)
     return {
         "threads": threads,
         "eligible": eligible_n,
@@ -490,6 +496,7 @@ def reconstruct(
         "prepared_quote_residue": quote_residue,
         "raw_quote_markers": raw_markers,
         "prepared_text_actions": prepared_actions,
+        "prepared_policy": prepared_policy,
         "detector_note": (
             "ambiguous_participant_identity means an unverified From/To/Cc address "
             "on the thread after confirmed-contact authentication; it is not a "
@@ -564,6 +571,8 @@ def counts_report(pack: dict[str, Any], *, marks: dict[str, str] | None = None) 
         report["representative_coverage"] = dict(pack.get("representative_coverage") or {})
     if pack.get("packet_accept"):
         report["packet_accept"] = dict(pack.get("packet_accept") or {})
+    if pack.get("prepared_policy"):
+        report["prepared_policy"] = pack.get("prepared_policy")
     if int(pack.get("person_pilot") or 1) >= 2:
         from memorybox.ops.i14_thread_review import FOCAL_CASE_ALIAS
 

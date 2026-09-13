@@ -1,32 +1,32 @@
 # I14 Phase B — Person Pilot 2 representative packet (Sue)
 
 **Date:** 2026-09-13  
-**Status:** Emitted for founder visual review. **Not accepted.**  
+**Status:** Re-emitted after T-0001 / T-1265 defects. **Not accepted.**  
 **Private folder (gitignored):** `working/i14-thread-review-pilot-2/`  
 **Counts:** `docs/prd/p2-i14/PHASE-B-STEP-2-SUE-PREVIEW-COUNTS.json`
 
-Sue Will now has **one** confirmed unique email. Reconstruction used that address as the authenticator (not display name).
+Start visual review at **T-0001**. Do not treat this packet as accepted.
 
-## Corpus (counts only)
+## Timestamp rule
 
-| Measure | Value |
+Authoritative time is payload `sent_at` parsed to a UTC instant. Display uses America/Chicago. Tie-break is `evidence_id`. Lexicographic ISO-string sort is not used (it mis-orders mixed offsets).
+
+## Sue corpus (counts only, 2,332 messages / 1,590 threads)
+
+| Measure | Count |
 | --- | ---: |
-| Eligible / displayed | 2332 |
-| Threads | 1590 |
-| Unexplained | 0 |
-| Confirmed focal emails | 1 |
-| Voice-corpus messages (authenticated Sue From) | 346 |
-| Sent to Sue, other author | 1986 |
-| Quote history removed | 670 messages / 384 threads |
-| Residue still in cleaned authored text | 26 messages / 20 threads |
-| Explicit forwards (not treated as reply history) | 947 messages / 890 threads |
+| Threads that lexicographic ISO sort would mis-order | 47 |
+| Display order mismatches after UTC sort | 0 |
+| Reply-header remnants in cleaned authored text | 0 |
+| Forward bodies omitted as duplicates of a thread message | 28 / 26 threads |
+| Forwarded messages with tracking URLs in the immutable original | 249 |
+| Forwarded commercial (retain/suppress/uncertain) | 361 |
+| commercial_suppress | 430 messages / 331 threads |
+| commercial_retain (strong trip/life facts) | 74 / 64 threads |
+| commercial_uncertain | 53 / 49 threads |
+
+Original-plus-forward duplication is detected by normalized ≥80-character overlap between a forward block and an earlier message in the same canonical thread. Short human replies are not collapsed.
 
 ## Packet
 
-11 threads, 21 originals, 82,887-byte `packet-001.txt`. Same open-one-file contract as Pilot 1.
-
-Authorship census keys in JSON still use the Pilot 1 field names (`sent_by_authenticated_peggy` = sent by authenticated focal). Packet TXT uses Sue / focal labels.
-
-## Out of scope until Sue packet Accept
-
-Production load, 036, Gallery, full 1,590-thread dump.
+12 threads, 22 originals, **44,520** bytes. Same one-file contract. Production I14 writes: false.

@@ -17,8 +17,37 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from memorybox.person.phone_map import normalize_handle
+from memorybox.ops.i14_prepared_text import TRACKING_HINT
 
 REVIEW_TZ = ZoneInfo("America/Chicago")
+MISSING_TS = datetime.min.replace(tzinfo=timezone.utc)
+
+
+def parse_sent_at(raw: str | None) -> datetime | None:
+    """Authoritative message time: payload sent_at parsed to a UTC instant."""
+    text = str(raw or "").strip()
+    if not text:
+        return None
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        dt = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def message_sort_key(msg: dict[str, Any]) -> tuple[int, datetime, str]:
+    """Chronological order: UTC instant, then evidence_id. Missing timestamps sort last."""
+    dt = parse_sent_at(str(msg.get("timestamp") or ""))
+    missing = 0 if dt is not None else 1
+    return (missing, dt or MISSING_TS, str(msg.get("evidence_id") or ""))
+
+
+def string_sort_key(msg: dict[str, Any]) -> tuple[str, str]:
+    return (str(msg.get("timestamp") or ""), str(msg.get("evidence_id") or ""))
 PACKET_THREADS = 25
 MAX_PACKET_THREADS = 25
 MAX_PACKET_BYTES = 1_500_000
@@ -26,15 +55,26 @@ MAX_ORIGINAL_BYTES = 200_000
 MAX_LONG_THREAD_FOR_PACKET = 16
 PEGGY_DISPLAY_HINTS = re.compile(r"\b(peggy|peggo|pegleg|peg\s*leg|peg)\b", re.I)
 COMMERCIAL_RETAIN = re.compile(
-    r"\b(itinerary|boarding\s*pass|e-?ticket|check-?in|reservation|booking|"
-    r"confirmation\s*(number|code)|flight|hotel|cruise|rental\s*car|"
-    r"medical|appointment|concert|festival|admission)\b",
+    r"\b(itinerary|boarding\s*pass|e-?ticket|check-?in|"
+    r"confirmation\s*(number|code|#)|booking\s*(ref|code|number)|"
+    r"reservation\s*(number|#)|hotel|cruise|rental\s*car|"
+    r"medical\s+appointment|concert|festival\s+admission|"
+    r"flight\s+[A-Z]{1,3}\s?\d{2,4})\b",
+    re.I,
+)
+STRONG_LIFE_EVIDENCE = re.compile(
+    r"\b(boarding\s*pass|e-?ticket|confirmation\s*(number|code|#)|"
+    r"booking\s*(ref|code|number)|reservation\s*(number|#)|"
+    r"flight\s+[A-Z]{1,3}\s?\d{2,4})\b",
     re.I,
 )
 COMMERCIAL_SUPPRESS = re.compile(
     r"\b(unsubscribe|newsletter|promo(?:tion)?|% off|special offer|weekly\s+deals|"
-    r"flash sale|coupon|rewards?\s+points|your\s+receipt|order\s+has\s+shipped|"
-    r"package\s+delivered|password\s+reset|verify\s+your\s+email)\b",
+    r"flash sale|coupon|rewards?\s+points|buy\s+points|rapid\s+rewards|"
+    r"your\s+receipt|order\s+has\s+shipped|package\s+delivered|"
+    r"password\s+reset|verify\s+your\s+email|privacy\s+policy|"
+    r"terms\s+of\s+(?:carriage|service)|manage\s+(?:your\s+)?preferences|"
+    r"policy\s+(?:change|update)s?)\b",
     re.I,
 )
 COMMERCIAL_UNCERTAIN = re.compile(
@@ -285,6 +325,9 @@ def gallery_attachment_action(filename: str, mime: str) -> str:
 
 def classify_commercial(msg: dict[str, Any]) -> dict[str, str]:
     subject = str(msg.get("subject") or "")
+    authored = str(msg.get("cleaned_body") or msg.get("body") or "")
+    forward = str(msg.get("forward_block") or "")
+    raw = str(msg.get("raw_body") or "")
     from_addr = ""
     parties = msg.get("from_parties") or []
     if parties:
@@ -292,18 +335,32 @@ def classify_commercial(msg: dict[str, Any]) -> dict[str, str]:
     elif msg.get("from_handle"):
         from_addr = str(msg.get("from_handle"))
     host = from_addr.split("@")[-1] if "@" in from_addr else from_addr
-    retain = bool(COMMERCIAL_RETAIN.search(subject))
-    suppress = bool(COMMERCIAL_SUPPRESS.search(subject) or SUPPRESS_HOST.search(from_addr) or SUPPRESS_HOST.search(host))
-    uncertain = bool(COMMERCIAL_UNCERTAIN.search(subject))
-    if retain:
+    life_blob = f"{subject}\n{authored}"
+    commercial_blob = f"{subject}\n{authored}\n{forward}\n{raw[:4000]}"
+    strong_life = bool(STRONG_LIFE_EVIDENCE.search(life_blob) or STRONG_LIFE_EVIDENCE.search(forward) or STRONG_LIFE_EVIDENCE.search(raw))
+    weak_life = bool(COMMERCIAL_RETAIN.search(life_blob) or COMMERCIAL_RETAIN.search(forward))
+    suppress = bool(
+        COMMERCIAL_SUPPRESS.search(commercial_blob)
+        or SUPPRESS_HOST.search(from_addr)
+        or SUPPRESS_HOST.search(host)
+        or TRACKING_HINT.search(raw)
+        or TRACKING_HINT.search(forward)
+    )
+    uncertain = bool(COMMERCIAL_UNCERTAIN.search(subject) or COMMERCIAL_UNCERTAIN.search(forward))
+    if strong_life:
         label = "commercial_retain"
-    elif suppress and not retain:
+    elif suppress:
         label = "commercial_suppress"
+    elif weak_life:
+        label = "commercial_retain"
     elif uncertain:
         label = "commercial_uncertain"
     else:
         label = "not_commercial"
-    return {"commercial_class": label, "from_host_class": "suppressed_host" if SUPPRESS_HOST.search(from_addr) else "ordinary"}
+    return {
+        "commercial_class": label,
+        "from_host_class": "suppressed_host" if SUPPRESS_HOST.search(from_addr) else "ordinary",
+    }
 
 
 def format_review_date(raw: str | None) -> str:
@@ -454,6 +511,83 @@ def authorship_census(messages: list[dict[str, Any]]) -> dict[str, int]:
     return counts
 
 
+def prepared_policy_census(threads: list[dict[str, Any]]) -> dict[str, Any]:
+    from memorybox.ops.i14_prepared_text import ON_WROTE, TRACKING_HINT, URL_RE, is_forward
+
+    lex_mismatch_threads = 0
+    display_mismatch_threads = 0
+    reply_header_messages = 0
+    reply_header_threads = 0
+    relay_dup_messages = 0
+    relay_dup_threads = 0
+    forwarded_commercial_messages = 0
+    forwarded_tracking_messages = 0
+    original_and_forward_dup_messages = 0
+    for thread in threads:
+        msgs = list(thread.get("messages") or [])
+        if not msgs:
+            continue
+        lex = [str(m.get("evidence_id")) for m in sorted(msgs, key=string_sort_key)]
+        inst = [str(m.get("evidence_id")) for m in sorted(msgs, key=message_sort_key)]
+        shown = [str(m.get("evidence_id")) for m in msgs]
+        if lex != inst:
+            lex_mismatch_threads += 1
+        if shown != inst:
+            display_mismatch_threads += 1
+        header_hit = False
+        dup_hit = False
+        priors: list[str] = []
+        for msg in msgs:
+            cleaned = str(msg.get("cleaned_body") or "")
+            raw = str(msg.get("raw_body") or msg.get("body") or "")
+            fwd = str(msg.get("forward_block") or "")
+            if ON_WROTE.search(cleaned) or ("wrote:" in cleaned.lower() and ON_WROTE.search("\n" + cleaned)):
+                reply_header_messages += 1
+                header_hit = True
+            subj = str(msg.get("subject") or "")
+            if is_forward(subject=subj, body=raw) or fwd:
+                if str(msg.get("commercial_class") or "") in {
+                    "commercial_suppress",
+                    "commercial_retain",
+                    "commercial_uncertain",
+                }:
+                    forwarded_commercial_messages += 1
+                if URL_RE.search(raw) and TRACKING_HINT.search(raw):
+                    forwarded_tracking_messages += 1
+            if str(msg.get("forward_omitted") or "") == "duplicate_of_thread_message":
+                original_and_forward_dup_messages += 1
+                relay_dup_messages += 1
+                dup_hit = True
+            elif fwd and forward_overlap(fwd, priors):
+                relay_dup_messages += 1
+                dup_hit = True
+            if cleaned:
+                priors.append(cleaned)
+            if raw:
+                priors.append(raw)
+        if header_hit:
+            reply_header_threads += 1
+        if dup_hit:
+            relay_dup_threads += 1
+    return {
+        "lexicographic_iso_mismatch_threads": lex_mismatch_threads,
+        "display_order_mismatch_threads": display_mismatch_threads,
+        "reply_header_in_cleaned": {"messages": reply_header_messages, "threads": reply_header_threads},
+        "relay_or_duplicate_forward": {"messages": relay_dup_messages, "threads": relay_dup_threads},
+        "forwarded_commercial_messages": forwarded_commercial_messages,
+        "forwarded_with_tracking_urls_messages": forwarded_tracking_messages,
+        "original_and_forward_duplicate_messages": original_and_forward_dup_messages,
+        "timestamp_rule": "payload_sent_at_utc_instant",
+        "tie_break": "evidence_id",
+    }
+
+
+def forward_overlap(forward: str, priors: list[str]) -> bool:
+    from memorybox.ops.i14_prepared_text import forward_duplicates_prior
+
+    return forward_duplicates_prior(forward, priors)
+
+
 def _format_party_line(rows: list[dict[str, Any]], *, empty: str = "(none)") -> str:
     if not rows:
         return empty
@@ -557,6 +691,11 @@ def format_thread_txt(thread: dict[str, Any]) -> str:
                     "Forwarded content (explicit, not voice, not reply-history):",
                     str(msg.get("forward_block")),
                 ]
+            )
+        elif msg.get("forward_omitted"):
+            lines.append(
+                "Forwarded content omitted from prepared text "
+                f"({msg.get('forward_omitted')}; immutable original via Evidence-ref)."
             )
         lines.append("-" * 78)
     lines.append(f"END THREAD  {tid}")

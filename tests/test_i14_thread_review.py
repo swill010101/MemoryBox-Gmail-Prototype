@@ -187,7 +187,7 @@ class CommercialAndBounds(unittest.TestCase):
     def test_commercial_classes(self) -> None:
         retain = review.classify_commercial({"subject": "Your United itinerary", "from_handle": "a@example.test"})
         suppress = review.classify_commercial({"subject": "Weekly deals 20% off", "from_handle": "x@mailchimp.com"})
-        uncertain = review.classify_commercial({"subject": "Order confirmation #12", "from_handle": "store@example.test"})
+        uncertain = review.classify_commercial({"subject": "Payment received for your order", "from_handle": "store@example.test"})
         self.assertEqual(retain["commercial_class"], "commercial_retain")
         self.assertEqual(suppress["commercial_class"], "commercial_suppress")
         self.assertEqual(uncertain["commercial_class"], "commercial_uncertain")

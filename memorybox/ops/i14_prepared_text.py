@@ -29,7 +29,7 @@ LIST_FOOTER = re.compile(
     r"(?is)\n(?:-- \n.{0,400}|To unsubscribe\b.{0,400})\s*\Z",
 )
 GT_QUOTE = re.compile(r"(?m)^>+.*$")
-ON_WROTE = re.compile(r"(?im)^\s*On .{8,400}?\bwrote:\s*$")
+ON_WROTE = re.compile(r"(?is)(?:^|\n)\s*On .{8,500}?\bwrote:\s*")
 ORIGINAL_MSG = re.compile(r"(?im)^\s*-{5,}Original Message-{5,}\s*$")
 OUTLOOK_FROM_SENT = re.compile(
     r"(?im)^\s*From:\s+.+\nSent:\s+.+\n(?:To:\s+.+\n)?(?:Cc:\s+.+\n)?(?:Subject:\s+.+\n)?"
@@ -47,6 +47,16 @@ FWD_MARK = re.compile(
     r"(?im)^\s*(?:Begin forwarded message:|-{3,}\s*Forwarded (?:Message|message)\s*-{3,})\s*$"
 )
 FWD_SUBJ = re.compile(r"^\s*(fwd?|fw)\s*:", re.I)
+URL_RE = re.compile(r"(?i)\b(?:https?://|www\.)[^\s<>\]\"']+")
+TRACKING_HINT = re.compile(
+    r"(?i)utm_|unsubscribe|prefcenter|prefcentre|click\.|smetrics|"
+    r"view(?: this)? email in (?:your )?browser|manage (?:your )?preferences|"
+    r"privacy policy|terms (?:of|and) (?:use|service|carriage)|all rights reserved"
+)
+MARKETING_TAIL = re.compile(
+    r"(?is)\n(?:to unsubscribe|unsubscribe|manage (?:your )?preferences|"
+    r"privacy policy|this email was sent to|©|&copy;|all rights reserved).*\Z"
+)
 RESIDUE_HOTMAIL = HOTMAIL_DATE_BLOCK
 RESIDUE_ON_WROTE = ON_WROTE
 RESIDUE_ORIGINAL = ORIGINAL_MSG
@@ -62,12 +72,48 @@ class PreparedText:
     signature_removed: bool
     list_footer_removed: bool
     residue_class: str | None
+    urls_stripped: bool = False
+    forward_omitted: str = ""
 
 
 def is_forward(*, subject: str, body: str) -> bool:
-    if FWD_SUBJ.match(subject or ""):
-        return True
+    """True only for an explicit forward marker, not a Fwd: subject with reply history."""
     return bool(FWD_MARK.search(body or ""))
+
+
+def is_fwd_subject(subject: str) -> bool:
+    return bool(FWD_SUBJ.match(subject or ""))
+
+
+def sanitize_prepared(text: str) -> tuple[str, bool]:
+    """Drop live URLs and trailing marketing/legal chrome from prepared text only."""
+    raw = text or ""
+    cut = URL_RE.sub("", raw)
+    cut = MARKETING_TAIL.sub("", cut)
+    urls = cut != raw
+    compact = re.sub(r"\n{3,}", "\n\n", cut).strip()
+    return compact, urls
+
+
+def _norm_blob(text: str) -> str:
+    return re.sub(r"\s+", " ", (text or "").strip()).lower()
+
+
+def forward_duplicates_prior(forward: str, priors: list[str]) -> bool:
+    """True when the forwarded body is already represented as a prior thread message."""
+    blob = _norm_blob(forward)
+    if len(blob) < 80:
+        return False
+    for prior in priors:
+        other = _norm_blob(prior)
+        if len(other) < 80:
+            continue
+        if blob == other:
+            return True
+        shorter, longer = (blob, other) if len(blob) <= len(other) else (other, blob)
+        if shorter in longer and len(shorter) >= 80:
+            return True
+    return False
 
 
 def _first_match(
@@ -170,25 +216,35 @@ def prepare_message_text(
     forward = ""
     method = "none"
     quote_removed = False
-    if is_forward(subject=subject, body=body):
+    forward_omitted = ""
+    urls_stripped = False
+    explicit = is_forward(subject=subject, body=body)
+    if explicit:
         fm = FWD_MARK.search(body)
-        if fm:
-            authored = body[: fm.start()].strip()
-            forward = body[fm.end() :].strip()
-            method = "explicit_forward"
+        authored = body[: fm.start()].strip() if fm else ""
+        forward = body[fm.end() :].strip() if fm else body.strip()
+        method = "explicit_forward"
+        cut, cut_name, rem = _cut_reply_history(authored)
+        if rem:
+            authored = cut
+            quote_removed = True
+            method = f"explicit_forward_{cut_name}"
+        if forward_duplicates_prior(forward, prior_authored or []):
+            forward = ""
+            forward_omitted = "duplicate_of_thread_message"
+            method = "explicit_forward_duplicate_omitted"
+            quote_removed = True
         else:
-            m, name = _first_match(body, REPLY_SPECS)
-            if m and m.start() > 0:
-                authored = body[: m.start()].strip()
-                forward = body[m.start() :].strip()
-                method = "explicit_forward_headers"
-            else:
-                authored = ""
-                forward = body.strip()
-                method = "explicit_forward_body"
-        quote_removed = False
+            quote_removed = False
     else:
         authored, method, quote_removed = _cut_reply_history(body)
+        while authored:
+            nxt, name, rem = _cut_reply_history(authored)
+            if not rem or nxt == authored:
+                break
+            authored = nxt
+            quote_removed = True
+            method = name
 
     for prior in prior_authored or []:
         next_authored = _remove_prior_blob(authored, prior)
@@ -197,8 +253,21 @@ def prepare_message_text(
             quote_removed = True
             if method == "none":
                 method = "prior_thread_body"
+        if forward:
+            trimmed = _remove_prior_blob(forward, prior)
+            if trimmed != forward:
+                forward = trimmed
+                quote_removed = True
+                if not forward.strip():
+                    forward_omitted = forward_omitted or "duplicate_of_thread_message"
 
     authored, sig_removed, list_removed = _strip_sig_and_list(authored)
+    authored, url_a = sanitize_prepared(authored)
+    if forward:
+        forward, url_f = sanitize_prepared(forward)
+        urls_stripped = url_a or url_f
+    else:
+        urls_stripped = url_a
     residue = classify_residue(authored)
     return PreparedText(
         authored=authored,
@@ -208,6 +277,8 @@ def prepare_message_text(
         signature_removed=sig_removed,
         list_footer_removed=list_removed,
         residue_class=residue,
+        urls_stripped=urls_stripped,
+        forward_omitted=forward_omitted,
     )
 
 
