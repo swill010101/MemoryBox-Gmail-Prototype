@@ -1,6 +1,6 @@
 # FlightSim — migration 036 applied (empty schema)
 
-**Status:** Empty prepared-communications schema is **applied**. Do not re-apply 036. Do not load rows, activate a generation, or publish.
+**Status:** Empty prepared-communications schema is **applied**, and serve was recycled through `startmb.cmd -Restart`. Do not re-apply 036. Do not load rows, activate a generation, or publish.
 
 **SQL identity:** commit `cbd5434314ac09c9931237e5dd2f4150e064e67c` blob `399f15b27207440a08380f970779987e3b5295d9` (`memorybox/migrations/036_p2_i14_prepared_communications.sql`).
 
@@ -24,7 +24,11 @@
 | Post-apply `/health` | `ok=true`, pending empty, `applied_n=36` |
 | Historian Capture | email `ok`, `provider_key=namecheap_privateemail_imap_smtp`; scheduled `historian_capture_email` **Active** |
 | Load | **not** performed |
-| Serve process recycle | **not** completed (no SSH/WinRM/PsExec/task-create from Toms-Desktop). Live `/health` already green because pending is computed from disk+ledger. In-memory uvicorn may still be the pre-checkout process until a FlightSim console `.\startmb.cmd -Restart`. |
+| Serve process recycle | **completed** 2026-09-13 ~17:49 local. `startmb.cmd -Restart` spawned by repository venv `C:\MemoryBox\.venv\Scripts\python.exe`. `/health` dropped then returned `ok` within ~4s. Pending stayed empty (startup migrate applied nothing). |
+
+## Closeout (2026-09-13)
+
+Serve recycle verified: `/health` ok, ledger 001–036, pending empty, prepared tables 0, active generations 0, baseline unchanged, 035 lineage empty, Historian Capture email ok and `historian_capture_email` Active, Git detached `cbd5434` tracked-clean, 036 blob `399f15b27207440a08380f970779987e3b5295d9`.
 
 ## Rollback
 
@@ -32,4 +36,4 @@ Restore the verified dump only if founder authorizes. Do not DROP 036 objects ad
 
 ## Git after apply
 
-FlightSim `C:\MemoryBox`: detached `cbd5434`, tracked-clean. Loading prepared email requires a new founder authorization.
+FlightSim `C:\MemoryBox`: detached `cbd5434`, tracked-clean.
