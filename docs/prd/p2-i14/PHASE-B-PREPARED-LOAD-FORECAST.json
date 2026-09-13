@@ -1,0 +1,58 @@
+{
+  "ok": true,
+  "kind": "counts_only_forecast_and_rehearsal",
+  "flightsim_writes": false,
+  "activation_called": false,
+  "rule_id": "i14-household-email-consolidate-v1",
+  "algo_version": "i14-prepared-email-v1",
+  "expected_generations": 1,
+  "inventory_from_step2_audit": {
+    "household_email_assigned_rows": 91275,
+    "household_email_hold_rows": 6,
+    "within_source_hash_extra_rows": 0,
+    "cross_extract_hash_groups": 7,
+    "cross_extract_hash_extra_rows": 0,
+    "rfc_own_fanout_token_groups": 13,
+    "rfc_own_extra_evidence_rows": 13,
+    "note": "RFC fanout is corpus-wide, not proven email-only. Identity extras are omitted from display, not deleted."
+  },
+  "completeness_equation": "eligible = displayed + identity_duplicates_omitted + excluded_with_reason + unexplained; unexplained must be 0",
+  "forecast_buckets": {
+    "eligible_source_messages": 91275,
+    "excluded_hold_not_in_stream": 6,
+    "identity_duplicates_omitted_upper_bound": 13,
+    "displayed_lower_bound": 91262,
+    "unexplained": 0,
+    "threads": null,
+    "participants": null,
+    "attachments": null,
+    "commercial_classes": {
+      "retain_life_evidence": null,
+      "suppress_default": null,
+      "uncertain": null,
+      "not_commercial": null
+    },
+    "voice_rows": null,
+    "unresolved_identities": null,
+    "quote_quality_exceptions": null
+  },
+  "null_means": "Not knowable without a production unpublished load. Disposable rehearsal does not forecast those class counts.",
+  "disposable_rehearsal": {
+    "database_kind": "disposable_not_memorybox",
+    "messages_loaded_in_contract_test": "synthetic household thread plus duplicate extract, forward, unknown participant, spam exclude, similar-but-distinct",
+    "scale_audit_rows": 400,
+    "scale_audit_elapsed_ms_observed": 83,
+    "scale_load_timeout_budget_s": 30,
+    "prior_188656_audit_budget_s": 180,
+    "batch_size": 200,
+    "statement_timeout": "15s",
+    "quoted_or_forwarded_not_measured_from_bodies": true
+  },
+  "operational_design_not_executed": {
+    "preflight": "counts-only audit; pending empty; backup; refuse activate",
+    "load": "one unpublished validated generation; checksum of displayed evidence ids",
+    "validate": "completeness equation zero unexplained; five prepared tables; no active view rows",
+    "rollback": "DELETE generation CASCADE; evidence and 035 production rows except this load's identities must be designed in the load authorization",
+    "not_this_commit": "no FlightSim insert, no activate, no Gallery, no I11A"
+  }
+}

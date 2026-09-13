@@ -984,6 +984,15 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Poll and ingest only; do not send questions, reminders, or no-response advances",
     )
+    p_i14_audit = sub.add_parser(
+        "i14-duplicate-audit",
+        help="Read-only I14 duplicate/consolidation audit (disposable DSN; refuses FlightSim)",
+    )
+    p_i14_load = sub.add_parser(
+        "i14-prepared-load-rehearse",
+        help="Household-email prepared load on disposable Postgres only; never activates",
+    )
+    p_i14_load.add_argument("--source-id", action="append", default=[])
 
     args = parser.parse_args(argv)
     if args.cmd in {"prove-p2-i1", "prove-p2-i8b", "prove-p2-i9"} or (args.cmd == "recognition-people-apply" and not args.dry_run):
@@ -1962,6 +1971,15 @@ def main(argv: list[str] | None = None) -> int:
         from memorybox.historian_capture.cadence import cli_hc_tick
 
         return cli_hc_tick(dry_run=bool(args.dry_run))
+
+    if args.cmd == "i14-duplicate-audit":
+        from memorybox.ops.i14_duplicate_audit import main as audit_main
+
+        return audit_main([])
+
+    if args.cmd == "i14-prepared-load-rehearse":
+        print(json.dumps({"ok": False, "error": "use_unittest_rehearsal_not_live_dsn"}))
+        return 2
 
     if args.cmd == "serve":
         import uvicorn

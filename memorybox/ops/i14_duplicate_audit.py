@@ -2,7 +2,9 @@
 
 Does not seed, backfill, ingest, or write production tables. Session TEMP TABLEs only;
 aggregates in SQL; always rolls back. Refuse dbname memorybox unless
-MEMORYBOX_I14_AUDIT_ALLOW_MEMORYBOX_DB=1. Do not run on FlightSim until founder-authorized.
+MEMORYBOX_I14_AUDIT_ALLOW_MEMORYBOX_DB=1. Always refuse a FlightSim DSN.
+Quoted/forwarded overlap is not inferred from body text; similar distinct
+identity keys are never counted as duplicates.
 
 PostgreSQL forbids CREATE TEMP TABLE under SET TRANSACTION READ ONLY (catalog writes to
 pg_class). The permitted path is therefore: autocommit off, START TRANSACTION (not READ
@@ -31,6 +33,8 @@ import sys
 import time
 from pathlib import Path
 from typing import Any
+
+from memorybox.ops.i14_dsn_guard import ProductionDSNError, refuse_live_dsn
 
 HASH_SHAPE = re.compile(r"^[a-f0-9]{64}$")
 HEX64 = re.compile(r"\b[a-f0-9]{64}\b", re.I)
@@ -152,10 +156,54 @@ def assert_counts_only(payload: dict[str, Any]) -> None:
             raise AuditError("audit_output_contains_uri_or_filename")
 
 
+def peak_working_set_mb() -> int | None:
+    try:
+        if os.name == "nt":
+            import ctypes
+            from ctypes import wintypes
+
+            class PROCESS_MEMORY_COUNTERS(ctypes.Structure):
+                _fields_ = [
+                    ("cb", wintypes.DWORD),
+                    ("PageFaultCount", wintypes.DWORD),
+                    ("PeakWorkingSetSize", ctypes.c_size_t),
+                    ("WorkingSetSize", ctypes.c_size_t),
+                    ("QuotaPeakPagedPoolUsage", ctypes.c_size_t),
+                    ("QuotaPagedPoolUsage", ctypes.c_size_t),
+                    ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t),
+                    ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
+                    ("PagefileUsage", ctypes.c_size_t),
+                    ("PeakPagefileUsage", ctypes.c_size_t),
+                ]
+
+            counters = PROCESS_MEMORY_COUNTERS()
+            counters.cb = ctypes.sizeof(PROCESS_MEMORY_COUNTERS)
+            handle = ctypes.windll.kernel32.GetCurrentProcess()
+            if ctypes.windll.psapi.GetProcessMemoryInfo(
+                handle, ctypes.byref(counters), counters.cb
+            ):
+                return int(counters.PeakWorkingSetSize / (1024 * 1024))
+            return None
+        import resource
+
+        rss = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
+        if rss > 10_000_000:
+            return int(rss / (1024 * 1024))
+        return int(rss / 1024)
+    except Exception:
+        return None
+
+
 def _require_not_memorybox(conn: Any) -> str:
     row = catalog_execute(conn, "SELECT current_database() AS d").fetchone()
     name = str(row["d"] if isinstance(row, dict) else row[0]).lower()
+    info = getattr(conn, "info", None)
+    host = str(getattr(info, "host", "") or "") if info is not None else ""
     allow = os.environ.get("MEMORYBOX_I14_AUDIT_ALLOW_MEMORYBOX_DB", "").strip() == "1"
+    try:
+        refuse_live_dsn(host, None if allow else name)
+    except ProductionDSNError as exc:
+        raise AuditError(str(exc)) from None
     if name == "memorybox" and not allow:
         raise AuditError("refused_memorybox_dbname")
     return name
@@ -560,6 +608,24 @@ def _rfc_fanout(conn: Any) -> dict[str, Any]:
     }
 
 
+def _consolidation_classes(
+    within: dict[str, Any],
+    cross: dict[str, Any],
+    rfc: dict[str, Any],
+) -> dict[str, Any]:
+    """Counts-only identity classes. Bodies are never read."""
+    rfc_extra = int(rfc.get("extra_evidence_rows") or 0) if rfc.get("present") and not rfc.get("skipped") else 0
+    return {
+        "rule_id": "i14-household-email-consolidate-v1",
+        "exact_duplicate_evidence_extra_rows": int(within.get("extra_rows") or 0),
+        "same_communication_multiple_extracts_extra_rows": int(cross.get("extra_rows") or 0) + rfc_extra,
+        "quoted_or_forwarded_not_duplicate_evidence": 0,
+        "quoted_or_forwarded_not_measured_from_bodies": True,
+        "distinct_identity_never_consolidated": True,
+        "do_not_merge_or_delete_evidence": True,
+    }
+
+
 def plan_cost_tree(plan: Any) -> list[dict[str, Any]]:
     """Sanitized EXPLAIN nodes: node type and costs only."""
     out: list[dict[str, Any]] = []
@@ -631,7 +697,14 @@ def run_audit(
         "persistent_write_gate": True,
         "loaded_rows": int(loaded),
         "elapsed_ms": int((time.monotonic() - started) * 1000),
+        "peak_working_set_mb": peak_working_set_mb(),
+        "batch_size": int(batch_size),
     }
+    report["consolidation"] = _consolidation_classes(
+        report["within_source_duplicates"],
+        report["cross_source_same_stream_or_cluster"],
+        report["rfc_own_fanout"],
+    )
     _deadline_guard(deadline_mono)
     assert_counts_only(report)
     emit_progress({"stage": "complete", "loaded": int(loaded), "elapsed_ms": report["elapsed_ms"]})
@@ -647,6 +720,10 @@ def main(argv: list[str] | None = None) -> int:
     dsn = os.environ.get("MEMORYBOX_DATABASE_URL")
     if not dsn:
         raise AuditError("MEMORYBOX_DATABASE_URL_missing")
+    try:
+        refuse_live_dsn(dsn, None)
+    except ProductionDSNError as exc:
+        raise AuditError(str(exc)) from None
     stream_map = None
     if "--stream-map" in args:
         idx = args.index("--stream-map")

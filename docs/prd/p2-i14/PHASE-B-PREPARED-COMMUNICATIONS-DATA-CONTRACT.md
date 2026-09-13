@@ -1,6 +1,6 @@
 # I14 Phase B — prepared communications data contract (proposal)
 
-**Status:** Locked in migration **036** (`memorybox/migrations/036_p2_i14_prepared_communications.sql`). **Not applied.**  
+**Status:** Locked in migration **036**. Empty schema **applied** on FlightSim (2026-09-13). Prepared **rows** are not loaded.  
 **Not 035.** Migration 035 stores lineage/identity tables, not threads or cleaned text.  
 **Gate:** Person Pilot 1 and Person Pilot 2 packets **accepted** (2026-09-13). Distinct from I11A Peggy Narrative / Words of a Life. See [PHASE-B-036-SCHEMA-DECISION.md](PHASE-B-036-SCHEMA-DECISION.md).
 
@@ -8,7 +8,7 @@ Explore Person Ask (`Show me Peggy` / `Show me Sue`) later attaches **meaningful
 
 Suppression is **Gallery default retrieval only**. It never deletes or mutates immutable `evidence`.
 
-## Schema (migration 036, unapplied)
+## Schema (migration 036)
 
 Physical names are `comms_prepared_*`. Intent below.
 
@@ -89,4 +89,4 @@ Unsupported or unsafe types remain visible as `record_only`. Gallery may later v
 
 Per thread, same marks as the packet: Accept, Split here, Merge with another, Incorrect participant, Incorrect ordering, Quoted text removed incorrectly, Missing message, Needs investigation.
 
-Person Pilot 1 and Sue (Pilot 2) Accept are complete. **Applying** empty 036 tables, loading prepared rows, and Gallery publication remain **separate** founder authorizations.
+Person Pilot 1 and Sue (Pilot 2) Accept are complete. Empty 036 is applied. **Loading** prepared rows, generation activation, and Gallery publication remain **separate** founder authorizations.
