@@ -1,8 +1,8 @@
 # I14 Phase B — prepared communications data contract (proposal)
 
-**Status:** Design proposal only. **Do not author a migration.**  
+**Status:** Locked for email prepared tables. Candidate 036 SQL is proposed, not registered as a migration.  
 **Not 035.** Migration 035 stores lineage/identity tables, not threads or cleaned text.  
-**Gate:** Person Pilot 1 representative packet **accepted** (2026-09-13). Person Pilot 2 (Sue) packet emitted for visual review. Distinct from I11A Peggy Narrative / Words of a Life.
+**Gate:** Person Pilot 1 and Person Pilot 2 packets **accepted** (2026-09-13). Distinct from I11A Peggy Narrative / Words of a Life. See [PHASE-B-036-SCHEMA-DECISION.md](PHASE-B-036-SCHEMA-DECISION.md).
 
 Explore Person Ask (`Show me Peggy` / `Show me Sue`) later attaches **meaningful** prepared communication cards after photos without a Communications click. Canonical threads keep full conversational context. Narrative later uses **authenticated Pilot-authored** text only. A new Ask abandons unfinished background communications retrieval.
 
@@ -81,4 +81,4 @@ Unsupported types remain visible as records. Gallery views supported images; PDF
 
 Per thread, same marks as the packet: Accept, Split here, Merge with another, Incorrect participant, Incorrect ordering, Quoted text removed incorrectly, Missing message, Needs investigation.
 
-Person Pilot 1 Accept, then Sue (Pilot 2), then a **separate** production-load authorization remain mandatory.
+Person Pilot 1 and Sue (Pilot 2) Accept are complete. Promoting 036 into `memorybox/migrations/`, applying empty tables, loading prepared rows, and Gallery publication remain **separate** founder authorizations.

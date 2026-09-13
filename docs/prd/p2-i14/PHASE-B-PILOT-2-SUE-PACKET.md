@@ -1,11 +1,9 @@
 # I14 Phase B — Person Pilot 2 representative packet (Sue)
 
 **Date:** 2026-09-13  
-**Status:** Re-emitted after T-0001 / T-1265 defects. **Not accepted.**  
+**Status:** **Accepted** 2026-09-13 (12 / 12 packet threads). See [PHASE-B-PILOT-2-SUE-PACKET-ACCEPT.md](PHASE-B-PILOT-2-SUE-PACKET-ACCEPT.md).  
 **Private folder (gitignored):** `working/i14-thread-review-pilot-2/`  
 **Counts:** `docs/prd/p2-i14/PHASE-B-STEP-2-SUE-PREVIEW-COUNTS.json`
-
-Start visual review at **T-0001**. Do not treat this packet as accepted.
 
 ## Timestamp rule
 

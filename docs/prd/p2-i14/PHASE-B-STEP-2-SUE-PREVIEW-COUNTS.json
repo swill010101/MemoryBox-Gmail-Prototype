@@ -54,10 +54,17 @@
   "excluded": 0,
   "excluded_reasons": {},
   "focal_confirmed_addresses": 1,
-  "founder_accept_recorded": false,
+  "founder_accept_recorded": true,
   "ledger_unique_addresses": 5,
   "ledger_unique_people": 4,
   "load_authorization": false,
+  "packet_accept": {
+    "accept_thread_unique": 12,
+    "date": "2026-09-13",
+    "quoted_text_removed_incorrectly": 0,
+    "status": "accepted",
+    "threads_in_packet": 12
+  },
   "load_contract": "open INDEX then packet-001.txt; open one originals/Evidence-ref.txt at a time",
   "mark_counts": {
     "accept_thread": 0,

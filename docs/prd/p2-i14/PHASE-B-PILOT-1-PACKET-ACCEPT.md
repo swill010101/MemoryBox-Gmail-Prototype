@@ -14,6 +14,6 @@ No `quoted_text_removed_incorrectly` mark remains on this packet.
 
 ## Still blocked
 
-- Candidate 036 / `comms_*` writes / Gallery publication / production load.
+- Promote/apply 036, `comms_*` seed, prepared-row load, Gallery publication.
 
-Person Pilot 2 (Sue) identity is now bound (one confirmed email). Reconstruction packet is a separate artifact.
+Person Pilot 2 (Sue) packet is now **accepted** (12 / 12). See `PHASE-B-PILOT-2-SUE-PACKET-ACCEPT.md`.
