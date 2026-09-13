@@ -44,7 +44,7 @@
     "missing_or_malformed_message_id",
     "duplicate_across_extracts",
     "likely_incorrect_split",
-    "no_peggy_participation"
+    "no_focal_participation"
   ],
   "completeness_ok": true,
   "deliberate_duplicates": 0,
