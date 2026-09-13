@@ -1,0 +1,205 @@
+{
+  "ambiguity_detector": "unverified_header_address",
+  "authorship": {
+    "ambiguous_participant": 1125,
+    "canonical_messages": 2332,
+    "commercial_retain": 63,
+    "commercial_suppress": 34,
+    "commercial_uncertain": 51,
+    "display_name_only_peggy_rejected": 17,
+    "no_authenticated_peggy_participation": 0,
+    "not_commercial": 2184,
+    "peggy_unresolved_direction": 0,
+    "sent_by_authenticated_other": 1452,
+    "sent_by_authenticated_peggy": 346,
+    "sent_to_peggy_authored_other": 1986,
+    "unverified_recipient": 1026,
+    "unverified_sender": 534,
+    "voice_corpus": 346
+  },
+  "case_coverage": {
+    "ambiguous_participant_identity": 714,
+    "attachment_indicators": 492,
+    "boundary_candidate_merge": 20,
+    "boundary_candidate_split": 233,
+    "changed_subject": 371,
+    "commercial_retain": 54,
+    "commercial_suppress": 29,
+    "commercial_uncertain": 44,
+    "duplicate_across_extracts": 0,
+    "forwarded_message": 889,
+    "likely_incorrect_merge": 10,
+    "likely_incorrect_split": 0,
+    "long_thread": 11,
+    "missing_or_malformed_message_id": 0,
+    "multiple_participants": 806,
+    "no_focal_participation": 0,
+    "normal_two_person": 282,
+    "focal_voice": 314,
+    "quoted_reply_stripping": 384,
+    "threader_split_or_combine": 10,
+    "to_focal_other_author": 1467
+  },
+  "case_missing": [
+    "missing_or_malformed_message_id",
+    "duplicate_across_extracts",
+    "likely_incorrect_split",
+    "no_peggy_participation"
+  ],
+  "completeness_ok": true,
+  "deliberate_duplicates": 0,
+  "displayed": 2332,
+  "duplicate_classes": {},
+  "eligible": 2332,
+  "excluded": 0,
+  "excluded_reasons": {},
+  "focal_confirmed_addresses": 1,
+  "founder_accept_recorded": false,
+  "ledger_unique_addresses": 5,
+  "ledger_unique_people": 4,
+  "load_authorization": false,
+  "load_contract": "open INDEX then packet-001.txt; open one originals/Evidence-ref.txt at a time",
+  "mark_counts": {
+    "accept_thread": 0,
+    "incorrect_ordering": 0,
+    "incorrect_participant": 0,
+    "merge_with_another": 0,
+    "missing_message": 0,
+    "needs_investigation": 0,
+    "quoted_text_removed_incorrectly": 0,
+    "split_here": 0
+  },
+  "ok": true,
+  "packet_sizes": {
+    "index_bytes": 2888,
+    "limits": {
+      "max_original_bytes": 200000,
+      "max_packet_bytes": 1500000,
+      "max_threads": 25
+    },
+    "message_count_written": 21,
+    "original_bytes_max": 23203,
+    "original_bytes_total": 88080,
+    "original_files": 21,
+    "packet_bytes": 82887,
+    "packet_files": 1,
+    "readme_bytes": 1629,
+    "thread_count_written": 11
+  },
+  "person_gate": "pilot_2",
+  "person_pilot": 2,
+  "prepared_quote_residue": {
+    "any_residue": {
+      "messages": 26,
+      "threads": 20
+    },
+    "hotmail_date_subject_from_to": {
+      "messages": 0,
+      "threads": 0
+    },
+    "on_wrote": {
+      "messages": 16,
+      "threads": 11
+    },
+    "original_message": {
+      "messages": 1,
+      "threads": 1
+    },
+    "outlook_from_sent": {
+      "messages": 9,
+      "threads": 9
+    }
+  },
+  "prepared_text_actions": {
+    "clean_methods": {
+      "explicit_forward": 811,
+      "explicit_forward_body": 120,
+      "explicit_forward_headers": 17,
+      "gt_quote_inline": 241,
+      "none": 727,
+      "on_wrote": 324,
+      "on_wrote_after_marker": 2,
+      "outlook_from_sent": 90
+    },
+    "flags": {
+      "explicit_forward": {
+        "messages": 947,
+        "threads": 890
+      },
+      "list_footer_removed": {
+        "messages": 24,
+        "threads": 22
+      },
+      "quote_history_removed": {
+        "messages": 670,
+        "threads": 384
+      },
+      "signature_removed": {
+        "messages": 242,
+        "threads": 202
+      },
+      "voice_corpus": {
+        "messages": 346,
+        "threads": 314
+      }
+    }
+  },
+  "private_review_emitted": true,
+  "production_i14_writes": false,
+  "raw_quote_markers": {
+    "any_quote_or_forward_marker": {
+      "messages": 1501,
+      "threads": 1041
+    },
+    "explicit_forward_marker": {
+      "messages": 811,
+      "threads": 761
+    },
+    "gt_quote": {
+      "messages": 712,
+      "threads": 483
+    },
+    "hotmail_date_subject_from_to": {
+      "messages": 6,
+      "threads": 6
+    },
+    "on_wrote": {
+      "messages": 433,
+      "threads": 283
+    },
+    "original_message": {
+      "messages": 14,
+      "threads": 14
+    },
+    "outlook_from_sent": {
+      "messages": 128,
+      "threads": 97
+    }
+  },
+  "read_only": true,
+  "representative_coverage": {
+    "ambiguous_participant_identity": "present",
+    "attachment_indicators": "present",
+    "boundary_candidate_merge": "present",
+    "boundary_candidate_split": "present",
+    "changed_subject": "present",
+    "commercial_retain": "present",
+    "commercial_suppress": "present",
+    "commercial_uncertain": "present",
+    "duplicate_across_extracts": "not_present_in_corpus",
+    "forwarded_message": "present",
+    "likely_incorrect_merge": "present",
+    "likely_incorrect_split": "not_present_in_corpus",
+    "long_thread": "present",
+    "missing_or_malformed_message_id": "not_present_in_corpus",
+    "multiple_participants": "present",
+    "no_focal_participation": "not_present_in_corpus",
+    "normal_two_person": "present",
+    "focal_voice": "present",
+    "quoted_reply_stripping": "present",
+    "to_focal_other_author": "present"
+  },
+  "second_person_required": true,
+  "thread_count": 1590,
+  "unexplained": 0
+}

@@ -70,6 +70,17 @@ class AuthorshipLedger(unittest.TestCase):
         )
         self.assertEqual(sent_by["authorship_label"], "authenticated Sue")
         self.assertTrue(sent_by["voice_corpus"])
+        sample = review.format_thread_txt(
+            {
+                "preview_thread_id": "T-0001",
+                "person_pilot": 2,
+                "cases": ["peggy_voice", "to_peggy_other_author"],
+                "messages": [],
+            }
+        )
+        self.assertIn("focal_voice", sample)
+        self.assertIn("to_focal_other_author", sample)
+        self.assertNotIn("peggy_voice", sample)
 
     def test_parse_marks_counts_unique_accepts(self) -> None:
         parsed = review.parse_marks(

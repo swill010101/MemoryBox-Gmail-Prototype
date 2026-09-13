@@ -14,7 +14,6 @@ No `quoted_text_removed_incorrectly` mark remains on this packet.
 
 ## Still blocked
 
-- Person Pilot 2 (Sue) reconstruction packet: Sue Will has **zero** confirmed email contact points and **zero** confirmed `communication_identities` rows. Voice corpus and address-ledger authentication cannot run.
 - Candidate 036 / `comms_*` writes / Gallery publication / production load.
 
-Do not invent Sue addresses. Do not use display-name matching as the authenticator.
+Person Pilot 2 (Sue) identity is now bound (one confirmed email). Reconstruction packet is a separate artifact.

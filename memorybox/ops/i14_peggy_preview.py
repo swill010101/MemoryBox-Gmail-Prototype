@@ -564,6 +564,16 @@ def counts_report(pack: dict[str, Any], *, marks: dict[str, str] | None = None) 
         report["representative_coverage"] = dict(pack.get("representative_coverage") or {})
     if pack.get("packet_accept"):
         report["packet_accept"] = dict(pack.get("packet_accept") or {})
+    if int(pack.get("person_pilot") or 1) >= 2:
+        from memorybox.ops.i14_thread_review import FOCAL_CASE_ALIAS
+
+        def _alias_map(src: dict[str, Any]) -> dict[str, Any]:
+            return {FOCAL_CASE_ALIAS.get(str(k), str(k)): v for k, v in src.items()}
+
+        report["case_coverage"] = _alias_map(dict(report.get("case_coverage") or {}))
+        report["case_missing"] = [FOCAL_CASE_ALIAS.get(str(k), str(k)) for k in report.get("case_missing") or []]
+        if report.get("representative_coverage"):
+            report["representative_coverage"] = _alias_map(dict(report.get("representative_coverage") or {}))
     assert_counts_only(report)
     return report
 

@@ -476,6 +476,20 @@ def evidence_ref(thread_id: str, message_index: int) -> str:
     return f"{thread_id}-M-{message_index:02d}"
 
 
+FOCAL_CASE_ALIAS = {
+    "peggy_voice": "focal_voice",
+    "to_peggy_other_author": "to_focal_other_author",
+    "no_peggy_participation": "no_focal_participation",
+}
+
+
+def _display_cases(cases: list[str] | None, *, person_pilot: int = 1) -> list[str]:
+    rows = list(cases or [])
+    if int(person_pilot or 1) <= 1:
+        return rows
+    return [FOCAL_CASE_ALIAS.get(c, c) for c in rows]
+
+
 def format_thread_txt(thread: dict[str, Any]) -> str:
     tid = str(thread.get("preview_thread_id") or "T-0000")
     msgs = list(thread.get("messages") or [])
@@ -490,6 +504,7 @@ def format_thread_txt(thread: dict[str, Any]) -> str:
                 seen.add(key)
                 participants.append(_format_party_line([row]))
     warnings = list(thread.get("warnings") or [])
+    cases = _display_cases(list(thread.get("cases") or []), person_pilot=int(thread.get("person_pilot") or 1))
     lines = [
         "=" * 78,
         f"BEGIN THREAD  {tid}",
@@ -503,7 +518,7 @@ def format_thread_txt(thread: dict[str, Any]) -> str:
         f"threading_confidence: {thread.get('threading_confidence') or 'unknown'}",
         f"identity_confidence: {thread.get('identity_confidence') or 'unknown'}",
         f"warnings: {', '.join(warnings) if warnings else 'none'}",
-        f"cases: {', '.join(thread.get('cases') or []) or 'none'}",
+        f"cases: {', '.join(cases) or 'none'}",
         f"voice_corpus_messages: {sum(1 for m in msgs if m.get('voice_corpus'))}",
         f"commercial: {thread.get('commercial_summary') or 'mixed_or_none'}",
         "-" * 78,
@@ -554,7 +569,7 @@ def index_line(thread: dict[str, Any]) -> str:
     msgs = list(thread.get("messages") or [])
     start = str((msgs[0].get("timestamp") if msgs else "") or "")[:10]
     end = str((msgs[-1].get("timestamp") if msgs else "") or "")[:10]
-    cases = ",".join(thread.get("cases") or []) or "none"
+    cases = ",".join(_display_cases(list(thread.get("cases") or []), person_pilot=int(thread.get("person_pilot") or 1))) or "none"
     warn = ",".join(thread.get("warnings") or []) or "none"
     ident = thread.get("identity_confidence") or "unknown"
     return (
@@ -725,7 +740,9 @@ def write_review_tree(
     originals = out_dir / "originals"
     originals.mkdir(exist_ok=True)
     threads = list(pack.get("threads") or [])
+    person_pilot = int(pack.get("person_pilot") or 1)
     for thread in threads:
+        thread["person_pilot"] = person_pilot
         thread_confidence(thread)
     enrich_thread_cases(threads)
     if founder_packet or representative_only:
