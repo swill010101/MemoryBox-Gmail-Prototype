@@ -482,9 +482,16 @@ def format_thread_txt(thread: dict[str, Any]) -> str:
                 f"Evidence-ref: {ref}",
                 "Cleaned authored text:",
                 cleaned if cleaned.strip() else "(empty)",
-                "-" * 78,
             ]
         )
+        if msg.get("forward_block"):
+            lines.extend(
+                [
+                    "Forwarded content (explicit, not voice, not reply-history):",
+                    str(msg.get("forward_block")),
+                ]
+            )
+        lines.append("-" * 78)
     lines.append(f"END THREAD  {tid}")
     lines.append("=" * 78)
     return "\n".join(lines) + "\n"

@@ -36,7 +36,7 @@
     "no_peggy_participation": 1,
     "normal_two_person": 966,
     "peggy_voice": 1243,
-    "quoted_reply_stripping": 1659,
+    "quoted_reply_stripping": 1119,
     "threader_split_or_combine": 0,
     "to_peggy_other_author": 1477
   },
@@ -72,8 +72,97 @@
   "ok": true,
   "person_gate": "pilot_1",
   "person_pilot": 1,
+  "prepared_quote_residue": {
+    "any_residue": {
+      "messages": 251,
+      "threads": 141
+    },
+    "hotmail_date_subject_from_to": {
+      "messages": 156,
+      "threads": 86
+    },
+    "on_wrote": {
+      "messages": 44,
+      "threads": 25
+    },
+    "original_message": {
+      "messages": 0,
+      "threads": 0
+    },
+    "outlook_from_sent": {
+      "messages": 51,
+      "threads": 50
+    }
+  },
+  "prepared_text_actions": {
+    "clean_methods": {
+      "explicit_forward": 559,
+      "explicit_forward_body": 178,
+      "explicit_forward_headers": 12,
+      "gt_quote_inline": 138,
+      "hotmail_date_subject_from_to": 1156,
+      "hotmail_date_subject_from_to_after_marker": 1,
+      "none": 1206,
+      "on_wrote": 2103,
+      "original_message": 2,
+      "outlook_from_sent": 359,
+      "prior_thread_body": 2
+    },
+    "flags": {
+      "explicit_forward": {
+        "messages": 736,
+        "threads": 469
+      },
+      "list_footer_removed": {
+        "messages": 15,
+        "threads": 15
+      },
+      "quote_history_removed": {
+        "messages": 3840,
+        "threads": 1119
+      },
+      "signature_removed": {
+        "messages": 22,
+        "threads": 19
+      },
+      "voice_corpus": {
+        "messages": 2698,
+        "threads": 1243
+      }
+    }
+  },
   "private_review_emitted": false,
   "production_i14_writes": false,
+  "raw_quote_markers": {
+    "any_quote_or_forward_marker": {
+      "messages": 4362,
+      "threads": 1326
+    },
+    "explicit_forward_marker": {
+      "messages": 559,
+      "threads": 300
+    },
+    "gt_quote": {
+      "messages": 2174,
+      "threads": 1002
+    },
+    "hotmail_date_subject_from_to": {
+      "messages": 1430,
+      "threads": 644
+    },
+    "on_wrote": {
+      "messages": 3358,
+      "threads": 933
+    },
+    "original_message": {
+      "messages": 16,
+      "threads": 13
+    },
+    "outlook_from_sent": {
+      "messages": 465,
+      "threads": 210
+    }
+  },
   "read_only": true,
   "second_person_required": true,
   "thread_count": 1685,

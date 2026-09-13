@@ -17,7 +17,6 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
-from memorybox.ask.i11a.full_evidence_l1_chunker import compact_email_item
 from memorybox.ingest.comms_lineage import normalize_rfc_message_id
 from memorybox.ops.i14_duplicate_audit import (
     EMAIL_RE,
@@ -312,23 +311,30 @@ def partition_population(messages: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def _compact_thread_messages(msgs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    from memorybox.ops.i14_prepared_text import prepare_message_text
+
     ordered = sorted(msgs, key=lambda m: (str(m.get("timestamp") or ""), str(m.get("evidence_id") or "")))
     prior: list[str] = []
     out: list[dict[str, Any]] = []
     for msg in ordered:
-        item = {
-            "item_id": msg["evidence_id"],
-            "source": "email",
-            "timestamp": msg.get("timestamp"),
-            "body": msg.get("raw_body") or msg.get("body") or "",
-        }
-        compacted, counts = compact_email_item(item, prior_bodies=prior)
+        raw = str(msg.get("raw_body") or msg.get("body") or "")
+        prep = prepare_message_text(
+            raw,
+            subject=str(msg.get("subject") or ""),
+            prior_authored=prior,
+        )
         row = dict(msg)
-        row["cleaned_body"] = compacted.get("body") or ""
-        row["raw_body_chars"] = len(str(msg.get("raw_body") or ""))
-        row["quoted_removed"] = bool((compacted.get("compaction") or {}).get("quoted_removed"))
-        row["compaction_counts"] = counts
-        prior.append(str(compacted.get("body") or ""))
+        row["cleaned_body"] = prep.authored
+        row["forward_block"] = prep.forward_block
+        row["raw_body_chars"] = len(raw)
+        row["quoted_removed"] = prep.quote_history_removed
+        row["clean_method"] = prep.method
+        row["signature_removed"] = prep.signature_removed
+        row["list_footer_removed"] = prep.list_footer_removed
+        if prep.authored:
+            prior.append(prep.authored)
+        if len(raw.strip()) >= 40:
+            prior.append(raw)
         out.append(row)
     return out
 
@@ -458,7 +464,15 @@ def reconstruct(
     excl_n = len(parts["excluded"])
     unexplained = eligible_n - displayed_n - dupe_n
     all_displayed_msgs = [m for t in threads for m in t["messages"]]
+    for thread in threads:
+        for msg in thread["messages"]:
+            msg["preview_thread_id"] = thread["preview_thread_id"]
+    from memorybox.ops.i14_prepared_text import action_census, raw_marker_census, residue_census
+
     census = review.authorship_census(all_displayed_msgs)
+    quote_residue = residue_census(all_displayed_msgs)
+    raw_markers = raw_marker_census(all_displayed_msgs)
+    prepared_actions = action_census(all_displayed_msgs)
     return {
         "threads": threads,
         "eligible": eligible_n,
@@ -473,6 +487,9 @@ def reconstruct(
         "completeness_ok": unexplained == 0,
         "thread_count": len(threads),
         "authorship": census,
+        "prepared_quote_residue": quote_residue,
+        "raw_quote_markers": raw_markers,
+        "prepared_text_actions": prepared_actions,
         "detector_note": (
             "ambiguous_participant_identity means an unverified From/To/Cc address "
             "on the thread after confirmed-contact authentication; it is not a "
@@ -511,6 +528,24 @@ def counts_report(pack: dict[str, Any], *, marks: dict[str, str] | None = None) 
         "excluded_reasons": dict(pack.get("excluded_reasons") or {}),
         "duplicate_classes": dict(pack.get("duplicate_classes") or {}),
         "authorship": {k: int(v) for k, v in dict(pack.get("authorship") or {}).items()},
+        "prepared_quote_residue": {
+            k: {ik: int(iv) for ik, iv in dict(v).items()}
+            for k, v in dict(pack.get("prepared_quote_residue") or {}).items()
+        },
+        "raw_quote_markers": {
+            k: {ik: int(iv) for ik, iv in dict(v).items()}
+            for k, v in dict(pack.get("raw_quote_markers") or {}).items()
+        },
+        "prepared_text_actions": {
+            "flags": {
+                k: {ik: int(iv) for ik, iv in dict(v).items()}
+                for k, v in dict((pack.get("prepared_text_actions") or {}).get("flags") or {}).items()
+            },
+            "clean_methods": {
+                str(k): int(v)
+                for k, v in dict((pack.get("prepared_text_actions") or {}).get("clean_methods") or {}).items()
+            },
+        },
         "ambiguity_detector": "unverified_header_address",
         "focal_confirmed_addresses": int(pack.get("confirmed_address_count") or 0),
         "ledger_unique_addresses": int(pack.get("ledger_address_count") or 0),

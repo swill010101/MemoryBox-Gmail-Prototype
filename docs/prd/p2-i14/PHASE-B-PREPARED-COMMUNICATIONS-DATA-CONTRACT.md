@@ -49,7 +49,7 @@ Names below are contractual, not SQL.
 | `evidence_ref` | Review pointer (`T-NNNN-M-NN`) |
 | `sent_at` | Stored timestamptz |
 | `subject` | As reconstructed |
-| `cleaned_authored_text` | Compaction result |
+| `cleaned_authored_text` | That message’s newly authored contribution only. Quoted reply history stays in immutable evidence and is reachable via `evidence_ref`. Forwards are stored separately, not treated as ordinary reply history. Signatures and list footers are a distinct pass. |
 | `authorship` | `authenticated_focal` / `authenticated_other` / `unverified` |
 | `voice_corpus` | True only if From address is confirmed unique focal contact |
 | `commercial_class` | `retain` / `suppress` / `uncertain` / `not_commercial` |
