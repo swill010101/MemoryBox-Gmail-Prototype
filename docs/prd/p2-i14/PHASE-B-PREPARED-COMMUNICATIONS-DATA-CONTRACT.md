@@ -1,6 +1,6 @@
 # I14 Phase B — prepared communications data contract (proposal)
 
-**Status:** Locked for email prepared tables. Candidate 036 SQL is proposed, not registered as a migration.  
+**Status:** Locked in migration **036** (`memorybox/migrations/036_p2_i14_prepared_communications.sql`). **Not applied.**  
 **Not 035.** Migration 035 stores lineage/identity tables, not threads or cleaned text.  
 **Gate:** Person Pilot 1 and Person Pilot 2 packets **accepted** (2026-09-13). Distinct from I11A Peggy Narrative / Words of a Life. See [PHASE-B-036-SCHEMA-DECISION.md](PHASE-B-036-SCHEMA-DECISION.md).
 
@@ -8,20 +8,20 @@ Explore Person Ask (`Show me Peggy` / `Show me Sue`) later attaches **meaningful
 
 Suppression is **Gallery default retrieval only**. It never deletes or mutates immutable `evidence`.
 
-## Proposed later schema (candidate 036, separately reviewed)
+## Schema (migration 036, unapplied)
 
-Names below are contractual, not SQL.
+Physical names are `comms_prepared_*`. Intent below.
 
-### `prepared_generations`
+### `comms_prepared_generations`
 
 | Field | Intent |
 | --- | --- |
 | `id` | Generation identity |
 | `algo_version` | Reconstruction + compaction + commercial classifier version |
 | `logical_source_id` | Household stream (035 membership), when seeded |
-| `published` | False until production-load authorization |
+| `published` / `is_active` | False until `comms_prepared_activate_generation`. Gallery reads the active view only. |
 
-### `prepared_threads`
+### `comms_prepared_threads`
 
 | Field | Intent |
 | --- | --- |
@@ -35,50 +35,57 @@ Names below are contractual, not SQL.
 | `threading_confidence` | `vendor+rfc` / `rfc` / `vendor` / `mixed_unthreaded` |
 | `identity_confidence` | `all_authenticated` / `unverified_present` / `mixed` |
 | `gallery_eligibility` | `show_by_default` / `suppress_default` / `hold_uncertain` |
+| `suppression_reason` | Required when eligibility is `suppress_default` |
 | `founder_review_state` | `unreviewed` / `accept_thread` / split/merge/incorrect_* / `needs_investigation` |
-| `warnings` | Structured codes only |
+| `provenance` / `warnings` | Structured JSON only |
 
-### `prepared_messages`
+### `comms_prepared_messages`
 
 | Field | Intent |
 | --- | --- |
 | `id` | Stable message id |
-| `thread_id` | Parent thread |
-| `ordinal` | Chronological order (1..n) |
+| `thread_id` / `generation_id` | Parent thread; must match thread generation |
+| `ordinal` | Display order after `sent_at` + `evidence_id` sort |
 | `evidence_id` | Immutable original (`ON DELETE RESTRICT`) |
+| `canonical_record_id` | Optional 035 identity (`ON DELETE RESTRICT`) |
 | `evidence_ref` | Review pointer (`T-NNNN-M-NN`) |
 | `sent_at` | Stored timestamptz |
 | `subject` | As reconstructed |
-| `cleaned_authored_text` | That message’s newly authored contribution only. Quoted reply history stays in immutable evidence and is reachable via `evidence_ref`. Forwards are stored separately, not treated as ordinary reply history. Signatures and list footers are a distinct pass. |
+| `cleaned_authored_text` | Newly authored contribution only. No tracking/login/unsubscribe/marketing link text. |
+| `forward_status` / `forward_omitted` / `forward_block` | New forward vs relay vs omitted duplicate history |
+| `urls_stripped` | Sanitization ran |
+| `quote_quality` / `quote_contamination_flagged` | Remaining quote risk; distinguishable; not voice-eligible |
+| `identity_quality` | resolved / unverified / uncertain |
 | `authorship` | `authenticated_focal` / `authenticated_other` / `unverified` |
-| `voice_corpus` | True only if From address is confirmed unique focal contact |
-| `commercial_class` | `retain` / `suppress` / `uncertain` / `not_commercial` |
+| `voice_corpus` | True only for authenticated focal + clean quote + resolved identity |
+| `commercial_class` | `retain_life_evidence` / `suppress_default` / `uncertain` / `not_commercial` |
 | `direction` | sent_by_focal / sent_to_focal_other_author / no_focal / unresolved |
 
-### `prepared_participants`
+### `comms_prepared_participants`
 
 | Field | Intent |
 | --- | --- |
-| `message_id` | Parent message |
-| `role` | `from` / `to` / `cc` / `bcc` |
+| `message_id` | Parent message (many people, one message) |
+| `role` | `from` / `to` / `cc` |
 | `display_name` | Label only |
 | `address_normalized` | Authenticator |
-| `identity_status` | `authenticated_focal` / `authenticated_other` / `unverified` |
-| `person_id` | Set only when authenticated unique |
+| `identity_confidence` | `authenticated_focal` / `authenticated_other` / `unverified` |
+| `person_id` | Required when authenticated; forbidden when unverified |
 
-### `prepared_attachments`
+### `comms_prepared_attachments`
 
 | Field | Intent |
 | --- | --- |
 | `message_id` / `evidence_id` | Exact message + immutable original |
+| `attachment_ordinal` / `disposition` | Order and inline vs attachment |
 | `filename` / `mime_type` / `byte_size` | Metadata |
 | `source_locator` | Pointer into archive; **do not copy bytes** |
-| `gallery_action` | `view_image` (JPEG/PNG/GIF/WebP/…) / `open_pdf` / `open_document` / `record_only` |
+| `gallery_action` | `view_image` / `open_pdf` / `open_document` / `record_only` |
 
-Unsupported types remain visible as records. Gallery views supported images; PDFs/docs use open actions.
+Unsupported or unsafe types remain visible as `record_only`. Gallery may later view supported images/documents; the archive stays authoritative.
 
 ## Founder-review state
 
 Per thread, same marks as the packet: Accept, Split here, Merge with another, Incorrect participant, Incorrect ordering, Quoted text removed incorrectly, Missing message, Needs investigation.
 
-Person Pilot 1 and Sue (Pilot 2) Accept are complete. Promoting 036 into `memorybox/migrations/`, applying empty tables, loading prepared rows, and Gallery publication remain **separate** founder authorizations.
+Person Pilot 1 and Sue (Pilot 2) Accept are complete. **Applying** empty 036 tables, loading prepared rows, and Gallery publication remain **separate** founder authorizations.

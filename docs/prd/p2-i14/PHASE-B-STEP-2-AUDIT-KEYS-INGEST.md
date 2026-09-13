@@ -421,7 +421,7 @@ duplicate audit → logical-source decision → ingest/identity fixtures → rea
 | Q-multi | Multiple historical rows for one identity/hash? | **Locked:** map **neither** (`needs_canonical_policy`) until a merge increment. |
 | Q-cal | Lock `calendar_uid_dtstart` now? | **Locked no.** Unlock until revision semantics (recommend alternative A; 035 gap; separate review). |
 | Q-sms | What `evidence_kind` is SMS today? | **Locked:** `communication` (`sms_export` / csv). |
-| Q-next | What to build next? | Person Pilot 1 and 2 packets accepted. **Stop** for founder sign-off on [PHASE-B-036-SCHEMA-DECISION.md](PHASE-B-036-SCHEMA-DECISION.md). Do not promote 036 into migrations, apply, load, or publish Gallery. |
+| Q-next | What to build next? | 036 SQL is in `memorybox/migrations/` but **not applied**. **Stop** for founder schema review, then a **separate** empty-table apply authorization. No FlightSim checkout, load, publish, Gallery, or I11A. |
 | Q-map | Which landing files join the three streams? | **Locked:** large non-testish mbox + two non-testish ICS + large SMS CSV. Hold the rest (see audit results JSON). |
 | Q-visual | When may Gallery show comms? | Only after Peggy visual Accept, second-Person proof, and a separate production-load authorization. |
 

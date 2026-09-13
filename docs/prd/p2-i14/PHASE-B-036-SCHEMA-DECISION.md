@@ -1,90 +1,78 @@
-# P2-I14 Phase B — schema decision (candidate 036)
+# P2-I14 Phase B — schema decision (migration 036)
 
-**Status:** Product request + proposed SQL. **Not a migration file.** Not applied.  
+**Status:** SQL registered in the repository. **Not applied** on Desktop or FlightSim.  
 **Date:** 2026-09-13  
 **Branch:** `codex/p2-i14-communications`  
-**Proposed SQL:** [036_p2_i14_prepared_communications.proposed.sql](036_p2_i14_prepared_communications.proposed.sql)  
-**Depends on:** migration **035** (lineage tables exist, empty on FlightSim).  
-**Gates complete:** Person Pilot 1 packet accepted; Person Pilot 2 (Sue) packet accepted 12/12.
+**File:** `memorybox/migrations/036_p2_i14_prepared_communications.sql`  
+**Depends on:** migration **035** (unchanged).  
+**Gates complete:** Person Pilot 1 and Person Pilot 2 packets accepted.
 
-This is the product request for **empty prepared-email tables only**. Show this PRD and get explicit sign-off before moving the SQL into `memorybox/migrations/` or running `migrate`.
+Founder authorized **repository promotion only**. Do not check out FlightSim for 036, do not run `migrate` for 036, do not load rows, do not publish, do not change Gallery/Ask/I11A.
 
-## Problem being solved and why it matters now
+## Problem and success
 
-Visual review proved the reconstruction rules on two Persons. Those rules still live only in preview code. There is no durable store for cleaned authored text, chronological ordinals, commercial class, or Evidence-ref linkage. Ask/Gallery cannot consume a published generation until that store exists.
+Prepared email structure is proven on two Person packets but had no durable schema. 036 adds empty derived tables so a later, separately authorized apply can exist without loading family text.
 
-It matters now because both Person pilots are accepted. The next honest step is an additive derived schema that can hold the same structure the packets already display — without loading family text yet.
+Success: 035 then 036 apply on disposable PostgreSQL; evidence and 035 objects unchanged; uniqueness, participants, attachments, commercial/quality/voice, and atomic activation constraints hold; no seeds; no production DSN.
 
-## Success criteria
+## Tables and constraints
 
-1. Proposed SQL creates five empty `comms_prepared_*` tables, additive only, with `evidence_id` `ON DELETE RESTRICT`.
-2. `published` defaults to false. A CHECK forbids `published = true` unless `status = 'published'`.
-3. Each evidence row appears at most once per generation (`UNIQUE (generation_id, evidence_id)`).
-4. Display ordinals are unique per thread and are not a substitute for `sent_at`.
-5. SQL is **not** registered under `memorybox/migrations/` until founder authorizes promotion.
-6. Tests prove the SQL contract without using database `memorybox`.
-7. No prepared rows, logical-source seeds, Gallery changes, or I11A runs.
-
-## Scope
-
-### In
-
-- Email prepared generation / thread / message / participant / attachment tables.
-- Integrity that encodes T-0001 / T-1265 locks (UTC `sent_at`, one evidence once, cleaned text column distinct from originals, commercial class, forward-omission reason, URL-stripped flag).
-- Static tests; optional disposable-Postgres apply of 001 + 035 + proposed 036.
-
-### Out
-
-- Putting 036 into `memorybox/migrations/` or applying it on Desktop/FlightSim.
-- Inserting reconstructed corpus rows (Peggy, Sue, or household).
-- Calendar prepared events (RRULE / revision grain still unlocked).
-- SMS prepared episodes.
-- Seed of `household_email` / memberships / identity backfill.
-- Ask/Gallery product changes.
-- Changing 035 SQL bytes.
-- Publishing a generation.
-
-## Constraints
-
-| Constraint | Detail |
-| --- | --- |
-| Immutable originals | `evidence` is never updated or deleted by 036. Prepared text is a derived copy. |
-| Evidence FK | `ON DELETE RESTRICT`. No `SET NULL`. |
-| Prefix | `comms_prepared_*` to match 035 `comms_*`. |
-| Email only | `source_kind = 'email'`. |
-| Logical source | `logical_source_id` nullable until production seed. |
-| Rebuild | Child rows `ON DELETE CASCADE` from generation so a failed build can be dropped. Evidence is not cascaded. |
-| Privacy | SQL comments and git tests contain no bodies, addresses, or tracking URLs. |
-| Health | Until promotion, FlightSim `migrate` pending list must not include 036. |
-
-## Timestamp and commercial rules (locked from pilots)
-
-- Authoritative time: payload `sent_at` stored as `timestamptz` (UTC instant). Tie-break at load time is `evidence_id`. Display numbers assigned only after that sort.
-- `commercial_class`: `not_commercial` / `commercial_retain` / `commercial_suppress` / `commercial_uncertain`.
-- Thread `gallery_eligibility`: `show_by_default` / `suppress_default` / `hold_uncertain`.
-- Prepared text must not store live tracking/account/unsubscribe/legal URLs; `urls_stripped` records that sanitization ran.
-- Duplicate commercial/relay bodies already present in the same thread are not stored in `cleaned_authored_text` or `forward_block`; `forward_omitted` records the reason.
-- Human wrapper text may be stored in `cleaned_authored_text`.
-
-## Original vs forward (locked)
-
-Preserve both immutable originals when an original commercial message and a human forward both exist. Do not collapse distinct human-authored messages. Duplicate detection at load time is normalized ≥80-character overlap with an earlier message in the same canonical thread — not subject equality.
-
-## Open questions for Tom
-
-| ID | Question | Recommendation |
+| Object | Role | Integrity |
 | --- | --- | --- |
-| Q-036-promote | Move proposed SQL into `memorybox/migrations/036_p2_i14_prepared_communications.sql` and allow a later empty-table apply? | Yes, after this PRD sign-off. Separate apply authorization, like 035. |
-| Q-036-load | After empty tables exist, load Peggy + Sue (or full household email) prepared rows with `published = false`? | **Separate** authorization. Not this PRD. |
-| Q-036-publish | Set `published = true` and show comms in Gallery? | **Separate** authorization after load validation. |
-| Q-036-sms-cal | Include SMS/calendar tables now? | **No.** Calendar revision grain unlocked; SMS not in these packets. |
+| `comms_prepared_generations` | Immutable prepared build | `source_kind`/`scope_key` = email; starts `building` / unpublished / inactive; CHECK published+active only when `status = published` with logical source + checksum; unique active row per `(logical_source_id, scope_key)` |
+| `comms_prepared_active_generations` | View | `is_active AND published AND status = published` only |
+| `comms_prepared_threads` | Canonical thread | Unique `(generation_id, display_id)` and `(generation_id, thread_key)`; Gallery eligibility + suppression reason; founder-review state; provenance JSON |
+| `comms_prepared_messages` | One evidence once per generation | `UNIQUE (generation_id, evidence_id)`; unique `(thread_id, ordinal)`; `evidence_id` and optional `canonical_record_id` `ON DELETE RESTRICT`; trigger requires `generation_id` to match the thread; `sent_at` timestamptz |
+| `comms_prepared_participants` | From/To/Cc | Many people per message; authenticated rows require `person_id`; unverified forbids `person_id` |
+| `comms_prepared_attachments` | Metadata only | Unique `(message_id, attachment_ordinal)`; `evidence_id` RESTRICT; disposition + `gallery_action` including `record_only` |
+| `comms_prepared_activate_generation(uuid)` | Atomic publish | Validates, locks logical source, supersedes prior active, activates one generation |
+| Guard triggers | No row-by-row publish | `published` / `is_active` / `status=published` only while the activate GUC is set |
 
-## Rollback (after a future apply)
+No calendar/SMS tables. No `INSERT` seeds. 035 SQL bytes are not modified.
 
-1. `comms_prepared_attachments`
-2. `comms_prepared_participants`
-3. `comms_prepared_messages`
-4. `comms_prepared_threads`
-5. `comms_prepared_generations`
+## Atomic publication
+
+A generation is born unpublished and inactive. Load (later) writes child rows while `status` is `building` then `validated`. Gallery must read the active view, which is empty until activation.
+
+`comms_prepared_activate_generation` runs in one transaction: prior active generation for that logical source/scope becomes `superseded` (unpublished, inactive); the new validated generation becomes the single `published` + `is_active` row. Failed generations stay unpublished. Direct `UPDATE`/`INSERT` of published/active flags raises `row_by_row_publication_forbidden`. Child tables have no publish flag.
+
+## Pilot packet field → column mapping
+
+| Packet / preview field | Schema |
+| --- | --- |
+| T-NNNN | `comms_prepared_threads.display_id` |
+| MESSAGE n after UTC sort | `comms_prepared_messages.ordinal` (assigned after `sent_at`, tie-break `evidence_id`) |
+| Evidence-ref T-NNNN-M-NN | `evidence_ref` |
+| Immutable original | `evidence_id` → `evidence` (unchanged) |
+| Cleaned authored text | `cleaned_authored_text` |
+| Forward / relay / omitted duplicate | `forward_status`, `forward_omitted`, `forward_block` |
+| Tracking URLs stripped | `urls_stripped` |
+| Packet `commercial_retain` | `commercial_class = retain_life_evidence` |
+| Packet `commercial_suppress` | `commercial_class = suppress_default` |
+| Packet `commercial_uncertain` | `commercial_class = uncertain` |
+| Packet `not_commercial` | `not_commercial` |
+| Thread suppress-by-default | `gallery_eligibility = suppress_default` + `suppression_reason` |
+| Voice corpus | `voice_corpus` (requires clean quote quality, resolved identity, authenticated focal) |
+| Remaining quote risk | `quote_quality`, generated `quote_contamination_flagged` |
+| From/To/Cc | `comms_prepared_participants.role` + `address_normalized` + `identity_confidence` + `person_id` |
+| Attachment flags | `comms_prepared_attachments` metadata, not bytes |
+| Accept / other marks | `founder_review_state` |
+| 035 identity | optional `canonical_record_id` |
+
+## Rollback
+
+1. View `comms_prepared_active_generations`  
+2. Function `comms_prepared_activate_generation`  
+3. Trigger/function `comms_prepared_guard_activation`  
+4. Trigger/function `comms_prepared_message_generation_guard`  
+5. `comms_prepared_attachments`  
+6. `comms_prepared_participants`  
+7. `comms_prepared_messages`  
+8. `comms_prepared_threads`  
+9. `comms_prepared_generations`  
 
 Never drop 001–035 or `evidence`.
+
+## Out of this step
+
+FlightSim apply, production `migrate`, prepared-row load, generation activation on production, Gallery, Ask, I11A, 035 changes, family seeds.

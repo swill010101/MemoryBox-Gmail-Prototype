@@ -16,9 +16,9 @@ Person Pilot 1 (Peggy) remains accepted. Visual Thread Review for two Persons is
 
 ## Still blocked (separate founder gates)
 
-- Promote candidate 036 SQL into `memorybox/migrations/` and apply empty prepared tables.
+- Apply empty 036 tables on FlightSim/Desktop.
 - Production `comms_*` seed / identity backfill.
 - Load prepared communications rows.
-- Publish a generation (`published = true`).
+- Publish/activate a generation.
 - Gallery communications exposure.
 - I11A Peggy Narrative / Words of a Life.

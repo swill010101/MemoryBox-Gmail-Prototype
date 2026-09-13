@@ -14,6 +14,6 @@ No `quoted_text_removed_incorrectly` mark remains on this packet.
 
 ## Still blocked
 
-- Promote/apply 036, `comms_*` seed, prepared-row load, Gallery publication.
+- Apply 036, seed, prepared-row load, Gallery publication.
 
-Person Pilot 2 (Sue) packet is now **accepted** (12 / 12). See `PHASE-B-PILOT-2-SUE-PACKET-ACCEPT.md`.
+Person Pilot 2 (Sue) packet is **accepted** (12 / 12). 036 is in the repository and **not applied**.
