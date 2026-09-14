@@ -24,6 +24,7 @@ from tests.test_p2_i14_036_schema import SQL_036
 from tests.test_p2_i14_lineage_pg import SQL_001, SQL_035, _DisposablePg, _apply_file
 
 SQL_037 = Path(__file__).resolve().parents[1] / "memorybox" / "migrations" / "037_p2_i14_prepared_evidence_ref_scale.sql"
+SQL_038 = Path(__file__).resolve().parents[1] / "memorybox" / "migrations" / "038_p2_i14_voice_without_recipient_identity.sql"
 
 RFC_SQL = """
 CREATE TABLE IF NOT EXISTS communication_rfc_ids (
@@ -87,6 +88,8 @@ class PreparedLoaderPg(_DisposablePg):
             _apply_file(conn, SQL_036)
             conn.commit()
             _apply_file(conn, SQL_037)
+            conn.commit()
+            _apply_file(conn, SQL_038)
             conn.commit()
 
     def _wipe(self, conn) -> None:
@@ -502,6 +505,13 @@ class PreparedLoaderPg(_DisposablePg):
                 rfc="<t-voice@example.test>", from_addr="tom@example.test", to_addr="sue@example.test",
                 body_text="Tom authored a clean hardware-store note.", sent_at="2014-01-01T14:00:00+00:00", content_hash=_hash("t-voice"),
             )
+            p_tom_open = _payload(
+                rfc="<t-open@example.test>", from_addr="tom@example.test", to_addr="stranger@example.test",
+                body_text="Tom authored a clean note to an unknown recipient uniquely.",
+                sent_at="2014-01-01T14:30:00+00:00", content_hash=_hash("t-open"),
+            )
+            p_tom_open["from_parsed"] = [{"address": "tom@example.test", "normalized": "tom@example.test", "display_name": "Tom"}]
+            p_tom_open["to_parsed"] = [{"address": "stranger@example.test", "normalized": "stranger@example.test", "display_name": "Stranger"}]
             p_to_only = _payload(
                 rfc="<to-only@example.test>", from_addr="stranger@example.test", to_addr="peggy@example.test",
                 body_text="Please call me about the picnic.", sent_at="2014-01-01T15:00:00+00:00",
@@ -526,13 +536,14 @@ class PreparedLoaderPg(_DisposablePg):
             self._evidence(conn, src, p_peggy)
             self._evidence(conn, src, p_sue)
             self._evidence(conn, src, p_tom)
+            self._evidence(conn, src, p_tom_open)
             self._evidence(conn, src, p_to_only)
             self._evidence(conn, src, p_dirty)
             conn.commit()
             messages = read_source_messages(conn, [src])
             loaded = run_load(conn, messages, ledger, dsn=self.dsn)
             self.assertTrue(loaded["ok"])
-            self.assertEqual(loaded["messages"], 5)
+            self.assertEqual(loaded["messages"], 6)
             voice_by_person = conn.execute(
                 """
                 SELECT p.person_id, COUNT(*)::int AS n
@@ -546,8 +557,18 @@ class PreparedLoaderPg(_DisposablePg):
             counts = {str(r["person_id"]): int(r["n"]) for r in voice_by_person}
             self.assertEqual(counts.get(str(peggy)), 1)
             self.assertEqual(counts.get(str(sue)), 1)
-            self.assertEqual(counts.get(str(tom)), 1)
-            self.assertEqual(sum(counts.values()), 3)
+            self.assertEqual(counts.get(str(tom)), 2)
+            self.assertEqual(sum(counts.values()), 4)
+            tom_open = conn.execute(
+                """
+                SELECT m.voice_corpus, m.identity_quality
+                  FROM comms_prepared_messages m
+                 WHERE m.subject = 'RE: Stuff' AND m.cleaned_authored_text LIKE '%unknown recipient%'
+                """
+            ).fetchone()
+            self.assertIsNotNone(tom_open)
+            self.assertTrue(tom_open["voice_corpus"])
+            self.assertEqual(tom_open["identity_quality"], "uncertain")
             to_cc_voice = conn.execute(
                 """
                 SELECT COUNT(*) AS n
@@ -601,7 +622,7 @@ class PreparedLoaderPg(_DisposablePg):
             }
             self.assertEqual(voice_again.get(str(peggy)), 1)
             self.assertEqual(voice_again.get(str(sue)), 1)
-            self.assertEqual(voice_again.get(str(tom)), 1)
+            self.assertEqual(voice_again.get(str(tom)), 2)
 
     def test_long_thread_scales_evidence_ref_past_99(self) -> None:
         self._require_dsn()

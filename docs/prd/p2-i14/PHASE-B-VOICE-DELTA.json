@@ -1,0 +1,100 @@
+{
+  "accepted_census_voice": {
+    "Peggy": 1342,
+    "Sue": 307,
+    "Tom": 12071
+  },
+  "activation_called": false,
+  "census_equals_quote_clean_authenticated_from": true,
+  "elapsed_ms": 1920,
+  "kind": "unpublished_voice_delta_readonly",
+  "ok": true,
+  "people": {
+    "Peggy": {
+      "census_not_loaded": 193,
+      "census_voice": 1342,
+      "from_messages": 2698,
+      "loaded_voice": 1149,
+      "person_label": "Peggy",
+      "reason_flags_overlap": {
+        "cleaned_empty_or_trivial": 25,
+        "commercial_suppression": 12,
+        "forward_or_history": 9,
+        "from_participant_mismatch": 0,
+        "identity_or_authentication": 193,
+        "quote_contamination": 0,
+        "sequential_removed_new_authored": 0
+      },
+      "reasons_exclusive": {
+        "identity_or_authentication": 193
+      },
+      "sequential_new_authored_sentences_lost": 0
+    },
+    "Sue": {
+      "census_not_loaded": 8,
+      "census_voice": 307,
+      "from_messages": 346,
+      "loaded_voice": 299,
+      "person_label": "Sue",
+      "reason_flags_overlap": {
+        "cleaned_empty_or_trivial": 2,
+        "commercial_suppression": 0,
+        "forward_or_history": 3,
+        "from_participant_mismatch": 0,
+        "identity_or_authentication": 8,
+        "quote_contamination": 0,
+        "sequential_removed_new_authored": 0
+      },
+      "reasons_exclusive": {
+        "identity_or_authentication": 8
+      },
+      "sequential_new_authored_sentences_lost": 0
+    },
+    "Tom": {
+      "census_not_loaded": 10187,
+      "census_voice": 12071,
+      "from_messages": 33797,
+      "loaded_voice": 1884,
+      "person_label": "Tom",
+      "reason_flags_overlap": {
+        "cleaned_empty_or_trivial": 679,
+        "commercial_suppression": 1132,
+        "forward_or_history": 2439,
+        "from_participant_mismatch": 0,
+        "identity_or_authentication": 10187,
+        "quote_contamination": 0,
+        "sequential_removed_new_authored": 0
+      },
+      "reasons_exclusive": {
+        "identity_or_authentication": 10187
+      },
+      "sequential_new_authored_sentences_lost": 0
+    }
+  },
+  "review_examples": 12,
+  "safety": {
+    "active_generations": 0,
+    "archive_evidence_unchanged": true,
+    "communication_rfc_ids": 287010,
+    "completeness_ok": true,
+    "evidence": 188656,
+    "failed_cannot_activate": true,
+    "failed_generations": 0,
+    "generation_rows": 1,
+    "identity_duplicates_omitted": 26,
+    "prepared_messages": 91247,
+    "published_generations": 0,
+    "safe_single_unpublished": true,
+    "sources": 27,
+    "unexplained": 0,
+    "validated_unpublished_inactive": 1
+  },
+  "sequential_prior_full_thread_scan": {
+    "Peggy_new_authored_sentences_lost_including_still_voice": 2,
+    "Sue_new_authored_sentences_lost": 0,
+    "Tom_new_authored_sentences_lost": 0,
+    "elapsed_ms": 954704,
+    "loaded_vs_recompute_mismatches": 0
+  },
+  "writes": false
+}

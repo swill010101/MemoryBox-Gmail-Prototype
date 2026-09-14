@@ -362,6 +362,46 @@ class PreparedPolicyRegressions(unittest.TestCase):
         prepare_message_text(raw, subject="Fwd: x")
         self.assertEqual(raw, snapshot)
 
+    def test_sequential_prior_keeps_unique_new_authored_line(self) -> None:
+        unique = "ZZZX Picnic at Tower Grove at noon uniquely."
+        first = {
+            "evidence_id": "e1",
+            "raw_body": PRIOR,
+            "body": PRIOR,
+            "subject": "Stuff",
+            "timestamp": "2011-09-29T15:01:58+00:00",
+        }
+        second = {
+            "evidence_id": "e2",
+            "raw_body": unique + "\n\n" + PRIOR,
+            "body": unique + "\n\n" + PRIOR,
+            "subject": "RE: Stuff",
+            "timestamp": "2011-09-29T16:01:58+00:00",
+        }
+        compacted = preview._compact_thread_messages([first, second])
+        self.assertIn("ZZZX Picnic", compacted[1]["cleaned_body"])
+        self.assertNotIn("financial status", compacted[1]["cleaned_body"])
+
+    def test_other_speaker_prior_does_not_eat_unique_tom_line(self) -> None:
+        unique = "ZZZX Meet at Shaw's at seven uniquely."
+        peggy = {
+            "evidence_id": "e-peg",
+            "raw_body": PRIOR,
+            "body": PRIOR,
+            "subject": "Stuff",
+            "timestamp": "2011-09-29T15:01:58+00:00",
+        }
+        tom = {
+            "evidence_id": "e-tom",
+            "raw_body": unique + "\n\n" + PRIOR,
+            "body": unique + "\n\n" + PRIOR,
+            "subject": "RE: Stuff",
+            "timestamp": "2011-09-29T16:01:58+00:00",
+        }
+        compacted = preview._compact_thread_messages([peggy, tom])
+        self.assertIn("ZZZX Meet", compacted[1]["cleaned_body"])
+        self.assertNotIn("financial status", compacted[1]["cleaned_body"])
+
 
 if __name__ == "__main__":
     unittest.main()

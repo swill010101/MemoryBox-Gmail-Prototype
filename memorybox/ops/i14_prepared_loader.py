@@ -269,7 +269,10 @@ def _schema_message_fields(msg: dict[str, Any]) -> dict[str, Any]:
     quote = _quote_quality(msg)
     commercial = COMMERCIAL_MAP.get(str(msg.get("commercial_class") or "not_commercial"), "not_commercial")
     direction = DIR_MAP.get(str(msg.get("direction") or ""), "unresolved")
-    voice = from_auth and quote == "clean" and identity_quality == "resolved"
+    # Household authored voice is authenticated From + clean quote.
+    # Unverified To/Cc keep identity_quality uncertain (thread mix) but must not
+    # strip the From Person's voice. Census counted that way (12071/1342/307).
+    voice = from_auth and quote == "clean"
     fwd_status, fwd_omitted, fwd_block = _forward_fields(msg)
     sent = parse_sent_at(str(msg.get("timestamp") or msg.get("sent_at") or "")) or MISSING_TS
     from memorybox.ops.i14_prepared_text import sanitize_prepared
