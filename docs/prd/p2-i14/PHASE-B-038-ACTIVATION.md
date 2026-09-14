@@ -48,4 +48,4 @@ Restore `E:\MemoryBox-backups\pre-i14-activate-038-20260914-130717\memorybox.dum
 
 ## FlightSim git
 
-Pull `codex/p2-i14-communications` at `dc01513` or later so the activator CLI is on disk. Do **not** remigrate or reload. Serve recycle is optional; activation is already committed in Postgres.
+Founder-confirmed 2026-09-14: `C:\MemoryBox` HEAD `ecf3e6726456c40f64f8bc38ea5d59f46c164b31`; 038 blob `1efe54148f932dc3a3a49c21273e9b5f43504ac0`. Do **not** remigrate or reload. Serve recycle not required for this closeout.

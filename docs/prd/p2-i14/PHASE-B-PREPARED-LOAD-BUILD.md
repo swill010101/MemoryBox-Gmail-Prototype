@@ -1,6 +1,6 @@
 # I14 Phase B — prepared-email loader (build and rehearsal)
 
-**Status:** Household-email generation is SQL-activated on FlightSim (`published`, `is_active`). Gallery/I11A remain unwired. See [PHASE-B-038-ACTIVATION.md](PHASE-B-038-ACTIVATION.md).
+**Status:** Phase B **closed**. Household-email generation is SQL-activated. Gallery/I11A remain unwired. Closeout: [PHASE-B-CLOSEOUT.md](PHASE-B-CLOSEOUT.md).
 
 Voice is household-wide: any authenticated canonical From Person may qualify. `IdentityLedger.focal_person_id` does not gate another Person’s authored voice.
 

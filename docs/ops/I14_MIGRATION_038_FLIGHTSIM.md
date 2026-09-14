@@ -1,6 +1,6 @@
 # FlightSim — migration 038 applied (voice CHECK)
 
-**Status:** 038 is applied. The replacement household-email generation is **SQL-activated** (published + active). Gallery UI and I11A remain unauthorized. Record: [PHASE-B-038-ACTIVATION.md](../prd/p2-i14/PHASE-B-038-ACTIVATION.md).
+**Status:** 038 is applied. Household-email generation is **SQL-activated**. Phase B **closed**. Gallery UI and I11A remain unauthorized. Closeout: [PHASE-B-CLOSEOUT.md](../prd/p2-i14/PHASE-B-CLOSEOUT.md).
 
 **SQL identity:** commit `bf618960fbf3f3e39e49348f3455f1e2e4c23ff7` blob `1efe54148f932dc3a3a49c21273e9b5f43504ac0` (`memorybox/migrations/038_p2_i14_voice_without_recipient_identity.sql`).
 
@@ -27,4 +27,4 @@ Restore the verified dump only if founder authorizes. Do not DROP 038 ad hoc.
 
 ## FlightSim git
 
-Pull `codex/p2-i14-communications` so local files match the applied 038 blob and the corrected loader. Do **not** re-run migrate or reload. Serve recycle is optional for HEAD alignment only (`startmb.cmd -Restart`); startup migrate must apply nothing.
+Pull is complete at `ecf3e6726456c40f64f8bc38ea5d59f46c164b31` (founder-confirmed). Do **not** remigrate or reload. Serve recycle is not required for Phase B closeout.
