@@ -1009,6 +1009,10 @@ def main(argv: list[str] | None = None) -> int:
         "i14-activation-review",
         help="Read-only bounded founder activation-review TXT packet (private emit flags)",
     )
+    sub.add_parser(
+        "i14-prepared-activate",
+        help="Guarded household-email generation activation (requires confirm flags; publishes)",
+    )
 
     args = parser.parse_args(argv)
     if args.cmd in {"prove-p2-i1", "prove-p2-i8b", "prove-p2-i9"} or (args.cmd == "recognition-people-apply" and not args.dry_run):
@@ -2016,6 +2020,11 @@ def main(argv: list[str] | None = None) -> int:
         from memorybox.ops.i14_activation_review import main as activation_review_main
 
         return activation_review_main([])
+
+    if args.cmd == "i14-prepared-activate":
+        from memorybox.ops.i14_prepared_activate import main as activate_main
+
+        return activate_main([])
 
     if args.cmd == "serve":
         import uvicorn
