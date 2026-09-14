@@ -179,6 +179,9 @@ class PacketWriter(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / "packet"
+            leftover = out / "originals"
+            leftover.mkdir(parents=True)
+            (leftover / "T-9999-M-01.txt").write_text("stale\n", encoding="utf-8")
             meta = write_activation_packet(Conn(), out)
             self.assertEqual(meta["thread_count_written"], 2)
             self.assertEqual(meta["named_refs"], ["T-2312-M-02", "T-2345-M-02"])
@@ -187,7 +190,7 @@ class PacketWriter(unittest.TestCase):
             self.assertTrue((out / "README.txt").is_file())
             self.assertFalse(list(out.glob("*.html")))
             self.assertTrue((out / "originals" / "T-2312-M-02.txt").is_file())
-            self.assertTrue((out / "originals" / "T-2345-M-02.txt").is_file())
+            self.assertFalse((out / "originals" / "T-9999-M-01.txt").exists())
             packet = (out / "packet-001.txt").read_text(encoding="utf-8")
             self.assertIn("T-2312-M-02", packet)
             self.assertIn("T-2345-M-02", packet)

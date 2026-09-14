@@ -288,7 +288,11 @@ def write_activation_packet(conn: Any, out_dir: Path) -> dict[str, Any]:
     threads = [_pack_thread(conn, gid, tid, focus_refs) for tid in selected]
     out_dir.mkdir(parents=True, exist_ok=True)
     originals = out_dir / "originals"
-    originals.mkdir(exist_ok=True)
+    if originals.exists():
+        for stale in originals.glob("*.txt"):
+            stale.unlink()
+    else:
+        originals.mkdir()
     index = []
     bodies = []
     original_n = 0
