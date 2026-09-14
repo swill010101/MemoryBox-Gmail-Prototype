@@ -1,10 +1,10 @@
 # FlightSim — migration 038 applied (voice CHECK)
 
-**Status:** 038 is applied. A replacement unpublished household-email generation is loaded. Do not activate, publish, start Gallery, or start I11A.
+**Status:** 038 is applied. Replacement unpublished household-email generation is loaded. Founder **visual review accepted** 2026-09-14 ([PHASE-B-038-ACTIVATION-REVIEW-ACCEPT.md](../prd/p2-i14/PHASE-B-038-ACTIVATION-REVIEW-ACCEPT.md)). Do not activate, publish, start Gallery, or start I11A until a separate execute authorization of [PHASE-B-038-ACTIVATION-PLAN.md](../prd/p2-i14/PHASE-B-038-ACTIVATION-PLAN.md).
 
 **SQL identity:** commit `bf618960fbf3f3e39e49348f3455f1e2e4c23ff7` blob `1efe54148f932dc3a3a49c21273e9b5f43504ac0` (`memorybox/migrations/038_p2_i14_voice_without_recipient_identity.sql`).
 
-**Not authorized next:** generation activation, publish, Gallery, Ask/I11A.
+**Not authorized next:** execute activation, Gallery wiring, Ask/I11A.
 
 ## Sanitized apply + replace record (2026-09-14)
 

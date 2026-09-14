@@ -1,6 +1,6 @@
 # I14 Phase B — replacement unpublished household-email load
 
-**Status:** Replacement generation is loaded on FlightSim. **Not activated. Not published.** Gallery/Ask/I11A remain unauthorized.
+**Status:** Replacement generation is loaded on FlightSim. Founder visual review **accepted** 2026-09-14. **Not activated. Not published.** Gallery/Ask/I11A remain unauthorized.
 
 **Code SHA:** `bf618960fbf3f3e39e49348f3455f1e2e4c23ff7`  
 **038 SQL blob:** `1efe54148f932dc3a3a49c21273e9b5f43504ac0` (`038_p2_i14_voice_without_recipient_identity.sql`)
@@ -53,8 +53,10 @@ Regression: unit tests plus disposable Postgres `test_glued_hotmail_peggy_reply_
 
 ## Review
 
-Private 12-thread TXT: `working/i14-household-email-review-038/` (gitignored). No HTML. No full corpus.
+Private load packet (gitignored): `working/i14-household-email-review-038/`. Bounded activation-review packet: `working/i14-activation-review/`. No HTML. No full corpus.
+
+Founder bounded activation-review **accepted** 2026-09-14. Evidence: [PHASE-B-038-ACTIVATION-REVIEW-ACCEPT.md](PHASE-B-038-ACTIVATION-REVIEW-ACCEPT.md). Activation plan (not executed): [PHASE-B-038-ACTIVATION-PLAN.md](PHASE-B-038-ACTIVATION-PLAN.md).
 
 ## Not this gate
 
-No activate, no publish, no Gallery, no I11A.
+No activate, no publish, no Gallery, no I11A until a separate execute authorization.

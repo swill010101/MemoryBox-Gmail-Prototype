@@ -1,6 +1,6 @@
 # I14 Phase B — prepared-email loader (build and rehearsal)
 
-**Status:** One unpublished household-email generation is loaded on FlightSim (`validated`, not active, not published). Activation/Gallery/I11A remain separate.
+**Status:** One unpublished household-email generation is loaded on FlightSim (`validated`, not active, not published). Founder visual review **accepted** 2026-09-14. Activation/Gallery/I11A remain separate execute gates. See [PHASE-B-038-ACTIVATION-REVIEW-ACCEPT.md](PHASE-B-038-ACTIVATION-REVIEW-ACCEPT.md) and [PHASE-B-038-ACTIVATION-PLAN.md](PHASE-B-038-ACTIVATION-PLAN.md).
 
 Voice is household-wide: any authenticated canonical From Person may qualify. `IdentityLedger.focal_person_id` does not gate another Person’s authored voice.
 
