@@ -1183,13 +1183,32 @@ def build_explore_find(
     sms_available = sms_hidden = 0
     email_available = email_match_total = 0
     calendar_available = 0
+    prepared_pending = False
+    prepared_token = ""
+    person_ids = [str(p) for p in (plan_early.get("person_ids") or []) if str(p).strip()]
+    from memorybox.explore.prepared_comms import gallery_comms_enabled, new_ask_token
+
+    use_prepared = (
+        gallery_comms_enabled()
+        and bool(person_ids)
+        and not tell_mode
+        and not clarifying
+    )
+    if use_prepared:
+        show_email = True
+        prepared_pending = True
+        prepared_token = new_ask_token()
     if not tell_mode or show_sms or show_email or show_calendar:
         items, sms_available, sms_hidden = _attach_hidden_sms(
             items, result, ask_text=text, show_sms=show_sms
         )
-        items, email_available, email_match_total = _attach_visible_email(
-            items, result, ask_text=text, show_email=show_email
-        )
+        if use_prepared:
+            email_available = 0
+            email_match_total = 0
+        else:
+            items, email_available, email_match_total = _attach_visible_email(
+                items, result, ask_text=text, show_email=show_email
+            )
         items, calendar_available = _attach_calendar(
             items, result, ask_text=text, show_calendar=show_calendar
         )
@@ -1220,7 +1239,13 @@ def build_explore_find(
     if not tell_mode:
         # A new show/mixed Ask replaces curator; do not keep prior tell prose.
         answer_for_curator = None
-    if show_email and not show_sms and not email_available and not tell_mode:
+    if (
+        show_email
+        and not show_sms
+        and not email_available
+        and not tell_mode
+        and not use_prepared
+    ):
         summary = (
             (summary or "").rstrip()
             + " 0 emails matched this person (Person id, confirmed address, or full display name)."
@@ -1337,6 +1362,9 @@ def build_explore_find(
             "gallery_show_sms": show_sms,
             "gallery_show_email": show_email,
             "gallery_show_calendar": show_calendar,
+            "person_ids": person_ids,
+            "prepared_comms_pending": prepared_pending,
+            "prepared_comms_token": prepared_token,
             "prefer_story_filter": bool(
                 plan.get("want_story")
                 and re.search(r"(?i)\bstor(?:y|ies|ied|iest)\b", text or "")

@@ -856,6 +856,37 @@ def explore_find_post(
         raise HTTPException(status_code=500, detail=f"explore find failed: {exc}") from exc
 
 
+@app.get("/explore/api/prepared-comms")
+def explore_prepared_comms(
+    person_id: str = Query(...),
+    token: str = Query(""),
+) -> dict[str, Any]:
+    """Background Gallery attach of prepared household-email threads. Flag-gated."""
+    from memorybox.db import connection
+    from memorybox.explore.prepared_comms import gallery_comms_enabled, list_person_threads
+
+    if not gallery_comms_enabled():
+        return {"ok": True, "enabled": False, "items": [], "token": token}
+    with connection() as conn:
+        conn.execute("SET TRANSACTION READ ONLY")
+        return list_person_threads(conn, person_id=person_id, token=token)
+
+
+@app.get("/explore/api/prepared-thread/{display_id}")
+def explore_prepared_thread(display_id: str) -> dict[str, Any]:
+    from memorybox.db import connection
+    from memorybox.explore.prepared_comms import gallery_comms_enabled, load_thread
+
+    if not gallery_comms_enabled():
+        raise HTTPException(status_code=404, detail="prepared_comms_disabled")
+    with connection() as conn:
+        conn.execute("SET TRANSACTION READ ONLY")
+        payload = load_thread(conn, display_id)
+    if not payload.get("ok"):
+        raise HTTPException(status_code=404, detail=str(payload.get("error") or "missing"))
+    return payload
+
+
 @app.get("/explore/api/photo/{external_id}/people")
 def explore_photo_people(external_id: str) -> dict[str, Any]:
     """Lazy Immich people + face boxes for Shared Evidence Viewer People rail."""

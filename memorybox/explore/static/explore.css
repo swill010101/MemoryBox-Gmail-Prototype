@@ -1989,6 +1989,32 @@ html[data-mb-surface="explore"] .mb-explore.is-present-locked .mb-explore-timeli
   gap: 0.65rem;
 }
 
+.mb-prepared-thread {
+  display: grid;
+  gap: 1rem;
+}
+
+.mb-prepared-msg {
+  background: #141b27;
+  border: 1px solid var(--mb-line, #1f2937);
+  border-radius: 10px;
+  padding: 0.75rem 0.9rem;
+}
+
+.mb-prepared-body {
+  white-space: pre-wrap;
+  font-family: inherit;
+  font-size: 0.95rem;
+  line-height: 1.45;
+  margin: 0.5rem 0 0;
+}
+
+.mb-ev-crumb {
+  font-size: 0.8rem;
+  color: var(--mb-muted, #9aa4b2);
+  margin: 0;
+}
+
 .mb-ev-turns {
   display: grid;
   gap: 0.65rem;

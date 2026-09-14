@@ -1603,6 +1603,51 @@
       syncTimelineToEligibleDatedExtent();
     }
     clearSearchingChrome();
+    maybeLoadPreparedComms(payload);
+  }
+
+  let preparedCommsToken = "";
+  function maybeLoadPreparedComms(payload) {
+    const hint = (payload && payload.explore_state) || {};
+    const token = String(hint.prepared_comms_token || "");
+    preparedCommsToken = token;
+    if (!hint.prepared_comms_pending || !token) return;
+    const personId = String((hint.person_ids || [])[0] || "");
+    if (!personId) return;
+    const qs = new URLSearchParams({ token: token, person_id: personId });
+    fetch("/explore/api/prepared-comms?" + qs.toString(), { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!data || data.token !== preparedCommsToken) return;
+        if (data.cancelled) return;
+        const extra = Array.isArray(data.items) ? data.items : [];
+        extra.forEach((it) => {
+          if (!rawItems.some((x) => x.id === it.id)) rawItems.push(Object.assign({}, it));
+        });
+        if (state && state.domain) {
+          if (data.updated_through) state.domain.commsUpdatedThrough = data.updated_through;
+          if (extra.length) {
+            state.domain.summary = (
+              (state.domain.summary || "") +
+              " " +
+              extra.length +
+              " email thread" +
+              (extra.length === 1 ? "" : "s") +
+              " added to Gallery."
+            ).trim();
+          }
+          if (data.stale) {
+            state.domain.summary = (
+              (state.domain.summary || "") +
+              " Email updated through " +
+              String(data.updated_through || "last complete result") +
+              "."
+            ).trim();
+          }
+        }
+        render();
+      })
+      .catch(() => {});
   }
 
   const ASK_HIST_KEY = "mb_shell_recent_asks";
@@ -2532,6 +2577,15 @@
     return `${months[d.getUTCMonth()]} ${d.getUTCDate()}, ${d.getUTCFullYear()}`;
   }
 
+  function fmtCardDateRange(item) {
+    const start = fmtCardDate(item && item.date);
+    const endRaw = item && item.date_end;
+    if (!endRaw) return start;
+    const end = fmtCardDate(endRaw);
+    if (end === start) return start;
+    return start + " – " + end;
+  }
+
   function cardMediaInner(it) {
     const t = String(it.type || "").toLowerCase();
     const prev = escapeHtml(it.preview || "");
@@ -3429,7 +3483,9 @@
         }
         const glyph = TYPE_GLYPH[it.type] || "•";
         const title = escapeHtml(it.title || it.type);
-        const date = escapeHtml(fmtCardDate(it.date));
+        const date = escapeHtml(
+          it.prepared ? fmtCardDateRange(it) : fmtCardDate(it.date)
+        );
         const undatedBadge = isUndated(it)
           ? `<span class="mb-card-undated-badge">Undated</span>`
           : "";
@@ -3444,7 +3500,9 @@
             <span class="mb-card-type" aria-hidden="true">${glyph}</span>
             <div>
               <div class="mb-card-title">${title}</div>
-              <div class="mb-card-sub">${date}${
+              <div class="mb-card-sub">${
+          it.prepared ? "Email · " : ""
+        }${date}${
           it.face_identity ? " · " + escapeHtml(it.face_identity) : ""
         }</div>
             </div>
@@ -3872,9 +3930,9 @@
     setViewerMediaType(item);
     const ids = visibleIds();
     const idx = ids.indexOf(item.id);
-    document.getElementById("mb-modal-kicker").textContent = String(
-      item.type || "Evidence"
-    ).toUpperCase();
+    document.getElementById("mb-modal-kicker").textContent = item.prepared
+      ? "GALLERY · EMAIL"
+      : String(item.type || "Evidence").toUpperCase();
     document.getElementById("mb-modal-title").textContent = item.title || item.id;
     const count = document.getElementById("mb-viewer-count");
     if (count) {
@@ -5271,10 +5329,15 @@
       /* Learn / Share / Transcribe live on the Learn tab. Footer is transcript only. */
     } else {
       bits.push(
-        `<span class="mb-ev-meta">${escapeHtml(fmtCardDate(item.date))} · ${escapeHtml(
+        `<span class="mb-ev-meta">${escapeHtml(fmtCardDateRange(item))} · ${escapeHtml(
           t || "evidence"
         )}</span>`
       );
+      if (item.prepared) {
+        bits.push(
+          `<button type="button" class="mb-viewer-footbtn" id="mb-prepared-save-story">Save as Story</button>`
+        );
+      }
     }
     foot.innerHTML =
       (bits.length ? `<div class="mb-viewer-footrow">${bits.join("")}</div>` : "") +
@@ -5282,6 +5345,13 @@
         ? `<div class="mb-ev-transcript is-on" id="mb-ev-transcript" tabindex="0" aria-label="Synchronized transcript"><div class="mb-ev-transcript-empty">Loading transcript…</div></div>`
         : "");
     bindTranscribeThisTape(item);
+    const savePrepared = document.getElementById("mb-prepared-save-story");
+    if (savePrepared) {
+      savePrepared.addEventListener("click", () => {
+        const curator = document.getElementById("mb-explore-save-story");
+        if (curator) curator.click();
+      });
+    }
   }
 
 
@@ -6138,10 +6208,94 @@
     );
   }
 
+  function partyLine(rows) {
+    if (!rows || !rows.length) return "(none)";
+    return rows
+      .map((p) => {
+        const name = String((p && p.label) || "Unknown participant");
+        return p && p.trusted ? name : name + " (unverified)";
+      })
+      .join("; ");
+  }
+
+  function preparedThreadHtml(data) {
+    const msgs = (data && data.messages) || [];
+    const blocks = msgs
+      .map((m) => {
+        const warns = (m.warnings || [])
+          .map((w) => `<p class="mb-ev-meta">${escapeHtml(String(w))}</p>`)
+          .join("");
+        const atts = (m.attachments || [])
+          .map((a) => {
+            const action = String(a.gallery_action || "record_only");
+            const name = escapeHtml(a.filename || "attachment");
+            if (action === "record_only" || !a.available) {
+              return `<li>${name} — unavailable or record-only</li>`;
+            }
+            const parent = encodeURIComponent(m.evidence_id || a.parent_evidence_id || "");
+            const idx = a.attachment_ordinal == null ? 0 : Number(a.attachment_ordinal);
+            const href = parent
+              ? "/explore/api/email-attachment/" + parent + "?index=" + idx
+              : "#";
+            if (action === "view_image") {
+              return `<li>${name}<div class="mb-ev-attach-preview"><img class="mb-prepared-att" src="${href}" alt="${name}" /></div></li>`;
+            }
+            const label =
+              action === "open_pdf"
+                ? "Open PDF"
+                : action === "open_document"
+                  ? "Open document"
+                  : "Open";
+            return `<li><a class="mb-viewer-footbtn" href="${href}" target="_blank" rel="noopener">${label}: ${name}</a></li>`;
+          })
+          .join("");
+        const attBlock = atts ? `<ul class="mb-ev-attach">${atts}</ul>` : "";
+        const orig = m.evidence_id
+          ? `<p class="mb-ev-meta"><a href="/explore/api/email/${encodeURIComponent(m.evidence_id)}" target="_blank" rel="noopener">Immutable original</a></p>`
+          : "";
+        return `<section class="mb-prepared-msg">
+          <p class="mb-ev-meta">From: ${escapeHtml(partyLine(m.from))}</p>
+          <p class="mb-ev-meta">To: ${escapeHtml(partyLine(m.to))}</p>
+          <p class="mb-ev-meta">Cc: ${escapeHtml(partyLine(m.cc))}</p>
+          <p class="mb-ev-meta">${escapeHtml(fmtCardDate(m.sent_at))} · ${escapeHtml(m.subject || "")}</p>
+          <pre class="mb-prepared-body">${escapeHtml(m.cleaned_authored_text || "")}</pre>
+          ${warns}${attBlock}${orig}
+        </section>`;
+      })
+      .join("");
+    return `<div class="mb-prepared-thread">${blocks}</div>`;
+  }
+
   function bindEmailStructuredView(item) {
     const t = String((item && item.type) || "").toLowerCase();
+    if (t !== "email") return;
+    if (item.prepared && item.display_id) {
+      const host = document.getElementById("mb-email-turns");
+      fetch("/explore/api/prepared-thread/" + encodeURIComponent(item.display_id))
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (!data || !data.ok) return;
+          item._preparedThread = data;
+          const wrap = document.createElement("div");
+          wrap.innerHTML = preparedThreadHtml(data);
+          const next = wrap.firstElementChild;
+          const target = host || document.getElementById("mb-modal-body");
+          if (next && host) host.replaceWith(next);
+          else if (next && target) target.innerHTML = wrap.innerHTML;
+          document.querySelectorAll("img.mb-prepared-att").forEach((img) => {
+            img.addEventListener("error", () => {
+              const box = img.parentElement;
+              if (!box) return;
+              box.innerHTML =
+                "<p>This attachment is listed, but the file could not be opened.</p>";
+            });
+          });
+        })
+        .catch(() => {});
+      return;
+    }
     const eid = item && item.evidence_id;
-    if (t !== "email" || !eid) return;
+    if (!eid) return;
     const host = document.getElementById("mb-email-turns");
     if (!host) return;
     fetch("/explore/api/email/" + encodeURIComponent(eid))
@@ -6222,6 +6376,18 @@
       </div>`;
     }
     if (t === "email" || isSmsTextItem(item)) {
+      if (item.prepared) {
+        return `<div class="mb-ev-email-wrap">
+        <p class="mb-ev-crumb">Gallery · Email — close returns to the same Ask results.</p>
+        <p class="mb-ev-meta">Email · ${escapeHtml(item.title || "Conversation")}</p>
+        <p class="mb-ev-meta">${escapeHtml(fmtCardDateRange(item))}${
+          item.attachment_count
+            ? " · attachments available"
+            : ""
+        }</p>
+        <div id="mb-email-turns">Loading conversation…</div>
+      </div>`;
+      }
       const atts = Array.isArray(item.attachments) ? item.attachments : [];
       const mapped = Array.isArray(item.identity_mapped) ? item.identity_mapped : [];
       const eid = escapeAttr(item.evidence_id || "");
@@ -6940,13 +7106,31 @@
     const saveStoryBtn = document.getElementById("mb-explore-save-story");
     if (saveStoryBtn) {
       saveStoryBtn.addEventListener("click", async () => {
-        const body = String(state.domain._askSummary || state.domain.summary || "").trim();
+        const openItem =
+          state && state.modal && state.modal.openId
+            ? rawItems.find((x) => x.id === state.modal.openId)
+            : null;
+        let body = String(state.domain._askSummary || state.domain.summary || "").trim();
+        let memories = [];
+        if (openItem && openItem.prepared && openItem.display_id) {
+          let thread = openItem._preparedThread;
+          if (!thread) {
+            const resp = await fetch(
+              "/explore/api/prepared-thread/" + encodeURIComponent(openItem.display_id)
+            );
+            thread = resp.ok ? await resp.json() : null;
+          }
+          if (thread && thread.ok) {
+            body = String(thread.story_body || body).trim();
+            if (thread.story_memory) memories = [thread.story_memory];
+          }
+        }
         if (!body || isAskWaitingSummary(body)) return;
         saveStoryBtn.disabled = true;
         try {
           const plan = (state.domain.livingView && state.domain.livingView.plan) || {};
-          const memories = [];
           const seen = {};
+          if (!memories.length) {
           (state.domain.citations || []).forEach((c) => {
             let source_kind = "";
             let source_id = "";
@@ -6986,6 +7170,7 @@
               label_snapshot: String(c.label || c.title || c.summary || "") || null,
             });
           });
+          }
           const title =
             String(state.domain.title || "").trim() ||
             String(state.domain.askText || "From Ask").trim().slice(0, 80);

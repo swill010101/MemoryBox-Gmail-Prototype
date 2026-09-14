@@ -1,0 +1,77 @@
+﻿{
+  "cancel_previous_ask_token": true,
+  "database_kind": "memorybox",
+  "flightsim_serve_flag_not_set_by_this_tool": true,
+  "gallery_flag_default": "off",
+  "measured_at": "2026-09-14T18:47Z",
+  "notes": [
+    "query_ms is SQL list_person_threads; photos-first Gallery TTFV is separate serve latency.",
+    "thread_total_show_by_default is full Person match after commercial default filter.",
+    "cards_returned is capped for founder-facing Gallery."
+  ],
+  "ok": true,
+  "people": [
+    {
+      "attachment_records_in_sample": 5,
+      "attachment_sample_threads": 8,
+      "attachment_unavailable_in_sample": 0,
+      "cancelled": false,
+      "card_cap": 200,
+      "cards_returned": 200,
+      "excluded": {
+        "hold_uncertain": 12,
+        "show_by_default": 1544,
+        "suppress_default": 128
+      },
+      "label": "Peggy",
+      "ok": true,
+      "query_ms": 142,
+      "stale": false,
+      "thread_open_sample_ms": 93,
+      "thread_total_show_by_default": 1544,
+      "wall_ms": 142
+    },
+    {
+      "attachment_records_in_sample": 6,
+      "attachment_sample_threads": 8,
+      "attachment_unavailable_in_sample": 0,
+      "cancelled": false,
+      "card_cap": 200,
+      "cards_returned": 200,
+      "excluded": {
+        "hold_uncertain": 52,
+        "show_by_default": 1325,
+        "suppress_default": 213
+      },
+      "label": "Sue",
+      "ok": true,
+      "query_ms": 43,
+      "stale": false,
+      "thread_open_sample_ms": 80,
+      "thread_total_show_by_default": 1325,
+      "wall_ms": 43
+    },
+    {
+      "attachment_records_in_sample": 3,
+      "attachment_sample_threads": 8,
+      "attachment_unavailable_in_sample": 0,
+      "cancelled": false,
+      "card_cap": 200,
+      "cards_returned": 200,
+      "excluded": {
+        "hold_uncertain": 611,
+        "show_by_default": 28284,
+        "suppress_default": 10064
+      },
+      "label": "Tom",
+      "ok": true,
+      "query_ms": 303,
+      "stale": false,
+      "thread_open_sample_ms": 65,
+      "thread_total_show_by_default": 28284,
+      "wall_ms": 303
+    }
+  ],
+  "phase": "C",
+  "read_only": true
+}

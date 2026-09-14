@@ -1013,6 +1013,10 @@ def main(argv: list[str] | None = None) -> int:
         "i14-prepared-activate",
         help="Guarded household-email generation activation (requires confirm flags; publishes)",
     )
+    sub.add_parser(
+        "i14-gallery-timings",
+        help="Read-only Phase C prepared-comms timings (FlightSim requires allow flags)",
+    )
 
     args = parser.parse_args(argv)
     if args.cmd in {"prove-p2-i1", "prove-p2-i8b", "prove-p2-i9"} or (args.cmd == "recognition-people-apply" and not args.dry_run):
@@ -2025,6 +2029,11 @@ def main(argv: list[str] | None = None) -> int:
         from memorybox.ops.i14_prepared_activate import main as activate_main
 
         return activate_main([])
+
+    if args.cmd == "i14-gallery-timings":
+        from memorybox.ops.i14_gallery_timings import main as gallery_timings_main
+
+        return gallery_timings_main([])
 
     if args.cmd == "serve":
         import uvicorn
