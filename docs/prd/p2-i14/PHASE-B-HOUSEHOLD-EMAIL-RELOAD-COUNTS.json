@@ -1,0 +1,123 @@
+{
+  "accepted_forecast": {
+    "assigned_rows": 91275,
+    "excluded_missing_from": 2,
+    "held_rows": 6,
+    "identity_duplicates_omitted": 26,
+    "max_thread_size": 89,
+    "mbox_rows": 91281,
+    "prepared_messages": 91247,
+    "threads": 40996,
+    "unexplained": 0
+  },
+  "activation_called": false,
+  "active_generations": 0,
+  "actual": {
+    "assigned_rows": 91275,
+    "excluded_missing_from": 2,
+    "held_rows": 6,
+    "identity_duplicates_omitted": 26,
+    "max_thread_size": 89,
+    "mbox_rows": 91281,
+    "prepared_messages": 91247,
+    "threads": 40996,
+    "unexplained": 0
+  },
+  "authored_voice_by_from_person": [
+    {
+      "messages": 12071,
+      "person_label": "Tom"
+    },
+    {
+      "messages": 1368,
+      "person_label": "Peggy"
+    },
+    {
+      "messages": 307,
+      "person_label": "Sue"
+    }
+  ],
+  "baseline": {
+    "communication_rfc_ids": 287010,
+    "evidence": 188656,
+    "sources": 27
+  },
+  "commercial_classes": {
+    "not_commercial": 73636,
+    "retain_life_evidence": 1371,
+    "suppress_default": 15352,
+    "uncertain": 888
+  },
+  "completeness": {
+    "check": true,
+    "equation": "mbox_rows = prepared + identity_duplicates_omitted + excluded_in_assigned_stream + held_rows + unexplained",
+    "excluded_in_assigned_stream": 2,
+    "held_rows": 6,
+    "identity_duplicates_omitted": 26,
+    "mbox_rows": 91281,
+    "prepared": 91247,
+    "unexplained": 0
+  },
+  "duplicate_omitted_count": 26,
+  "elapsed_ms": 1954017,
+  "eligible_unpublished_generations": 1,
+  "failed_generations": 0,
+  "kind": "household_email_unpublished_load",
+  "ledger_n": 38,
+  "lineage": {
+    "comms_extract_instances": 1,
+    "comms_logical_sources": 1,
+    "comms_record_identities": 91247,
+    "comms_record_identity_aliases": 182494,
+    "comms_source_checkpoint": 0,
+    "comms_source_memberships": 1
+  },
+  "ok": true,
+  "participant_identity": {
+    "authenticated_focal": 36841,
+    "authenticated_other": 60329,
+    "unverified": 196891
+  },
+  "pending": [],
+  "preflight": {
+    "assigned_rows": 91275,
+    "excluded_missing_from": 2,
+    "held_rows": 6,
+    "identity_duplicates_omitted": 26,
+    "max_thread_size": 89,
+    "mbox_rows": 91281,
+    "prepared_messages": 91247,
+    "threads": 40996,
+    "unexplained": 0
+  },
+  "prepared": {
+    "attachments": 28467,
+    "generations": 1,
+    "messages": 91247,
+    "participants": 294061,
+    "threads": 40996
+  },
+  "published_generations": 0,
+  "quote_quality": {
+    "clean": 56789,
+    "suspected_contamination": 34458
+  },
+  "reconciliation_diffs": [],
+  "rejected_cannot_activate": true,
+  "replaced_unpublished_snapshot": true,
+  "review_coverage_present": [
+    "attachment",
+    "commercial_retain",
+    "commercial_suppress",
+    "commercial_uncertain",
+    "forward",
+    "high_quote_risk",
+    "multiple_participants",
+    "peggy_from_voice",
+    "quote_cleanup",
+    "sue_from_voice",
+    "tom_from_voice",
+    "unknown_from"
+  ],
+  "review_thread_count": 12
+}
