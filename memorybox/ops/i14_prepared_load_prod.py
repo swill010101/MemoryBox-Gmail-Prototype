@@ -100,9 +100,37 @@ def _empty_counts(conn: Any) -> dict[str, int]:
     return out
 
 
-def _assert_pre_empty(counts: dict[str, int]) -> None:
-    if any(int(v) != 0 for v in counts.values()):
-        raise LoadProdError("lineage_or_prepared_not_empty")
+def _assert_pre_empty(conn: Any) -> None:
+    counts = _empty_counts(conn)
+    if all(int(v) == 0 for v in counts.values()):
+        return
+    gens = conn.execute(
+        """
+        SELECT status, published, is_active
+          FROM comms_prepared_generations
+        """
+    ).fetchall()
+    if gens and all(
+        str(g["status"]) == "failed" and not g["published"] and not g["is_active"] for g in gens
+    ):
+        conn.execute(
+            """
+            DELETE FROM comms_prepared_generations
+             WHERE status = 'failed' AND NOT published AND NOT is_active
+            """
+        )
+        conn.execute("DELETE FROM comms_record_identity_aliases")
+        conn.execute("DELETE FROM comms_record_identities")
+        conn.execute("DELETE FROM comms_source_checkpoint")
+        conn.execute("DELETE FROM comms_extract_instances")
+        conn.execute("DELETE FROM comms_source_memberships")
+        conn.execute("DELETE FROM comms_logical_sources")
+        conn.commit()
+        leftover = _empty_counts(conn)
+        if any(int(v) != 0 for v in leftover.values()):
+            raise LoadProdError("failed_generation_cleanup_incomplete")
+        return
+    raise LoadProdError("lineage_or_prepared_not_empty")
 
 
 def _structural_from_census(census: dict[str, Any]) -> dict[str, int]:
@@ -598,8 +626,7 @@ def run_production_load(conn: Any, dsn: str, *, deadline_s: int) -> dict[str, An
     last = applied[-1]["filename"] if applied else ""
     if last != "037_p2_i14_prepared_evidence_ref_scale.sql":
         raise LoadProdError("ledger_last_not_037")
-    empty = _empty_counts(conn)
-    _assert_pre_empty(empty)
+    _assert_pre_empty(conn)
     evidence_before = int(conn.execute("SELECT COUNT(*) AS n FROM evidence").fetchone()["n"])
     sources_before = int(conn.execute("SELECT COUNT(*) AS n FROM sources").fetchone()["n"])
     rfc_before = int(conn.execute("SELECT COUNT(*) AS n FROM communication_rfc_ids").fetchone()["n"])

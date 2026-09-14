@@ -644,6 +644,27 @@ class PreparedLoaderPg(_DisposablePg):
             ev_n = conn.execute("SELECT COUNT(*) AS n FROM evidence").fetchone()["n"]
             self.assertEqual(ev_n, 105)
 
+    def test_strips_http_substring_for_prepared_check(self) -> None:
+        self._require_dsn()
+        with psycopg.connect(self.dsn, row_factory=dict_row, connect_timeout=5) as conn:
+            self._wipe(conn)
+            src = self._source(conn)
+            ledger, _, _ = self._ledger(conn)
+            payload = _payload(
+                rfc="<url-check@example.test>",
+                body_text='Click href="http://most.example.test/plan" today.',
+                content_hash=_hash("url-check"),
+            )
+            self._evidence(conn, src, payload)
+            conn.commit()
+            loaded = run_load(conn, read_source_messages(conn, [src]), ledger, dsn=self.dsn)
+            self.assertTrue(loaded["ok"])
+            row = conn.execute(
+                "SELECT cleaned_authored_text, urls_stripped FROM comms_prepared_messages"
+            ).fetchone()
+            self.assertNotRegex(row["cleaned_authored_text"], r"(?i)https?://")
+            self.assertTrue(row["urls_stripped"])
+
 
 if __name__ == "__main__":
     unittest.main()

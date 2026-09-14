@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import time
 from datetime import datetime, timezone
 from typing import Any
@@ -36,6 +37,7 @@ from memorybox.ops.i14_thread_review import (
 
 ALGO_VERSION = "i14-prepared-email-v1"
 MISSING_TS = datetime(1970, 1, 1, tzinfo=timezone.utc)
+HTTP_SUBSTRING = re.compile(r"(?i)https?://\S*")
 
 AUTH_MAP = {
     AUTH_PEGGY: "authenticated_focal",
@@ -270,6 +272,16 @@ def _schema_message_fields(msg: dict[str, Any]) -> dict[str, Any]:
     voice = from_auth and quote == "clean" and identity_quality == "resolved"
     fwd_status, fwd_omitted, fwd_block = _forward_fields(msg)
     sent = parse_sent_at(str(msg.get("timestamp") or msg.get("sent_at") or "")) or MISSING_TS
+    from memorybox.ops.i14_prepared_text import sanitize_prepared
+
+    cleaned, url_a = sanitize_prepared(str(msg.get("cleaned_body") or ""))
+    fwd_block, url_f = sanitize_prepared(fwd_block)
+    cleaned2 = HTTP_SUBSTRING.sub("", cleaned)
+    fwd2 = HTTP_SUBSTRING.sub("", fwd_block)
+    if fwd_status == "none":
+        fwd2 = ""
+        fwd_omitted = ""
+    urls = bool(msg.get("urls_stripped")) or url_a or url_f or cleaned2 != cleaned or fwd2 != fwd_block
     return {
         "authorship": authorship,
         "identity_quality": identity_quality,
@@ -279,10 +291,10 @@ def _schema_message_fields(msg: dict[str, Any]) -> dict[str, Any]:
         "voice_corpus": voice,
         "forward_status": fwd_status,
         "forward_omitted": fwd_omitted,
-        "forward_block": fwd_block,
+        "forward_block": fwd2,
         "sent_at": sent,
-        "cleaned": str(msg.get("cleaned_body") or ""),
-        "urls_stripped": bool(msg.get("urls_stripped")),
+        "cleaned": cleaned2,
+        "urls_stripped": urls,
         "subject": str(msg.get("subject") or ""),
     }
 
