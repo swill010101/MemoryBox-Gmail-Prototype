@@ -24,7 +24,7 @@ Peggy and Sue were validation pilots. An email involving both exists **once**. `
 Activation treatment:
 
 - Gallery-eligible, suppress-default, uncertain, and quality-flagged messages: all stored; all need `canonical_record_id`; Person Ask uses trusted participant links only.
-- Voice: `voice_corpus` plus authenticated **From** `person_id`. To/Cc never qualifies authored voice.
+- Voice: `voice_corpus` plus authenticated **From** `person_id` for any canonical MB Person in the household generation. To/Cc never qualifies authored voice. One generation; Ask/I11A select a Person by joining From `person_id`.
 - Missing Person does not block publication.
 
 ## Activation
@@ -81,7 +81,7 @@ A generation is born unpublished and inactive. Load (later) writes child rows wh
 | Packet `commercial_uncertain` | `commercial_class = uncertain` |
 | Packet `not_commercial` | `not_commercial` |
 | Thread suppress-by-default | `gallery_eligibility = suppress_default` + `suppression_reason` |
-| Voice corpus | `voice_corpus` (requires clean quote quality, resolved identity, authenticated focal) |
+| Voice corpus | `voice_corpus` (clean quote, resolved identity, authenticated From Person; schema token `authenticated_focal` means authenticated author, not one household focal) |
 | Remaining quote risk | `quote_quality`, generated `quote_contamination_flagged` |
 | From/To/Cc | `comms_prepared_participants.role` + `address_normalized` + `identity_confidence` + `person_id` |
 | Attachment flags | `comms_prepared_attachments` metadata, not bytes |

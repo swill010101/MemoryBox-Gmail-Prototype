@@ -56,8 +56,8 @@ Physical names are `comms_prepared_*`. Intent below.
 | `urls_stripped` | Sanitization ran |
 | `quote_quality` / `quote_contamination_flagged` | Remaining quote risk; distinguishable; not voice-eligible |
 | `identity_quality` | resolved / unverified / uncertain |
-| `authorship` | `authenticated_focal` / `authenticated_other` / `unverified` |
-| `voice_corpus` | True only for authenticated focal + clean quote + resolved identity |
+| `authorship` | `authenticated_focal` means authenticated **From** Person (household-wide, not one generation focal). `authenticated_other` / `unverified` otherwise |
+| `voice_corpus` | True when authenticated From Person + clean quote + resolved identity. To/Cc never qualifies. Ask later joins From `person_id`. |
 | `commercial_class` | `retain_life_evidence` / `suppress_default` / `uncertain` / `not_commercial` |
 | `direction` | sent_by_focal / sent_to_focal_other_author / no_focal / unresolved |
 

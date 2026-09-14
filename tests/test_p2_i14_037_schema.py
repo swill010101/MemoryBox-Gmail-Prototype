@@ -20,6 +20,22 @@ ROOT = Path(__file__).resolve().parents[1]
 SQL_037 = ROOT / "memorybox" / "migrations" / "037_p2_i14_prepared_evidence_ref_scale.sql"
 
 
+class AdditiveSql037(unittest.TestCase):
+    def test_037_only_widens_identifier_checks(self) -> None:
+        sql = SQL_037.read_text(encoding="utf-8")
+        self.assertIn("comms_prepared_threads_display_id_scale_check", sql)
+        self.assertIn("comms_prepared_messages_evidence_ref_scale_check", sql)
+        self.assertIn(r"T-[0-9]{4,}", sql)
+        self.assertIn(r"M-[0-9]{2,}", sql)
+        self.assertNotRegex(sql, r"(?i)\binsert\s+into\b")
+        self.assertNotRegex(sql, r"(?i)drop table\b")
+        self.assertNotRegex(sql, r"(?i)alter table evidence\b")
+        self.assertNotIn("CREATE TABLE", sql)
+        self.assertNotIn("comms_prepared_activate_generation", sql)
+        self.assertNotIn("voice_corpus", sql)
+        self.assertNotIn("schema_migrations", sql)
+
+
 class DisposablePg037(_DisposablePg):
     def test_036_rejects_m100_037_accepts_and_keeps_m01(self) -> None:
         self._require_dsn()

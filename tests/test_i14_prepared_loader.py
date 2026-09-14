@@ -418,6 +418,139 @@ class PreparedLoaderPg(_DisposablePg):
                 0,
             )
 
+    def test_household_voice_is_authenticated_from_not_focal_person(self) -> None:
+        self._require_dsn()
+        with psycopg.connect(self.dsn, row_factory=dict_row, connect_timeout=5) as conn:
+            self._wipe(conn)
+            src = self._source(conn)
+            peggy = conn.execute(
+                "INSERT INTO people (display_name, status) VALUES ('Peggy Example', 'confirmed') RETURNING id"
+            ).fetchone()["id"]
+            sue = conn.execute(
+                "INSERT INTO people (display_name, status) VALUES ('Sue Example', 'confirmed') RETURNING id"
+            ).fetchone()["id"]
+            tom = conn.execute(
+                "INSERT INTO people (display_name, status) VALUES ('Tom Example', 'confirmed') RETURNING id"
+            ).fetchone()["id"]
+            ledger = IdentityLedger(focal_person_id=str(peggy))
+            add_confirmed_address(ledger, address="peggy@example.test", person_id=str(peggy), label="Peggy Example")
+            add_confirmed_address(ledger, address="sue@example.test", person_id=str(sue), label="Sue Example")
+            add_confirmed_address(ledger, address="tom@example.test", person_id=str(tom), label="Tom Example")
+            p_peggy = _payload(
+                rfc="<p-voice@example.test>", from_addr="peggy@example.test", to_addr="tom@example.test",
+                body_text="Peggy authored a clean picnic note.", sent_at="2014-01-01T12:00:00+00:00", content_hash=_hash("p-voice"),
+            )
+            p_sue = _payload(
+                rfc="<s-voice@example.test>", from_addr="sue@example.test", to_addr="peggy@example.test",
+                body_text="Sue authored a clean school pickup note.", sent_at="2014-01-01T13:00:00+00:00", content_hash=_hash("s-voice"),
+            )
+            p_sue["from_parsed"] = [{"address": "sue@example.test", "normalized": "sue@example.test", "display_name": "Sue"}]
+            p_sue["to_parsed"] = [{"address": "peggy@example.test", "normalized": "peggy@example.test", "display_name": "Peggy"}]
+            p_tom = _payload(
+                rfc="<t-voice@example.test>", from_addr="tom@example.test", to_addr="sue@example.test",
+                body_text="Tom authored a clean hardware-store note.", sent_at="2014-01-01T14:00:00+00:00", content_hash=_hash("t-voice"),
+            )
+            p_to_only = _payload(
+                rfc="<to-only@example.test>", from_addr="stranger@example.test", to_addr="peggy@example.test",
+                body_text="Please call me about the picnic.", sent_at="2014-01-01T15:00:00+00:00",
+                content_hash=_hash("to-only"),
+            )
+            p_to_only["from_parsed"] = [{"address": "stranger@example.test", "normalized": "stranger@example.test", "display_name": "?"}]
+            p_dirty = _payload(
+                rfc="<dirty@example.test>", from_addr="sue@example.test", to_addr="tom@example.test",
+                subject="RE: dirty quote",
+                body_text=(
+                    "Ok.\n\n"
+                    "Date: Thu, 29 Sep 2011 10:01:58 -0500\n"
+                    "Subject: Stuff\n"
+                    "From: tom@example.test\n"
+                    "To: sue@example.test\n\n"
+                    "quoted history"
+                ),
+                sent_at="2014-01-01T16:00:00+00:00",
+                content_hash=_hash("dirty"),
+            )
+            p_dirty["from_parsed"] = [{"address": "sue@example.test", "normalized": "sue@example.test", "display_name": "Sue"}]
+            self._evidence(conn, src, p_peggy)
+            self._evidence(conn, src, p_sue)
+            self._evidence(conn, src, p_tom)
+            self._evidence(conn, src, p_to_only)
+            self._evidence(conn, src, p_dirty)
+            conn.commit()
+            messages = read_source_messages(conn, [src])
+            loaded = run_load(conn, messages, ledger, dsn=self.dsn)
+            self.assertTrue(loaded["ok"])
+            self.assertEqual(loaded["messages"], 5)
+            voice_by_person = conn.execute(
+                """
+                SELECT p.person_id, COUNT(*)::int AS n
+                  FROM comms_prepared_messages m
+                  JOIN comms_prepared_participants p
+                    ON p.message_id = m.id AND p.role = 'from'
+                 WHERE m.voice_corpus
+                 GROUP BY p.person_id
+                """
+            ).fetchall()
+            counts = {str(r["person_id"]): int(r["n"]) for r in voice_by_person}
+            self.assertEqual(counts.get(str(peggy)), 1)
+            self.assertEqual(counts.get(str(sue)), 1)
+            self.assertEqual(counts.get(str(tom)), 1)
+            self.assertEqual(sum(counts.values()), 3)
+            to_cc_voice = conn.execute(
+                """
+                SELECT COUNT(*) AS n
+                  FROM comms_prepared_participants p
+                  JOIN comms_prepared_messages m ON m.id = p.message_id
+                 WHERE p.role IN ('to','cc') AND m.voice_corpus
+                   AND p.identity_confidence = 'authenticated_focal'
+                """
+            ).fetchone()["n"]
+            self.assertEqual(to_cc_voice, 0)
+            stranger = conn.execute(
+                """
+                SELECT m.voice_corpus, p.identity_confidence, p.person_id
+                  FROM comms_prepared_messages m
+                  JOIN comms_prepared_participants p ON p.message_id = m.id AND p.role = 'from'
+                 WHERE lower(p.address_normalized) = 'stranger@example.test'
+                """
+            ).fetchone()
+            self.assertFalse(stranger["voice_corpus"])
+            self.assertEqual(stranger["identity_confidence"], "unverified")
+            self.assertIsNone(stranger["person_id"])
+            dirty = conn.execute(
+                """
+                SELECT m.voice_corpus, m.quote_quality
+                  FROM comms_prepared_messages m
+                 WHERE m.subject = 'RE: dirty quote'
+                """
+            ).fetchone()
+            self.assertIsNotNone(dirty)
+            self.assertFalse(dirty["voice_corpus"])
+            other_focal = IdentityLedger(focal_person_id=str(sue))
+            add_confirmed_address(other_focal, address="peggy@example.test", person_id=str(peggy), label="Peggy Example")
+            add_confirmed_address(other_focal, address="sue@example.test", person_id=str(sue), label="Sue Example")
+            add_confirmed_address(other_focal, address="tom@example.test", person_id=str(tom), label="Tom Example")
+            conn.execute("DELETE FROM comms_prepared_generations")
+            conn.commit()
+            again = run_load(conn, messages, other_focal, dsn=self.dsn)
+            self.assertTrue(again["ok"])
+            voice_again = {
+                str(r["person_id"]): int(r["n"])
+                for r in conn.execute(
+                    """
+                    SELECT p.person_id, COUNT(*)::int AS n
+                      FROM comms_prepared_messages m
+                      JOIN comms_prepared_participants p
+                        ON p.message_id = m.id AND p.role = 'from'
+                     WHERE m.voice_corpus
+                     GROUP BY p.person_id
+                    """
+                ).fetchall()
+            }
+            self.assertEqual(voice_again.get(str(peggy)), 1)
+            self.assertEqual(voice_again.get(str(sue)), 1)
+            self.assertEqual(voice_again.get(str(tom)), 1)
+
     def test_long_thread_scales_evidence_ref_past_99(self) -> None:
         self._require_dsn()
         with psycopg.connect(self.dsn, row_factory=dict_row, connect_timeout=5) as conn:

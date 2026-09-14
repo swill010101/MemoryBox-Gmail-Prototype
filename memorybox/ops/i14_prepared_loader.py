@@ -2,6 +2,9 @@
 
 Never activates or publishes. Never updates evidence. Refuses FlightSim and
 dbname memorybox. Failed loads roll back the whole generation.
+
+One household-email generation stores each message once. Authored voice is any
+authenticated From Person with clean quote quality, not one focal Person.
 """
 from __future__ import annotations
 
@@ -217,16 +220,32 @@ def _ensure_canonical(
     return cid
 
 
+def _from_is_authenticated_person(msg: dict[str, Any]) -> bool:
+    """Authored voice is household-wide: any confirmed From Person, not one focal."""
+    for party in msg.get("from_parties") or []:
+        pid = str(party.get("person_id") or "").strip()
+        status = str(party.get("status") or UNVERIFIED)
+        if pid and status != UNVERIFIED:
+            return True
+    return False
+
+
 def _schema_message_fields(msg: dict[str, Any]) -> dict[str, Any]:
+    from_auth = _from_is_authenticated_person(msg)
     authorship_raw = str(msg.get("authorship") or UNVERIFIED)
-    authorship = AUTH_MAP.get(authorship_raw, "unverified")
+    if from_auth:
+        authorship = "authenticated_focal"
+    else:
+        authorship = AUTH_MAP.get(authorship_raw, "unverified")
+        if authorship == "authenticated_other":
+            authorship = "unverified"
     identity_quality = "resolved" if authorship != "unverified" else "unverified"
     if msg.get("ambiguous_participant") and authorship != "unverified":
         identity_quality = "uncertain"
     quote = _quote_quality(msg)
     commercial = COMMERCIAL_MAP.get(str(msg.get("commercial_class") or "not_commercial"), "not_commercial")
     direction = DIR_MAP.get(str(msg.get("direction") or ""), "unresolved")
-    voice = authorship == "authenticated_focal" and quote == "clean" and identity_quality == "resolved"
+    voice = from_auth and quote == "clean" and identity_quality == "resolved"
     fwd_status, fwd_omitted, fwd_block = _forward_fields(msg)
     sent = parse_sent_at(str(msg.get("timestamp") or msg.get("sent_at") or "")) or MISSING_TS
     return {
@@ -360,11 +379,7 @@ def forecast_prepared_counts(
                     unverified_participants += 1
                 else:
                     authenticated_participants += 1
-                if (
-                    role == "from"
-                    and status != "unverified"
-                    and fields["quote_quality"] == "clean"
-                ):
+                if role == "from" and fields["voice_corpus"]:
                     label = str(party.get("label") or "confirmed_person").split()[0]
                     if not label or "@" in label:
                         label = "confirmed_person"
@@ -414,7 +429,7 @@ def forecast_prepared_counts(
         "unverified_participants": unverified_participants,
         "attachments": attachments,
         "commercial_classes": commercial_counts,
-        "voice_corpus_messages_focal": voice_n,
+        "voice_corpus_messages": voice_n,
         "authenticated_from_clean_quote_by_person_label": [
             {"person_label": k, "messages": voice_by_label[k]}
             for k in sorted(voice_by_label, key=lambda x: (-voice_by_label[x], x))
@@ -433,8 +448,6 @@ def _insert_participants(conn: Any, message_id: Any, msg: dict[str, Any]) -> Non
             if not addr:
                 continue
             status = AUTH_MAP.get(str(row.get("status") or UNVERIFIED), "unverified")
-            if role != "from" and status == "authenticated_focal":
-                status = "authenticated_other"
             pid = row.get("person_id") or None
             if status == "unverified":
                 pid = None
@@ -445,6 +458,10 @@ def _insert_participants(conn: Any, message_id: Any, msg: dict[str, Any]) -> Non
                 if seen_from:
                     continue
                 seen_from = True
+                if pid:
+                    status = "authenticated_focal"
+            elif status == "authenticated_focal":
+                status = "authenticated_other"
             conn.execute(
                 """
                 INSERT INTO comms_prepared_participants (

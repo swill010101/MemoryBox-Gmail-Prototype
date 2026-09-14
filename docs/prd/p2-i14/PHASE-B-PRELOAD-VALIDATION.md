@@ -50,7 +50,7 @@ Evidence is not deleted or updated. Omitted duplicates retain `duplicate_of` sur
 
 ## Forecast (live counts)
 
-See [PHASE-B-PRELOAD-VALIDATION.json](PHASE-B-PRELOAD-VALIDATION.json). Voice-by-Person is authenticated From with clean quote, not the census’s arbitrary focal Person (`voice_corpus_messages_focal` is 0 because the census focal is the first `people.display_name`, not a production focal choice).
+See [PHASE-B-PRELOAD-VALIDATION.json](PHASE-B-PRELOAD-VALIDATION.json). Voice is household-wide authenticated From (Ask joins `person_id`); the prior census `voice_corpus_messages_focal=0` reflected a focal-Person bug that the loader no longer uses.
 
 Quote/commercial counts used independent per-message cleanup (hard deadline). Production load still uses in-thread quote prior; those class counts may shift slightly.
 

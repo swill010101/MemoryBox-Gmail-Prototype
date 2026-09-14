@@ -1,7 +1,9 @@
 # I14 Phase B — prepared-email loader (build and rehearsal)
 
 **Status:** Directionally accepted (2026-09-13) plus pre-load validation. **Not** a production load.  
-**Schema:** 036 remains the prepared tables. **037** (repo only) widens `display_id` / `evidence_ref` CHECKs. FlightSim still empty; 037 not applied.
+**Schema:** 036 remains the prepared tables. **037** widens `display_id` / `evidence_ref` CHECKs (empty apply authorized separately).
+
+Voice is household-wide: any authenticated canonical From Person may qualify. `IdentityLedger.focal_person_id` does not gate another Person’s authored voice. Ask later joins From `person_id`.
 
 ## Founder decisions (locked)
 
