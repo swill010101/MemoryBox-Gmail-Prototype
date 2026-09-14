@@ -29,6 +29,8 @@ Never calls `comms_prepared_activate_generation`. Failure marks the generation `
 
 Private review (gitignored): `MEMORYBOX_I14_REVIEW_EMIT_PRIVATE=1` and `MEMORYBOX_I14_REVIEW_OUT`.
 
+Activation-review packet (gitignored, max 12 threads, TXT only): `python -m memorybox i14-activation-review` with the same private-emit flags plus `MEMORYBOX_I14_VOICE_DELTA_ALLOW_FLIGHTSIM=1`. Output: `working/i14-activation-review/` (`INDEX.txt`, `packet-001.txt`, `originals/<Evidence-ref>.txt`). Do not activate from the packet.
+
 ## Founder decisions (locked)
 
 1. Survivor = earliest UTC instant, then `evidence_id`.
@@ -50,4 +52,4 @@ python -m unittest tests.test_i14_consolidation tests.test_i14_prepared_loader t
 
 ## Review
 
-Counts-only: [PHASE-B-PRELOAD-VALIDATION.md](PHASE-B-PRELOAD-VALIDATION.md) and JSON beside it. No HTML dump. No corpus TXT. Private 12-thread packet is gitignored.
+Counts-only: [PHASE-B-PRELOAD-VALIDATION.md](PHASE-B-PRELOAD-VALIDATION.md) and JSON beside it. No HTML dump. No corpus TXT. Private 12-thread packets are gitignored (`working/i14-household-email-review-038/`, `working/i14-activation-review/`).

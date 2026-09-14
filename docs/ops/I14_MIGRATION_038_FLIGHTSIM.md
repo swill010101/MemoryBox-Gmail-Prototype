@@ -27,4 +27,4 @@ Restore the verified dump only if founder authorizes. Do not DROP 038 ad hoc.
 
 ## FlightSim git
 
-Pull `codex/p2-i14-communications` at `bf61896` so local files match the applied ledger. Serve does not need a recycle for this CHECK-only change unless founder wants HEAD aligned.
+Pull `codex/p2-i14-communications` so local files match the applied 038 blob and the corrected loader. Do **not** re-run migrate or reload. Serve recycle is optional for HEAD alignment only (`startmb.cmd -Restart`); startup migrate must apply nothing.
