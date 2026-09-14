@@ -402,6 +402,119 @@ class PreparedPolicyRegressions(unittest.TestCase):
         self.assertIn("ZZZX Meet", compacted[1]["cleaned_body"])
         self.assertNotIn("financial status", compacted[1]["cleaned_body"])
 
+    def test_glued_hotmail_headers_preserve_peggy_chimp_sentence(self) -> None:
+        from memorybox.ops.i14_prepared_loader import _schema_message_fields
+
+        peggy = (
+            "LOL....cough, cough!!  That chimp had to be the funniest.  "
+            "He tries to stick finger to get a taste.  Matt in the pie??  LMAO"
+        )
+        tom_line = "A bit too long, but funny all the same...... those crazy Japanese!"
+        glue = (
+            "Date: Tue, 23 Dec 2008 17:10:47 -0600"
+            "From: tom@example.test"
+            "To: peggy@example.test; other@example.test"
+            "Subject: Crazy Japanese!"
+        )
+        first = {
+            "evidence_id": "e-tom-chimp",
+            "raw_body": tom_line + " Have a great day!Tom",
+            "body": tom_line + " Have a great day!Tom",
+            "subject": "Crazy Japanese!",
+            "timestamp": "2008-12-23T23:10:47+00:00",
+        }
+        second = {
+            "evidence_id": "e-peg-chimp",
+            "raw_body": peggy + "\n\n" + glue + tom_line + " Have a great day!Tom\n",
+            "body": peggy + "\n\n" + glue + tom_line + " Have a great day!Tom\n",
+            "subject": "RE: Crazy Japanese!",
+            "timestamp": "2008-12-24T00:10:47+00:00",
+        }
+        compacted = preview._compact_thread_messages([first, second])
+        authored = compacted[1]["cleaned_body"]
+        self.assertIn("Matt in the pie", authored)
+        self.assertNotIn("A bit too long", authored)
+        self.assertNotIn("Date: Tue", authored)
+        fields = _schema_message_fields(
+            {
+                "from_parties": [
+                    {
+                        "person_id": "person-peggy",
+                        "status": "authenticated_other",
+                        "address": "peggy@example.test",
+                    }
+                ],
+                "cleaned_body": authored,
+                "clean_method": compacted[1]["clean_method"],
+                "authorship": "authenticated_other",
+            }
+        )
+        self.assertEqual(fields["quote_quality"], "clean")
+        self.assertTrue(fields["voice_corpus"])
+
+    def test_glued_hotmail_headers_preserve_peggy_new_year_sentence(self) -> None:
+        peggy = (
+            "LOL....I've never seen that before!  Very clever!  How everybody doing today??  "
+            "Spouse and I...STILL dull here!  Ange home from work and the Vegas bound group "
+            "made it to the airport.  Hope you have an enjoyable, relaxing New Year's Day!!  "
+            "Hugs,  Pegs"
+        )
+        tom_line = "Been around for a while, but still good......"
+        glue = (
+            "Date: Thu, 1 Jan 2009 08:07:17 -0600"
+            "From: tom@example.test"
+            "To: peggy@example.test; other@example.test"
+            "Subject: Kids Rock!"
+        )
+        first = {
+            "evidence_id": "e-tom-ny",
+            "raw_body": tom_line + " Have a great day!Tom",
+            "body": tom_line + " Have a great day!Tom",
+            "subject": "Kids Rock!",
+            "timestamp": "2009-01-01T14:07:17+00:00",
+        }
+        second = {
+            "evidence_id": "e-peg-ny",
+            "raw_body": peggy + "\n\n" + glue + tom_line + " Have a great day!Tom\n",
+            "body": peggy + "\n\n" + glue + tom_line + " Have a great day!Tom\n",
+            "subject": "RE: Kids Rock!",
+            "timestamp": "2009-01-01T16:07:17+00:00",
+        }
+        compacted = preview._compact_thread_messages([first, second])
+        authored = compacted[1]["cleaned_body"]
+        self.assertIn("Vegas bound group", authored)
+        self.assertIn("Hugs,  Pegs", authored)
+        self.assertNotIn("Been around for a while", authored)
+        self.assertNotIn("Date: Thu", authored)
+
+    def test_glued_hotmail_leftover_is_quote_risk_not_voice(self) -> None:
+        from memorybox.ops.i14_prepared_loader import _schema_message_fields
+        from memorybox.ops.i14_prepared_text import classify_residue
+
+        glued = (
+            "Date: Thu, 1 Jan 2009 08:07:17 -0600"
+            "From: tom@example.test"
+            "To: peggy@example.test"
+            "Subject: Kids Rock!"
+        )
+        self.assertEqual(classify_residue(glued), "hotmail_date_from_to_subject")
+        fields = _schema_message_fields(
+            {
+                "from_parties": [
+                    {
+                        "person_id": "person-peggy",
+                        "status": "authenticated_other",
+                        "address": "peggy@example.test",
+                    }
+                ],
+                "cleaned_body": glued,
+                "clean_method": "none",
+                "authorship": "authenticated_other",
+            }
+        )
+        self.assertEqual(fields["quote_quality"], "suspected_contamination")
+        self.assertFalse(fields["voice_corpus"])
+
 
 if __name__ == "__main__":
     unittest.main()

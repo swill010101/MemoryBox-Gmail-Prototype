@@ -29,7 +29,9 @@ from memorybox.ops.i14_thread_review import (
 )
 
 CONFIRM = "household-email-unpublished-v1"
-REQUIRED_LEDGER = 37
+REPLACE_CONFIRM = "replace-unpublished-voice-038-v1"
+REQUIRED_LEDGER = 38
+LEDGER_LAST = "038_p2_i14_voice_without_recipient_identity.sql"
 ACCEPTED = {
     "mbox_rows": 91281,
     "assigned_rows": 91275,
@@ -100,10 +102,70 @@ def _empty_counts(conn: Any) -> dict[str, int]:
     return out
 
 
-def _assert_pre_empty(conn: Any) -> None:
+def _clear_prepared_and_lineage(conn: Any) -> None:
+    conn.execute(
+        """
+        DELETE FROM comms_prepared_generations
+         WHERE NOT published AND NOT is_active
+        """
+    )
+    conn.execute("DELETE FROM comms_record_identity_aliases")
+    conn.execute("DELETE FROM comms_record_identities")
+    conn.execute("DELETE FROM comms_source_checkpoint")
+    conn.execute("DELETE FROM comms_extract_instances")
+    conn.execute("DELETE FROM comms_source_memberships")
+    conn.execute("DELETE FROM comms_logical_sources")
+    conn.commit()
+
+
+def _reject_unpublished_snapshot(conn: Any) -> dict[str, Any]:
+    if os.environ.get("MEMORYBOX_I14_REPLACE_UNPUBLISHED", "").strip() != "1":
+        raise LoadProdError("replace_unpublished_not_allowed")
+    if os.environ.get("MEMORYBOX_I14_REPLACE_CONFIRM", "").strip() != REPLACE_CONFIRM:
+        raise LoadProdError("replace_confirm_mismatch")
+    gens = conn.execute(
+        """
+        SELECT id, status, published, is_active
+          FROM comms_prepared_generations
+         ORDER BY created_at
+        """
+    ).fetchall()
+    published = [g for g in gens if g["published"] or g["is_active"]]
+    if published:
+        raise LoadProdError("cannot_replace_published_or_active")
+    validated = [g for g in gens if str(g["status"]) == "validated"]
+    if len(validated) != 1 or len(gens) != 1:
+        raise LoadProdError("replace_requires_single_unpublished")
+    gid = validated[0]["id"]
+    conn.execute(
+        """
+        UPDATE comms_prepared_generations
+           SET status = 'failed', published = FALSE, is_active = FALSE, updated_at = now()
+         WHERE id = %s AND NOT published AND NOT is_active AND status = 'validated'
+        """,
+        (gid,),
+    )
+    _clear_prepared_and_lineage(conn)
+    leftover = conn.execute(
+        "SELECT COUNT(*) AS n FROM comms_prepared_generations WHERE id = %s",
+        (gid,),
+    ).fetchone()["n"]
+    if int(leftover) != 0:
+        raise LoadProdError("rejected_snapshot_still_present")
+    return {
+        "rejected_generation_id": str(gid),
+        "rejection_reason": (
+            "voice_identity_uncertain_blocked_authenticated_from;"
+            "replaced_after_038_and_glued_hotmail_quote_cut"
+        ),
+        "rejected_cannot_activate": True,
+    }
+
+
+def _assert_pre_empty(conn: Any) -> dict[str, Any] | None:
     counts = _empty_counts(conn)
     if all(int(v) == 0 for v in counts.values()):
-        return
+        return None
     gens = conn.execute(
         """
         SELECT status, published, is_active
@@ -113,23 +175,19 @@ def _assert_pre_empty(conn: Any) -> None:
     if gens and all(
         str(g["status"]) == "failed" and not g["published"] and not g["is_active"] for g in gens
     ):
-        conn.execute(
-            """
-            DELETE FROM comms_prepared_generations
-             WHERE status = 'failed' AND NOT published AND NOT is_active
-            """
-        )
-        conn.execute("DELETE FROM comms_record_identity_aliases")
-        conn.execute("DELETE FROM comms_record_identities")
-        conn.execute("DELETE FROM comms_source_checkpoint")
-        conn.execute("DELETE FROM comms_extract_instances")
-        conn.execute("DELETE FROM comms_source_memberships")
-        conn.execute("DELETE FROM comms_logical_sources")
-        conn.commit()
+        _clear_prepared_and_lineage(conn)
         leftover = _empty_counts(conn)
         if any(int(v) != 0 for v in leftover.values()):
             raise LoadProdError("failed_generation_cleanup_incomplete")
-        return
+        return None
+    if (
+        gens
+        and len(gens) == 1
+        and str(gens[0]["status"]) == "validated"
+        and not gens[0]["published"]
+        and not gens[0]["is_active"]
+    ):
+        return _reject_unpublished_snapshot(conn)
     raise LoadProdError("lineage_or_prepared_not_empty")
 
 
@@ -256,7 +314,7 @@ def post_load_validation(conn: Any, gid: Any, *, held_rows: int) -> dict[str, An
             (gid,),
         ).fetchall()
     }
-    voice = []
+    voice_merged: dict[str, int] = {}
     for r in conn.execute(
         """
         SELECT COALESCE(pe.display_name, 'unknown') AS person_label, COUNT(*)::int AS n
@@ -271,7 +329,13 @@ def post_load_validation(conn: Any, gid: Any, *, held_rows: int) -> dict[str, An
         (gid,),
     ).fetchall():
         label = str(r["person_label"] or "unknown").split()[0]
-        voice.append({"person_label": label, "messages": int(r["n"])})
+        if not label or "@" in label:
+            label = "confirmed_person"
+        voice_merged[label] = voice_merged.get(label, 0) + int(r["n"])
+    voice = [
+        {"person_label": k, "messages": voice_merged[k]}
+        for k in sorted(voice_merged, key=lambda x: (-voice_merged[x], x))
+    ]
     omitted = n(
         """
         SELECT COALESCE(SUM(duplicate_omitted_count),0)::int AS n
@@ -290,6 +354,13 @@ def post_load_validation(conn: Any, gid: Any, *, held_rows: int) -> dict[str, An
         "SELECT COUNT(*) AS n FROM comms_prepared_generations WHERE published"
     )
     active = n("SELECT COUNT(*) AS n FROM comms_prepared_active_generations")
+    failed_n = n("SELECT COUNT(*) AS n FROM comms_prepared_generations WHERE status = 'failed'")
+    eligible_n = n(
+        """
+        SELECT COUNT(*) AS n FROM comms_prepared_generations
+         WHERE status = 'validated' AND NOT published AND NOT is_active
+        """
+    )
     gen = conn.execute(
         """
         SELECT status, published, is_active FROM comms_prepared_generations WHERE id = %s
@@ -325,6 +396,8 @@ def post_load_validation(conn: Any, gid: Any, *, held_rows: int) -> dict[str, An
         "identity_alias_rows": omitted_with_lineage,
         "published_generations": published,
         "active_generations": active,
+        "failed_generations": failed_n,
+        "eligible_unpublished_generations": eligible_n,
         "generation_status": str(gen["status"] if gen else ""),
         "generation_published": bool(gen["published"]) if gen else True,
         "generation_active": bool(gen["is_active"]) if gen else True,
@@ -622,11 +695,11 @@ def run_production_load(conn: Any, dsn: str, *, deadline_s: int) -> dict[str, An
     if pending_files:
         raise LoadProdError("pending_not_empty")
     if len(applied) != REQUIRED_LEDGER:
-        raise LoadProdError("ledger_not_001_037")
+        raise LoadProdError("ledger_not_001_038")
     last = applied[-1]["filename"] if applied else ""
-    if last != "037_p2_i14_prepared_evidence_ref_scale.sql":
-        raise LoadProdError("ledger_last_not_037")
-    _assert_pre_empty(conn)
+    if last != LEDGER_LAST:
+        raise LoadProdError("ledger_last_not_038")
+    rejected = _assert_pre_empty(conn)
     evidence_before = int(conn.execute("SELECT COUNT(*) AS n FROM evidence").fetchone()["n"])
     sources_before = int(conn.execute("SELECT COUNT(*) AS n FROM sources").fetchone()["n"])
     rfc_before = int(conn.execute("SELECT COUNT(*) AS n FROM communication_rfc_ids").fetchone()["n"])
@@ -703,6 +776,8 @@ def run_production_load(conn: Any, dsn: str, *, deadline_s: int) -> dict[str, An
     }
     recon_diffs = _agree(actual, ACCEPTED)
     private: dict[str, Any] = {"generation_id": gid}
+    if rejected:
+        private["rejected_snapshot"] = rejected
     review_meta = None
     review_out = os.environ.get("MEMORYBOX_I14_REVIEW_OUT", "").strip()
     if review_out:
@@ -719,8 +794,10 @@ def run_production_load(conn: Any, dsn: str, *, deadline_s: int) -> dict[str, An
         "ok": True,
         "kind": "household_email_unpublished_load",
         "activation_called": False,
-        "published_generations": 0,
-        "active_generations": 0,
+        "published_generations": validation["published_generations"],
+        "active_generations": validation["active_generations"],
+        "failed_generations": validation["failed_generations"],
+        "eligible_unpublished_generations": validation["eligible_unpublished_generations"],
         "ledger_n": REQUIRED_LEDGER,
         "pending": [],
         "preflight": structural,
@@ -749,6 +826,8 @@ def run_production_load(conn: Any, dsn: str, *, deadline_s: int) -> dict[str, An
             for k, v in (private.get("review_coverage") or {}).items()
             if str(v) == "present" or str(v).startswith("T-")
         ),
+        "replaced_unpublished_snapshot": bool(rejected),
+        "rejected_cannot_activate": True if rejected else None,
     }
     assert_counts_only(public)
     return {"public": public, "private": private}

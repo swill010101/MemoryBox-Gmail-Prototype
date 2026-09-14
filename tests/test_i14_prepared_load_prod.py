@@ -27,8 +27,15 @@ class Flags(unittest.TestCase):
         os.environ["MEMORYBOX_I14_LOAD_CONFIRM"] = CONFIRM
         _require_flags()
 
-    def test_packet_thread_cap_is_twelve(self) -> None:
-        self.assertEqual(MAX_PACKET_THREADS, 12)
+    def test_replace_unpublished_requires_confirm(self) -> None:
+        os.environ.pop("MEMORYBOX_I14_REPLACE_UNPUBLISHED", None)
+        os.environ.pop("MEMORYBOX_I14_REPLACE_CONFIRM", None)
+        from memorybox.ops.i14_prepared_load_prod import REPLACE_CONFIRM, LoadProdError, _reject_unpublished_snapshot
+
+        self.assertEqual(REPLACE_CONFIRM, "replace-unpublished-voice-038-v1")
+        with self.assertRaises(LoadProdError) as ctx:
+            _reject_unpublished_snapshot(None)
+        self.assertEqual(str(ctx.exception), "replace_unpublished_not_allowed")
 
 
 if __name__ == "__main__":

@@ -6,7 +6,12 @@ Voice is household-wide: any authenticated canonical From Person may qualify. `I
 
 ## Production load (unpublished, inactive)
 
-Requires FlightSim ledger **001–037**, pending empty, empty 035/prepared tables, and:
+Requires FlightSim ledger **001–038**, pending empty, and either empty 035/prepared tables or one unpublished `validated` snapshot with:
+
+```
+MEMORYBOX_I14_REPLACE_UNPUBLISHED=1
+MEMORYBOX_I14_REPLACE_CONFIRM=replace-unpublished-voice-038-v1
+```
 
 ```
 MEMORYBOX_I14_LOAD_ALLOW_FLIGHTSIM=1

@@ -43,6 +43,13 @@ HOTMAIL_DATE_BLOCK = re.compile(
     r"(?:\s*\n)?"
     r"\s*To:\s+.+"
 )
+# Hotmail often concatenates headers on one line (no newlines). Date/From/To/Subject
+# is reply history, not new authorship — including when a quoted sentence is glued
+# onto Subject.
+HOTMAIL_DATE_FROM_TO_SUBJECT = re.compile(
+    r"(?im)^\s*Date:\s+(?:(?!From:).)+From:\s+(?:(?!To:).)+To:\s+"
+    r"(?:(?!Subject:).)+Subject:\s+"
+)
 FWD_MARK = re.compile(
     r"(?im)^\s*(?:Begin forwarded message:|-{3,}\s*Forwarded (?:Message|message)\s*-{3,})\s*$"
 )
@@ -58,6 +65,7 @@ MARKETING_TAIL = re.compile(
     r"privacy policy|this email was sent to|©|&copy;|all rights reserved).*\Z"
 )
 RESIDUE_HOTMAIL = HOTMAIL_DATE_BLOCK
+RESIDUE_HOTMAIL_GLUED = HOTMAIL_DATE_FROM_TO_SUBJECT
 RESIDUE_ON_WROTE = ON_WROTE
 RESIDUE_ORIGINAL = ORIGINAL_MSG
 RESIDUE_OUTLOOK = re.compile(r"(?im)^\s*From:\s+.+\nSent:\s+")
@@ -132,6 +140,7 @@ def _first_match(
 
 REPLY_SPECS: list[tuple[str, re.Pattern[str]]] = [
     ("hotmail_date_subject_from_to", HOTMAIL_DATE_BLOCK),
+    ("hotmail_date_from_to_subject", HOTMAIL_DATE_FROM_TO_SUBJECT),
     ("on_wrote", ON_WROTE),
     ("original_message", ORIGINAL_MSG),
     ("outlook_from_sent", OUTLOOK_FROM_SENT),
@@ -286,6 +295,8 @@ def classify_residue(cleaned: str) -> str | None:
     text = cleaned or ""
     if RESIDUE_HOTMAIL.search(text):
         return "hotmail_date_subject_from_to"
+    if RESIDUE_HOTMAIL_GLUED.search(text):
+        return "hotmail_date_from_to_subject"
     if RESIDUE_ON_WROTE.search(text):
         return "on_wrote"
     if RESIDUE_ORIGINAL.search(text):

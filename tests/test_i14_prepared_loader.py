@@ -624,6 +624,77 @@ class PreparedLoaderPg(_DisposablePg):
             self.assertEqual(voice_again.get(str(sue)), 1)
             self.assertEqual(voice_again.get(str(tom)), 2)
 
+    def test_glued_hotmail_peggy_reply_keeps_authored_sentence_on_disposable_postgres(self) -> None:
+        self._require_dsn()
+        with psycopg.connect(self.dsn, row_factory=dict_row, connect_timeout=5) as conn:
+            self._wipe(conn)
+            src = self._source(conn)
+            peggy = conn.execute(
+                "INSERT INTO people (display_name, status) VALUES ('Peggy Example', 'confirmed') RETURNING id"
+            ).fetchone()["id"]
+            tom = conn.execute(
+                "INSERT INTO people (display_name, status) VALUES ('Tom Example', 'confirmed') RETURNING id"
+            ).fetchone()["id"]
+            ledger = IdentityLedger(focal_person_id=str(peggy))
+            add_confirmed_address(ledger, address="peggy@example.test", person_id=str(peggy), label="Peggy Example")
+            add_confirmed_address(ledger, address="tom@example.test", person_id=str(tom), label="Tom Example")
+            tom_line = "A bit too long, but funny all the same...... those crazy Japanese!"
+            glue = (
+                "Date: Tue, 23 Dec 2008 17:10:47 -0600"
+                "From: tom@example.test"
+                "To: peggy@example.test"
+                "Subject: Crazy Japanese!"
+            )
+            p_tom = _payload(
+                rfc="<glue-tom@example.test>",
+                from_addr="tom@example.test",
+                to_addr="peggy@example.test",
+                subject="Crazy Japanese!",
+                body_text=tom_line + " Have a great day!Tom",
+                sent_at="2008-12-23T23:10:47+00:00",
+                content_hash=_hash("glue-tom"),
+            )
+            p_tom["from_parsed"] = [{"address": "tom@example.test", "normalized": "tom@example.test", "display_name": "Tom"}]
+            p_tom["to_parsed"] = [{"address": "peggy@example.test", "normalized": "peggy@example.test", "display_name": "Peggy"}]
+            peggy_text = (
+                "LOL....cough, cough!!  That chimp had to be the funniest.  "
+                "He tries to stick finger to get a taste.  Matt in the pie??  LMAO"
+            )
+            p_peggy = _payload(
+                rfc="<glue-peg@example.test>",
+                from_addr="peggy@example.test",
+                to_addr="tom@example.test",
+                subject="RE: Crazy Japanese!",
+                body_text=peggy_text + "\n\n" + glue + tom_line + " Have a great day!Tom\n",
+                sent_at="2008-12-24T00:10:47+00:00",
+                content_hash=_hash("glue-peg"),
+                in_reply_to_ids=["<glue-tom@example.test>"],
+            )
+            p_peggy["from_parsed"] = [{"address": "peggy@example.test", "normalized": "peggy@example.test", "display_name": "Peggy"}]
+            p_peggy["to_parsed"] = [{"address": "tom@example.test", "normalized": "tom@example.test", "display_name": "Tom"}]
+            self._evidence(conn, src, p_tom)
+            self._evidence(conn, src, p_peggy)
+            conn.commit()
+            messages = read_source_messages(conn, [src])
+            loaded = run_load(conn, messages, ledger, dsn=self.dsn)
+            self.assertTrue(loaded["ok"])
+            row = conn.execute(
+                """
+                SELECT m.cleaned_authored_text, m.voice_corpus, m.quote_quality, m.evidence_id
+                  FROM comms_prepared_messages m
+                  JOIN comms_prepared_participants p ON p.message_id = m.id AND p.role = 'from'
+                 WHERE p.person_id = %s
+                """,
+                (peggy,),
+            ).fetchone()
+            self.assertIn("Matt in the pie", row["cleaned_authored_text"])
+            self.assertNotIn("A bit too long", row["cleaned_authored_text"])
+            self.assertNotIn("Date: Tue", row["cleaned_authored_text"])
+            self.assertEqual(row["quote_quality"], "clean")
+            self.assertTrue(row["voice_corpus"])
+            still = conn.execute("SELECT COUNT(*) AS n FROM evidence").fetchone()["n"]
+            self.assertEqual(still, 2)
+
     def test_long_thread_scales_evidence_ref_past_99(self) -> None:
         self._require_dsn()
         with psycopg.connect(self.dsn, row_factory=dict_row, connect_timeout=5) as conn:
