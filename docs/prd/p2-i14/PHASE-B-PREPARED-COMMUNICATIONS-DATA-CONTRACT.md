@@ -48,7 +48,7 @@ Physical names are `comms_prepared_*`. Intent below.
 | `ordinal` | Display order after `sent_at` + `evidence_id` sort |
 | `evidence_id` | Immutable original (`ON DELETE RESTRICT`) |
 | `canonical_record_id` | Optional 035 identity (`ON DELETE RESTRICT`) |
-| `evidence_ref` | Review pointer (`T-NNNN-M-NN`) |
+| `evidence_ref` | Review pointer (`T-NNNN-M-NN`, scaling via 037 to more digits when needed) |
 | `sent_at` | Stored timestamptz |
 | `subject` | As reconstructed |
 | `cleaned_authored_text` | Newly authored contribution only. No tracking/login/unsubscribe/marketing link text. |

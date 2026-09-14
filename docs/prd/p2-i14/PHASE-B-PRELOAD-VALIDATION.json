@@ -1,0 +1,82 @@
+{
+  "ok": true,
+  "kind": "counts_only_preload_validation",
+  "date": "2026-09-13",
+  "flightsim_writes": false,
+  "production_load": false,
+  "activation_called": false,
+  "prepared_tables_remain_empty": true,
+  "audit_elapsed_ms": 49886,
+  "census_elapsed_ms": 210141,
+  "run_deadline_s": 600,
+  "statement_timeout": "30s",
+  "quote_cleanup_mode": "independent_per_message",
+  "rule_id": "i14-household-email-consolidate-v1",
+  "thread_cap_disposition": {
+    "household_email_threads_over_99": 0,
+    "max_thread_size": 89,
+    "threads": 40996,
+    "schema_036_blocked_99_messages_and_exactly_4_digit_thread_ids": true,
+    "036_would_reject_T-40996": true,
+    "removed_by_migration": "037_p2_i14_prepared_evidence_ref_scale",
+    "new_pattern": "T-[0-9]{4,}-M-[0-9]{2,}",
+    "M-01_meaning_unchanged": true,
+    "loader_no_longer_aborts_at_99": true,
+    "037_applied_on_flightsim": false
+  },
+  "six_row_hold": {
+    "held_rows": 6,
+    "unexplained_hold_rows": 0,
+    "by_reason": [
+      {"reason": "held_testish_landing_uri", "sources": 1, "rows": 1},
+      {"reason": "held_tiny_below_assign_threshold", "sources": 1, "rows": 5}
+    ]
+  },
+  "rfc_fanout_household_email": {
+    "corpus_wide_token_groups": 13,
+    "token_groups_assigned_household_email_only": 13,
+    "token_groups_mixed": 0,
+    "token_groups_outside_assigned_email": 0,
+    "sql_extra_rows_assigned_only": 13,
+    "loader_identity_duplicates_omitted_hash_union_rfc": 26,
+    "omitted_missing_survivor_lineage": 0
+  },
+  "forecast": {
+    "eligible_assigned_rows": 91275,
+    "prepared_messages": 91247,
+    "identity_duplicates_omitted": 26,
+    "excluded_in_assigned_stream": 2,
+    "excluded_reasons": {"spam_or_trash": 0, "malformed": 0, "missing_from": 2},
+    "held_rows": 6,
+    "unexplained": 0,
+    "threads": 40996,
+    "max_thread_size": 89,
+    "participants": 294061,
+    "authenticated_participants": 97170,
+    "unverified_participants": 196891,
+    "attachments": 28467,
+    "commercial_classes": {
+      "retain_life_evidence": 1380,
+      "suppress_default": 15376,
+      "uncertain": 944,
+      "not_commercial": 73547
+    },
+    "voice_corpus_messages_focal": 0,
+    "voice_corpus_messages_by_authenticated_person": [
+      {"person_label": "Tom", "messages": 12071},
+      {"person_label": "Peggy", "messages": 1342},
+      {"person_label": "Sue", "messages": 307}
+    ],
+    "quote_quality_exceptions": 34488
+  },
+  "completeness": {
+    "equation": "mbox_rows = prepared + identity_duplicates_omitted + excluded_in_assigned_stream + held_rows + unexplained",
+    "mbox_rows": 91281,
+    "prepared": 91247,
+    "identity_duplicates_omitted": 26,
+    "excluded_in_assigned_stream": 2,
+    "held_rows": 6,
+    "unexplained": 0,
+    "check": true
+  }
+}

@@ -37,7 +37,11 @@ class MigrationOrdering(unittest.TestCase):
             names.index("035_p2_i14_communications_lineage.sql"),
             names.index("036_p2_i14_prepared_communications.sql"),
         )
-        self.assertEqual(names[-1], "036_p2_i14_prepared_communications.sql")
+        self.assertLess(
+            names.index("036_p2_i14_prepared_communications.sql"),
+            names.index("037_p2_i14_prepared_evidence_ref_scale.sql"),
+        )
+        self.assertEqual(names[-1], "037_p2_i14_prepared_evidence_ref_scale.sql")
 
     def test_does_not_reuse_025_through_029_filenames(self) -> None:
         names = {p.name for p in _migration_files(MIGRATIONS)}

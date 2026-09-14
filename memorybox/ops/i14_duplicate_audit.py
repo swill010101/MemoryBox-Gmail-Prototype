@@ -2,7 +2,8 @@
 
 Does not seed, backfill, ingest, or write production tables. Session TEMP TABLEs only;
 aggregates in SQL; always rolls back. Refuse dbname memorybox unless
-MEMORYBOX_I14_AUDIT_ALLOW_MEMORYBOX_DB=1. Always refuse a FlightSim DSN.
+MEMORYBOX_I14_AUDIT_ALLOW_MEMORYBOX_DB=1. Refuse a FlightSim host unless
+MEMORYBOX_I14_AUDIT_ALLOW_FLIGHTSIM=1 (read-only census/audit; still rollback).
 Quoted/forwarded overlap is not inferred from body text; similar distinct
 identity keys are never counted as duplicates.
 
@@ -194,6 +195,10 @@ def peak_working_set_mb() -> int | None:
         return None
 
 
+def _flightsim_override() -> bool:
+    return os.environ.get("MEMORYBOX_I14_AUDIT_ALLOW_FLIGHTSIM", "").strip() == "1"
+
+
 def _require_not_memorybox(conn: Any) -> str:
     row = catalog_execute(conn, "SELECT current_database() AS d").fetchone()
     name = str(row["d"] if isinstance(row, dict) else row[0]).lower()
@@ -201,7 +206,11 @@ def _require_not_memorybox(conn: Any) -> str:
     host = str(getattr(info, "host", "") or "") if info is not None else ""
     allow = os.environ.get("MEMORYBOX_I14_AUDIT_ALLOW_MEMORYBOX_DB", "").strip() == "1"
     try:
-        refuse_live_dsn(host, None if allow else name)
+        refuse_live_dsn(
+            host,
+            None if allow else name,
+            allow_flightsim=_flightsim_override(),
+        )
     except ProductionDSNError as exc:
         raise AuditError(str(exc)) from None
     if name == "memorybox" and not allow:
@@ -600,11 +609,97 @@ def _rfc_fanout(conn: Any) -> dict[str, Any]:
         """
     row = catalog_execute(conn, sql).fetchone()
     rec = dict(row) if not isinstance(row, dict) else row
+    classified = _rfc_fanout_classified(conn, token_col, role_filter)
     return {
         "present": True,
         "skipped": None,
         "token_groups": int(rec["token_groups"]),
         "extra_evidence_rows": int(rec["extra_evidence_rows"]),
+        "household_email_population": classified,
+    }
+
+
+MIN_ASSIGNED_MBOX_ROWS = 1000
+
+
+def _rfc_fanout_classified(conn: Any, token_col: str, role_filter: str) -> dict[str, Any]:
+    sql = f"""
+        WITH src_n AS (
+          SELECT source_id, COUNT(*)::bigint AS n
+            FROM evidence
+           WHERE evidence_kind = 'communication'
+           GROUP BY source_id
+        ),
+        own AS (
+          SELECT r.evidence_id,
+                 lower(btrim(r.{token_col}::text)) AS tok,
+                 CASE
+                   WHEN COALESCE(s.source_kind, '') = 'mbox_import'
+                    AND COALESCE(src_n.n, 0) >= {int(MIN_ASSIGNED_MBOX_ROWS)}
+                   THEN 'assigned_email'
+                   WHEN COALESCE(s.source_kind, '') = 'mbox_import'
+                   THEN 'held_email'
+                   ELSE 'other'
+                 END AS bucket
+            FROM communication_rfc_ids r
+            JOIN evidence e ON e.id = r.evidence_id
+            LEFT JOIN sources s ON s.id = e.source_id
+            LEFT JOIN src_n ON src_n.source_id = e.source_id
+           WHERE r.{token_col} IS NOT NULL
+             AND btrim(r.{token_col}::text) <> ''
+             {role_filter}
+        ),
+        fan AS (
+          SELECT tok,
+                 COUNT(DISTINCT evidence_id) AS n,
+                 COUNT(DISTINCT evidence_id) FILTER (WHERE bucket = 'assigned_email') AS n_assigned,
+                 COUNT(DISTINCT evidence_id) FILTER (WHERE bucket = 'held_email') AS n_held,
+                 COUNT(DISTINCT evidence_id) FILTER (WHERE bucket = 'other') AS n_other
+            FROM own
+           GROUP BY tok
+          HAVING COUNT(DISTINCT evidence_id) > 1
+        )
+        SELECT
+          COUNT(*)::int AS token_groups,
+          COALESCE(SUM(n - 1), 0)::int AS extra_evidence_rows,
+          COUNT(*) FILTER (
+            WHERE n_assigned > 1 AND n_held = 0 AND n_other = 0
+          )::int AS token_groups_assigned_household_email_only,
+          COALESCE(SUM(GREATEST(n_assigned - 1, 0)) FILTER (
+            WHERE n_assigned > 1 AND n_held = 0 AND n_other = 0
+          ), 0)::int AS extra_rows_assigned_household_email_only,
+          COUNT(*) FILTER (
+            WHERE n_assigned >= 1 AND (n_held + n_other) >= 1
+          )::int AS token_groups_mixed_assigned_and_other,
+          COALESCE(SUM(GREATEST(n_assigned - 1, 0)) FILTER (
+            WHERE n_assigned >= 1 AND (n_held + n_other) >= 1
+          ), 0)::int AS extra_assigned_rows_in_mixed_groups,
+          COUNT(*) FILTER (WHERE n_assigned = 0)::int AS token_groups_outside_assigned_email
+          FROM fan
+        """
+    row = catalog_execute(conn, sql).fetchone()
+    rec = dict(row) if not isinstance(row, dict) else row
+    return {
+        "assign_threshold_rows": MIN_ASSIGNED_MBOX_ROWS,
+        "token_groups_assigned_household_email_only": int(
+            rec["token_groups_assigned_household_email_only"] or 0
+        ),
+        "extra_rows_assigned_household_email_only": int(
+            rec["extra_rows_assigned_household_email_only"] or 0
+        ),
+        "token_groups_mixed_assigned_and_other": int(
+            rec["token_groups_mixed_assigned_and_other"] or 0
+        ),
+        "extra_assigned_rows_in_mixed_groups": int(
+            rec["extra_assigned_rows_in_mixed_groups"] or 0
+        ),
+        "token_groups_outside_assigned_email": int(
+            rec["token_groups_outside_assigned_email"] or 0
+        ),
+        "note": (
+            "Loader omits extras only when both rows are in the assigned household-email "
+            "source set. Mixed groups do not drop the assigned row."
+        ),
     }
 
 
@@ -615,10 +710,13 @@ def _consolidation_classes(
 ) -> dict[str, Any]:
     """Counts-only identity classes. Bodies are never read."""
     rfc_extra = int(rfc.get("extra_evidence_rows") or 0) if rfc.get("present") and not rfc.get("skipped") else 0
+    household = rfc.get("household_email_population") or {}
+    household_omit = int(household.get("extra_rows_assigned_household_email_only") or 0)
     return {
         "rule_id": "i14-household-email-consolidate-v1",
         "exact_duplicate_evidence_extra_rows": int(within.get("extra_rows") or 0),
         "same_communication_multiple_extracts_extra_rows": int(cross.get("extra_rows") or 0) + rfc_extra,
+        "household_email_identity_duplicates_omitted": household_omit,
         "quoted_or_forwarded_not_duplicate_evidence": 0,
         "quoted_or_forwarded_not_measured_from_bodies": True,
         "distinct_identity_never_consolidated": True,
@@ -721,7 +819,7 @@ def main(argv: list[str] | None = None) -> int:
     if not dsn:
         raise AuditError("MEMORYBOX_DATABASE_URL_missing")
     try:
-        refuse_live_dsn(dsn, None)
+        refuse_live_dsn(dsn, None, allow_flightsim=_flightsim_override())
     except ProductionDSNError as exc:
         raise AuditError(str(exc)) from None
     stream_map = None

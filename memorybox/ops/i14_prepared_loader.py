@@ -21,6 +21,8 @@ from memorybox.ops.i14_thread_review import (
     UNVERIFIED,
     IdentityLedger,
     annotate_messages,
+    evidence_ref,
+    format_display_id,
     gallery_attachment_action,
     message_sort_key,
     parse_sent_at,
@@ -244,6 +246,185 @@ def _schema_message_fields(msg: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def forecast_prepared_counts(
+    messages: list[dict[str, Any]],
+    ledger: IdentityLedger,
+    *,
+    deadline_mono: float | None = None,
+    on_progress: Any = None,
+    sequential_quote_prior: bool = True,
+) -> dict[str, Any]:
+    """Counts-only reconstruction. Never writes. Evidence rows are not mutated."""
+    import time
+
+    from memorybox.ops.i14_thread_review import extract_parties
+
+    def _guard() -> None:
+        if deadline_mono is not None and time.monotonic() >= deadline_mono:
+            raise LoaderError("run_deadline")
+
+    _guard()
+    partition = consolidate_messages(messages)
+    omitted_lineage = 0
+    omitted_missing_survivor = 0
+    for dup in partition["duplicates"]:
+        if dup.get("duplicate_of"):
+            omitted_lineage += 1
+        else:
+            omitted_missing_survivor += 1
+    prepared_in: list[dict[str, Any]] = []
+    missing_from = 0
+    for msg in partition["displayed"]:
+        payload = msg.get("payload") if isinstance(msg.get("payload"), dict) else {}
+        from_rows = extract_parties(payload, msg)["from"]
+        if not from_rows:
+            missing_from += 1
+            continue
+        prepared_in.append(msg)
+    clustered = cluster_threads(prepared_in) if prepared_in else {}
+    threads: dict[str, list[dict[str, Any]]] = {}
+    for msg in prepared_in:
+        threads.setdefault(clustered[str(msg["evidence_id"])], []).append(msg)
+    commercial_counts = {
+        "retain_life_evidence": 0,
+        "suppress_default": 0,
+        "uncertain": 0,
+        "not_commercial": 0,
+    }
+    participants = 0
+    authenticated_participants = 0
+    unverified_participants = 0
+    attachments = 0
+    voice_n = 0
+    quote_flags = 0
+    voice_by_label: dict[str, int] = {}
+    sizes = [len(members) for members in threads.values()]
+    annotated_rows: list[dict[str, Any]] = []
+    if sequential_quote_prior:
+        done = 0
+        for members in threads.values():
+            _guard()
+            compacted = _compact_thread_messages(members)
+            annotated_rows.extend(annotate_messages(compacted, ledger))
+            done += 1
+            if on_progress and done % 50 == 0:
+                on_progress({"stage": "forecast_threads", "threads_done": done})
+    else:
+        from memorybox.ops.i14_prepared_text import prepare_message_text
+
+        prepared_text: list[dict[str, Any]] = []
+        for i, msg in enumerate(prepared_in):
+            _guard()
+            raw = str(msg.get("raw_body") or msg.get("body") or "")
+            prep = prepare_message_text(
+                raw,
+                subject=str(msg.get("subject") or ""),
+                prior_authored=[],
+            )
+            row = dict(msg)
+            row["cleaned_body"] = prep.authored
+            row["forward_block"] = prep.forward_block
+            row["quoted_removed"] = prep.quote_history_removed
+            row["clean_method"] = prep.method
+            row["forward_omitted"] = prep.forward_omitted
+            prepared_text.append(row)
+            if on_progress and i and i % 2000 == 0:
+                on_progress({"stage": "forecast_clean", "cleaned": i})
+        annotated_rows = annotate_messages(prepared_text, ledger)
+    for row in annotated_rows:
+        fields = _schema_message_fields(row)
+        commercial_counts[fields["commercial_class"]] = (
+            commercial_counts.get(fields["commercial_class"], 0) + 1
+        )
+        if fields["voice_corpus"]:
+            voice_n += 1
+        if fields["quote_quality"] != "clean":
+            quote_flags += 1
+        from_ok = False
+        for role, rows in (
+            ("from", row.get("from_parties") or []),
+            ("to", row.get("to_parties") or []),
+            ("cc", row.get("cc_parties") or []),
+        ):
+            for party in rows or []:
+                addr = str(party.get("address") or "").strip()
+                if not addr:
+                    continue
+                if role == "from" and from_ok:
+                    continue
+                if role == "from":
+                    from_ok = True
+                participants += 1
+                status = AUTH_MAP.get(str(party.get("status") or UNVERIFIED), "unverified")
+                if status == "unverified":
+                    unverified_participants += 1
+                else:
+                    authenticated_participants += 1
+                if (
+                    role == "from"
+                    and status != "unverified"
+                    and fields["quote_quality"] == "clean"
+                ):
+                    label = str(party.get("label") or "confirmed_person").split()[0]
+                    if not label or "@" in label:
+                        label = "confirmed_person"
+                    voice_by_label[label] = voice_by_label.get(label, 0) + 1
+        attachments += len(row.get("attachment_meta") or [])
+        row.pop("raw_body", None)
+        row.pop("body", None)
+        row.pop("cleaned_body", None)
+        row.pop("forward_block", None)
+        if isinstance(row.get("payload"), dict):
+            row["payload"] = {}
+    sizes_sorted = sorted(sizes)
+    over_99 = sum(1 for n in sizes if n > 99)
+    excluded_reasons = {
+        "spam_or_trash": sum(
+            1 for m in partition["excluded"] if m.get("exclude_reason") == "spam_or_trash"
+        ),
+        "malformed": sum(
+            1 for m in partition["excluded"] if m.get("exclude_reason") == "malformed"
+        ),
+        "missing_from": missing_from,
+    }
+    eligible = len(partition["eligible"])
+    prepared = len(prepared_in)
+    omitted = len(partition["duplicates"])
+    excluded_n = len(partition["excluded"]) + missing_from
+    unexplained = eligible - prepared - omitted - missing_from
+    if unexplained != 0:
+        raise LoaderError("unexplained_loss")
+    return {
+        "ok": True,
+        "rule_id": RULE_ID,
+        "eligible": eligible,
+        "prepared_messages": prepared,
+        "identity_duplicates_omitted": omitted,
+        "omitted_with_survivor_lineage": omitted_lineage,
+        "omitted_missing_survivor": omitted_missing_survivor,
+        "excluded_in_assigned_stream": excluded_n,
+        "excluded_reasons": excluded_reasons,
+        "unexplained": 0,
+        "threads": len(threads),
+        "max_thread_size": max(sizes) if sizes else 0,
+        "threads_over_99": over_99,
+        "thread_size_p50": sizes_sorted[len(sizes_sorted) // 2] if sizes_sorted else 0,
+        "participants": participants,
+        "authenticated_participants": authenticated_participants,
+        "unverified_participants": unverified_participants,
+        "attachments": attachments,
+        "commercial_classes": commercial_counts,
+        "voice_corpus_messages_focal": voice_n,
+        "authenticated_from_clean_quote_by_person_label": [
+            {"person_label": k, "messages": voice_by_label[k]}
+            for k in sorted(voice_by_label, key=lambda x: (-voice_by_label[x], x))
+        ],
+        "quote_quality_exceptions": quote_flags,
+        "evidence_never_deleted_or_updated": True,
+        "completeness_ok": eligible == prepared + omitted + missing_from,
+    }
+
+
 def _insert_participants(conn: Any, message_id: Any, msg: dict[str, Any]) -> None:
     seen_from = False
     for role, rows in (("from", msg.get("from_parties") or []), ("to", msg.get("to_parties") or []), ("cc", msg.get("cc_parties") or [])):
@@ -451,9 +632,7 @@ def load_household_email_generation(
     unresolved_identities = 0
     quote_flags = 0
     for idx, (cluster_key, ordered) in enumerate(thread_items, start=1):
-        if len(ordered) > 99:
-            raise LoaderError("thread_exceeds_ordinal_limit")
-        display_id = f"T-{idx:04d}"
+        display_id = format_display_id(idx)
         gallery, suppress_reason = _thread_gallery(ordered)
         earliest = ordered[0]["sent_at"]
         latest = ordered[-1]["sent_at"]
@@ -527,7 +706,7 @@ def load_household_email_generation(
                     ordinal,
                     msg["evidence_id"],
                     canonical_id,
-                    f"{display_id}-M-{ordinal:02d}",
+                    evidence_ref(display_id, ordinal),
                     fields["sent_at"],
                     fields["subject"],
                     fields["cleaned"],

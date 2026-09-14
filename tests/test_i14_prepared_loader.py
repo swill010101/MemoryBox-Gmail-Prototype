@@ -5,6 +5,7 @@ import hashlib
 import json
 import time
 import unittest
+from pathlib import Path
 from uuid import uuid4
 
 import psycopg
@@ -20,6 +21,8 @@ from memorybox.ops.i14_prepared_loader import (
 from memorybox.ops.i14_thread_review import IdentityLedger, add_confirmed_address
 from tests.test_p2_i14_036_schema import SQL_036
 from tests.test_p2_i14_lineage_pg import SQL_001, SQL_035, _DisposablePg, _apply_file
+
+SQL_037 = Path(__file__).resolve().parents[1] / "memorybox" / "migrations" / "037_p2_i14_prepared_evidence_ref_scale.sql"
 
 RFC_SQL = """
 CREATE TABLE IF NOT EXISTS communication_rfc_ids (
@@ -81,6 +84,8 @@ class PreparedLoaderPg(_DisposablePg):
             _apply_file(conn, SQL_035)
             conn.commit()
             _apply_file(conn, SQL_036)
+            conn.commit()
+            _apply_file(conn, SQL_037)
             conn.commit()
 
     def _wipe(self, conn) -> None:
@@ -412,6 +417,47 @@ class PreparedLoaderPg(_DisposablePg):
                 conn.execute("SELECT COUNT(*) AS n FROM comms_prepared_active_generations").fetchone()["n"],
                 0,
             )
+
+    def test_long_thread_scales_evidence_ref_past_99(self) -> None:
+        self._require_dsn()
+        with psycopg.connect(self.dsn, row_factory=dict_row, connect_timeout=5) as conn:
+            self._wipe(conn)
+            src = self._source(conn)
+            ledger, _, _ = self._ledger(conn)
+            prev = None
+            for i in range(1, 106):
+                rfc = f"<long-{i}@example.test>"
+                payload = _payload(
+                    rfc=rfc,
+                    body_text=f"Authored line {i} unique.",
+                    sent_at=f"2013-01-01T00:{i // 60:02d}:{i % 60:02d}+00:00",
+                    content_hash=_hash(rfc),
+                    in_reply_to_ids=[prev] if prev else [],
+                )
+                self._evidence(conn, src, payload)
+                prev = rfc
+            conn.commit()
+            messages = read_source_messages(conn, [src])
+            loaded = run_load(conn, messages, ledger, dsn=self.dsn)
+            self.assertTrue(loaded["ok"])
+            self.assertEqual(loaded["messages"], 105)
+            self.assertEqual(loaded["threads"], 1)
+            refs = [
+                r["evidence_ref"]
+                for r in conn.execute(
+                    """
+                    SELECT evidence_ref, ordinal
+                      FROM comms_prepared_messages
+                     ORDER BY ordinal
+                    """
+                ).fetchall()
+            ]
+            self.assertEqual(refs[0], "T-0001-M-01")
+            self.assertEqual(refs[98], "T-0001-M-99")
+            self.assertEqual(refs[99], "T-0001-M-100")
+            self.assertEqual(refs[-1], "T-0001-M-105")
+            ev_n = conn.execute("SELECT COUNT(*) AS n FROM evidence").fetchone()["n"]
+            self.assertEqual(ev_n, 105)
 
 
 if __name__ == "__main__":

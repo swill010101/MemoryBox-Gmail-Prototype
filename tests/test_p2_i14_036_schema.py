@@ -50,7 +50,11 @@ class MigrationOrdering(unittest.TestCase):
             names.index("035_p2_i14_communications_lineage.sql"),
             names.index("036_p2_i14_prepared_communications.sql"),
         )
-        self.assertEqual(names[-1], "036_p2_i14_prepared_communications.sql")
+        self.assertLess(
+            names.index("036_p2_i14_prepared_communications.sql"),
+            names.index("037_p2_i14_prepared_evidence_ref_scale.sql"),
+        )
+        self.assertEqual(names[-1], "037_p2_i14_prepared_evidence_ref_scale.sql")
 
     def test_035_bytes_unchanged_marker(self) -> None:
         sql035 = (MIGRATIONS / "035_p2_i14_communications_lineage.sql").read_text(

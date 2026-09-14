@@ -64,6 +64,19 @@ class ConsolidationUnits(unittest.TestCase):
         )
         self.assertEqual(out["unexplained"], 0)
 
+    def test_same_rfc_different_hash_one_displayed(self) -> None:
+        a = _row(content_hash=HASH_A, rfc_message_id="<same@example.test>")
+        b = _row(content_hash=HASH_B, rfc_message_id="<same@example.test>")
+        out = consolidate_messages([a, b])
+        self.assertEqual(len(out["displayed"]), 1)
+        self.assertEqual(len(out["duplicates"]), 1)
+        self.assertEqual(
+            out["duplicates"][0]["consolidation_class"],
+            "same_communication_multiple_extracts",
+        )
+        self.assertEqual(out["duplicates"][0]["duplicate_of"], out["displayed"][0]["evidence_id"])
+        self.assertEqual(out["unexplained"], 0)
+
     def test_refuse_flightsim_dsn(self) -> None:
         with self.assertRaises(ProductionDSNError):
             refuse_live_dsn("postgresql://memorybox:memorybox@flightsim:5432/i14_035")

@@ -986,7 +986,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     p_i14_audit = sub.add_parser(
         "i14-duplicate-audit",
-        help="Read-only I14 duplicate/consolidation audit (disposable DSN; refuses FlightSim)",
+        help="Read-only I14 duplicate/consolidation audit (FlightSim requires MEMORYBOX_I14_AUDIT_ALLOW_FLIGHTSIM=1)",
+    )
+    p_i14_census = sub.add_parser(
+        "i14-preload-census",
+        help="Read-only I14 pre-load census (counts only; FlightSim requires allow flags)",
     )
     p_i14_load = sub.add_parser(
         "i14-prepared-load-rehearse",
@@ -1976,6 +1980,11 @@ def main(argv: list[str] | None = None) -> int:
         from memorybox.ops.i14_duplicate_audit import main as audit_main
 
         return audit_main([])
+
+    if args.cmd == "i14-preload-census":
+        from memorybox.ops.i14_preload_census import main as census_main
+
+        return census_main([])
 
     if args.cmd == "i14-prepared-load-rehearse":
         print(json.dumps({"ok": False, "error": "use_unittest_rehearsal_not_live_dsn"}))

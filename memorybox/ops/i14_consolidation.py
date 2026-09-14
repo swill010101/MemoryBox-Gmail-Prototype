@@ -30,14 +30,45 @@ def hash_status(raw: Any) -> tuple[str, str]:
     return value, "invalid"
 
 
-def identity_key(msg: dict[str, Any]) -> tuple[str, str]:
+class _UnionFind:
+    def __init__(self) -> None:
+        self.parent: dict[str, str] = {}
+
+    def add(self, key: str) -> None:
+        self.parent.setdefault(key, key)
+
+    def find(self, key: str) -> str:
+        self.add(key)
+        root = key
+        while self.parent[root] != root:
+            root = self.parent[root]
+        while self.parent[key] != key:
+            nxt = self.parent[key]
+            self.parent[key] = root
+            key = nxt
+        return root
+
+    def union(self, a: str, b: str) -> None:
+        ra, rb = self.find(a), self.find(b)
+        if ra != rb:
+            self.parent[rb] = ra
+
+
+def identity_tokens(msg: dict[str, Any]) -> list[tuple[str, str]]:
+    tokens: list[tuple[str, str]] = []
     digest, status = hash_status(msg.get("content_hash"))
     if status == "ok":
-        return "exact_bytes", f"hash:{digest}"
+        tokens.append(("exact_bytes", f"hash:{digest}"))
     rfc = str(msg.get("rfc_message_id") or "").strip().lower()
     if rfc:
-        return "rfc_own", f"rfc:{rfc}"
-    return "singleton", f"row:{msg.get('evidence_id')}"
+        tokens.append(("rfc_own", f"rfc:{rfc}"))
+    if not tokens:
+        tokens.append(("singleton", f"row:{msg.get('evidence_id')}"))
+    return tokens
+
+
+def identity_key(msg: dict[str, Any]) -> tuple[str, str]:
+    return identity_tokens(msg)[0]
 
 
 def classify_pair(*, same_hash: bool, same_rfc: bool, same_source: bool) -> str:
@@ -60,12 +91,18 @@ def consolidate_messages(messages: list[dict[str, Any]]) -> dict[str, Any]:
         else:
             eligible.append(msg)
 
-    groups: dict[str, list[dict[str, Any]]] = {}
-    classes: dict[str, str] = {}
+    uf = _UnionFind()
     for msg in eligible:
-        kind, key = identity_key(msg)
-        classes[key] = kind
-        groups.setdefault(key, []).append(msg)
+        mid = f"msg:{msg.get('evidence_id')}"
+        tokens = identity_tokens(msg)
+        uf.union(mid, tokens[0][1])
+        for _kind, token in tokens[1:]:
+            uf.union(mid, token)
+
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for msg in eligible:
+        root = uf.find(f"msg:{msg.get('evidence_id')}")
+        groups.setdefault(root, []).append(msg)
 
     displayed: list[dict[str, Any]] = []
     duplicates: list[dict[str, Any]] = []
@@ -75,7 +112,7 @@ def consolidate_messages(messages: list[dict[str, Any]]) -> dict[str, Any]:
         "quoted_or_forwarded_not_duplicate_evidence": 0,
         "distinct_evidence": 0,
     }
-    for key, group in groups.items():
+    for group in groups.values():
         ordered = sorted(group, key=message_sort_key)
         displayed.append(ordered[0])
         if len(ordered) == 1:
@@ -91,13 +128,14 @@ def consolidate_messages(messages: list[dict[str, Any]]) -> dict[str, Any]:
         same_source = len(sources) == 1
         bucket = classify_pair(same_hash=same_hash, same_rfc=same_rfc, same_source=same_source)
         class_counts[bucket] += len(ordered) - 1
+        dupe_kind = "exact_bytes" if same_hash else "rfc_own"
         for extra in ordered[1:]:
             duplicates.append(
                 {
                     **extra,
                     "duplicate_of": ordered[0]["evidence_id"],
                     "consolidation_class": bucket,
-                    "dupe_key_class": classes[key],
+                    "dupe_key_class": dupe_kind,
                 }
             )
     unexplained = len(eligible) - len(displayed) - len(duplicates)

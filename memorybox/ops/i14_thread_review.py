@@ -606,8 +606,12 @@ def _format_party_line(rows: list[dict[str, Any]], *, empty: str = "(none)") -> 
     return "; ".join(bits)
 
 
+def format_display_id(thread_index: int) -> str:
+    return f"T-{int(thread_index):04d}"
+
+
 def evidence_ref(thread_id: str, message_index: int) -> str:
-    return f"{thread_id}-M-{message_index:02d}"
+    return f"{thread_id}-M-{int(message_index):02d}"
 
 
 FOCAL_CASE_ALIAS = {
