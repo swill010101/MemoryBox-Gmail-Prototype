@@ -860,6 +860,9 @@ def explore_find_post(
 def explore_prepared_comms(
     person_id: str = Query(...),
     token: str = Query(""),
+    year: int | None = Query(None),
+    before_latest: str | None = Query(None),
+    before_id: str | None = Query(None),
 ) -> dict[str, Any]:
     """Background Gallery attach of prepared household-email threads. Flag-gated."""
     from memorybox.db import connection
@@ -869,7 +872,14 @@ def explore_prepared_comms(
         return {"ok": True, "enabled": False, "items": [], "token": token}
     with connection() as conn:
         conn.execute("SET TRANSACTION READ ONLY")
-        return list_person_threads(conn, person_id=person_id, token=token)
+        return list_person_threads(
+            conn,
+            person_id=person_id,
+            token=token,
+            year=year,
+            before_latest=before_latest or None,
+            before_id=before_id or None,
+        )
 
 
 @app.get("/explore/api/prepared-thread/{display_id}")

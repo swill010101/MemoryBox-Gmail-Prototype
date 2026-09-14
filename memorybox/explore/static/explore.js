@@ -940,6 +940,44 @@
     state.domain.summary = `${shown} · ${range} (${filterLabel}).${trunc}${hideNote}${cardNote}`;
   }
 
+  function appendPreparedCuratorNote() {
+    const c = state.domain && state.domain.preparedComms;
+    if (!c) return;
+    const cur = String(state.domain.summary || "");
+    if (cur.indexOf("reachable email") >= 0 || cur.indexOf("not linked for this Person") >= 0) {
+      return;
+    }
+    if (c.match === "no_prepared_participant") {
+      state.domain.summary = (
+        cur +
+        " Email is not linked for this Person in the prepared generation (0 threads). Photos and video are unchanged."
+      ).trim();
+      return;
+    }
+    if (c.match === "linked_but_filtered") {
+      const ex = c.excluded || {};
+      state.domain.summary = (
+        cur +
+        " Email threads exist but are held from default Gallery (" +
+        Number(ex.suppress_default || 0) +
+        " commercial, " +
+        Number(ex.hold_uncertain || 0) +
+        " uncertain)."
+      ).trim();
+      return;
+    }
+    if (c.reachable) {
+      state.domain.summary = (
+        cur +
+        " " +
+        c.shown +
+        " of " +
+        c.reachable +
+        " reachable email threads in this Gallery window."
+      ).trim();
+    }
+  }
+
   // ——— Ask command architecture (typed today; STT later shares this) ———
 
   function personScopedAsk(askText) {
@@ -1607,47 +1645,174 @@
   }
 
   let preparedCommsToken = "";
+  let preparedAbort = null;
+
+  function dropPreparedItems() {
+    rawItems = rawItems.filter((x) => !x.prepared);
+  }
+
+  function preparedQuery(extra) {
+    const hint = (state && state.domain) || {};
+    const token = preparedCommsToken;
+    const personId = String((hint.person_ids || [])[0] || "");
+    const qs = new URLSearchParams({ token: token, person_id: personId });
+    const spec = extra || {};
+    if (spec.year) qs.set("year", String(spec.year));
+    if (spec.before_latest) qs.set("before_latest", String(spec.before_latest));
+    if (spec.before_id) qs.set("before_id", String(spec.before_id));
+    return "/explore/api/prepared-comms?" + qs.toString();
+  }
+
+  function applyPreparedPage(data, mode) {
+    if (!data || data.token !== preparedCommsToken) return;
+    if (data.cancelled) return;
+    if (mode !== "append") dropPreparedItems();
+    const extra = Array.isArray(data.items) ? data.items : [];
+    extra.forEach((it) => {
+      if (!rawItems.some((x) => x.id === it.id)) rawItems.push(Object.assign({}, it));
+    });
+    if (!state.domain) return;
+    state.domain.preparedComms = {
+      reachable: Number(data.reachable_total || data.thread_total || 0),
+      shown: rawItems.filter((x) => x.prepared).length,
+      hasMore: Boolean(data.has_more),
+      nextCursor: data.next_cursor || null,
+      years: Array.isArray(data.years) ? data.years : [],
+      undatedN: Number(data.undated_n || 0),
+      year: data.year == null ? null : data.year,
+      match: (data.person_match && data.person_match.status) || "",
+      excluded: data.excluded || {},
+      pageSize: Number(data.page_size || extra.length || 0),
+    };
+    const reachable = state.domain.preparedComms.reachable;
+    const match = state.domain.preparedComms.match;
+    if (match === "no_prepared_participant") {
+      state.domain.summary = (
+        (state.domain._askSummary || state.domain.summary || "") +
+        " Email is not linked for this Person in the prepared generation (0 threads). Photos and video are unchanged."
+      ).trim();
+    } else if (match === "linked_but_filtered") {
+      const ex = state.domain.preparedComms.excluded || {};
+      state.domain.summary = (
+        (state.domain._askSummary || state.domain.summary || "") +
+        " Email threads exist but are held from default Gallery (" +
+        Number(ex.suppress_default || 0) +
+        " commercial, " +
+        Number(ex.hold_uncertain || 0) +
+        " uncertain)."
+      ).trim();
+    } else if (reachable) {
+      const shown = state.domain.preparedComms.shown;
+      const yearBit = state.domain.preparedComms.year
+        ? " Year " + state.domain.preparedComms.year + "."
+        : "";
+      state.domain.summary = (
+        (state.domain._askSummary || state.domain.summary || "") +
+        " " +
+        shown +
+        " of " +
+        reachable +
+        " email threads in Gallery." +
+        yearBit
+      ).trim();
+    }
+    if (data.stale) {
+      state.domain.summary = (
+        (state.domain.summary || "") +
+        " Email updated through " +
+        String(data.updated_through || "last complete result") +
+        "."
+      ).trim();
+    }
+    render();
+  }
+
+  function fetchPreparedPage(spec, mode) {
+    if (!preparedCommsToken) return;
+    if (preparedAbort) preparedAbort.abort();
+    preparedAbort = typeof AbortController !== "undefined" ? new AbortController() : null;
+    const opts = { cache: "no-store" };
+    if (preparedAbort) opts.signal = preparedAbort.signal;
+    fetch(preparedQuery(spec), opts)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => applyPreparedPage(data, mode || "replace"))
+      .catch((err) => {
+        if (err && err.name === "AbortError") return;
+      });
+  }
+
   function maybeLoadPreparedComms(payload) {
     const hint = (payload && payload.explore_state) || {};
+    if (preparedAbort) {
+      preparedAbort.abort();
+      preparedAbort = null;
+    }
     const token = String(hint.prepared_comms_token || "");
     preparedCommsToken = token;
-    if (!hint.prepared_comms_pending || !token) return;
+    state.domain.person_ids = hint.person_ids || [];
+    state.domain.preparedComms = null;
+    dropPreparedItems();
+    if (hint.prepared_comms_unresolved) {
+      state.domain.summary = (
+        (state.domain.summary || "") +
+        " Person was asked but not resolved, so email was not attached. Photos and video are unchanged."
+      ).trim();
+    }
+    if (!hint.prepared_comms_pending || !token) {
+      renderCommsPager();
+      return;
+    }
     const personId = String((hint.person_ids || [])[0] || "");
     if (!personId) return;
-    const qs = new URLSearchParams({ token: token, person_id: personId });
-    fetch("/explore/api/prepared-comms?" + qs.toString(), { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (!data || data.token !== preparedCommsToken) return;
-        if (data.cancelled) return;
-        const extra = Array.isArray(data.items) ? data.items : [];
-        extra.forEach((it) => {
-          if (!rawItems.some((x) => x.id === it.id)) rawItems.push(Object.assign({}, it));
-        });
-        if (state && state.domain) {
-          if (data.updated_through) state.domain.commsUpdatedThrough = data.updated_through;
-          if (extra.length) {
-            state.domain.summary = (
-              (state.domain.summary || "") +
-              " " +
-              extra.length +
-              " email thread" +
-              (extra.length === 1 ? "" : "s") +
-              " added to Gallery."
-            ).trim();
-          }
-          if (data.stale) {
-            state.domain.summary = (
-              (state.domain.summary || "") +
-              " Email updated through " +
-              String(data.updated_through || "last complete result") +
-              "."
-            ).trim();
-          }
-        }
-        render();
+    fetchPreparedPage({}, "replace");
+  }
+
+  function renderCommsPager() {
+    const el = document.getElementById("mb-comms-pager");
+    if (!el) return;
+    const c = (state.domain && state.domain.preparedComms) || null;
+    if (!c || !preparedCommsToken) {
+      el.hidden = true;
+      el.innerHTML = "";
+      return;
+    }
+    el.hidden = false;
+    const years = (c.years || [])
+      .map((y) => {
+        const on = c.year === y.year ? " is-on" : "";
+        return `<button type="button" class="mb-year-chip${on}" data-year="${y.year}">${y.year} (${y.n})</button>`;
       })
-      .catch(() => {});
+      .join("");
+    const newest = c.year
+      ? `<button type="button" class="mb-year-chip" data-year="">Newest</button>`
+      : "";
+    const more = c.hasMore
+      ? `<button type="button" class="mb-pill-btn" id="mb-comms-load-older">Load older email</button>`
+      : "";
+    el.innerHTML =
+      `<p class="mb-comms-pager-meta">${c.shown} of ${c.reachable} reachable email threads (page ${c.pageSize} max; commercial/uncertain stay hidden).</p>` +
+      `<div class="mb-year-row">${newest}${years}</div>${more}`;
+    el.querySelectorAll("[data-year]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const raw = btn.getAttribute("data-year");
+        if (!raw) fetchPreparedPage({}, "replace");
+        else fetchPreparedPage({ year: Number(raw) }, "replace");
+      });
+    });
+    const older = document.getElementById("mb-comms-load-older");
+    if (older) {
+      older.addEventListener("click", () => {
+        const cur = c.nextCursor || {};
+        fetchPreparedPage(
+          {
+            year: c.year || undefined,
+            before_latest: cur.before_latest || "",
+            before_id: cur.before_id || "",
+          },
+          "replace"
+        );
+      });
+    }
   }
 
   const ASK_HIST_KEY = "mb_shell_recent_asks";
@@ -2264,6 +2429,7 @@
 
   function renderCurator() {
     refreshCuratorFromVisible();
+    appendPreparedCuratorNote();
     const askRaw = String(state.domain.askText || "").trim();
     const personChip = (state.domain.chips || []).find((c) => c && c.kind === "person");
     const personLabel = (personChip && personChip.label) || "";
@@ -3874,6 +4040,7 @@
     renderFilters();
     renderViewMode();
     renderGallery();
+    renderCommsPager();
     renderMap();
     renderTimeline();
   }

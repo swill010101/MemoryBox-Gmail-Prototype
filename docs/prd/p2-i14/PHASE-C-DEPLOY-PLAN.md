@@ -25,7 +25,7 @@ git pull --ff-only
 
    - Open Explore `/explore/ui` (or Person Explorer).
    - Ask `Show me Peggy`, then Sue, then Tom.
-   - Confirm photos/videos appear first; email cards appear without a separate Comms button (cap 200 newest default-visible threads).
+   - Confirm photos/videos appear first; at most 80 email cards plus year chips / Load older so every default-visible thread is reachable.
    - Open a thread; confirm cleaned chronology, warnings, attachment open/fail-closed, original on demand.
    - Close; confirm the same Gallery/Ask position.
    - Save as Story from the thread; confirm one `email_thread` memory and return without re-asking.

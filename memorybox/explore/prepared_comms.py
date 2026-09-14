@@ -2,6 +2,8 @@
 
 Flag MEMORYBOX_I14_GALLERY_COMMS=1 (default off). Never parses raw mbox.
 Never writes comms_* or evidence. Active generation only.
+First page is bounded; every show_by_default thread remains reachable via
+keyset pages and year drill-down.
 """
 from __future__ import annotations
 
@@ -14,7 +16,8 @@ from typing import Any
 
 DISPLAY_COMMERCIAL = frozenset({"not_commercial", "retain_life_evidence"})
 HIDE_ELIGIBILITY = frozenset({"suppress_default", "hold_uncertain"})
-GALLERY_CARD_CAP = 200
+GALLERY_PAGE_SIZE = 80
+GALLERY_CARD_CAP = GALLERY_PAGE_SIZE
 PREVIEW_CHARS = 180
 
 _lock = threading.Lock()
@@ -82,32 +85,82 @@ def active_generation_id(conn: Any) -> Any | None:
     return row["id"]
 
 
+def _item_from_row(rec: dict[str, Any]) -> dict[str, Any]:
+    did = str(rec["display_id"])
+    earliest = _iso(rec["earliest_at"])
+    latest = _iso(rec["latest_at"])
+    date = latest or earliest
+    title = str(rec["subject"] or "").strip() or "Email thread"
+    who = str(rec.get("participants") or "").strip() or "Email"
+    return {
+        "id": f"prepared:{did}",
+        "type": "email",
+        "kind": "email",
+        "media_type": "email",
+        "title": title[:120],
+        "date": date,
+        "date_end": latest if latest and earliest and latest != earliest else "",
+        "undated": not date,
+        "preview": str(rec["preview"] or "").strip(),
+        "detail": str(rec["preview"] or "").strip(),
+        "from": who,
+        "to": "",
+        "display_id": did,
+        "prepared": True,
+        "gallery_default_hidden": False,
+        "attachment_count": int(rec["attachment_count"] or 0),
+        "message_count": int(rec["message_count"] or 0),
+        "identity_confidence": rec["identity_confidence"],
+        "latest_at": rec["latest_at"].isoformat()
+        if hasattr(rec.get("latest_at"), "isoformat")
+        else (str(rec["latest_at"]) if rec.get("latest_at") else None),
+        "people": [],
+    }
+
+
+def _cancelled(token: str, started: float) -> dict[str, Any]:
+    return {
+        "ok": True,
+        "cancelled": True,
+        "items": [],
+        "token": token,
+        "query_ms": int((time.perf_counter() - started) * 1000),
+    }
+
+
 def list_person_threads(
     conn: Any,
     *,
     person_id: str,
     token: str,
-    cap: int = GALLERY_CARD_CAP,
+    cap: int | None = None,
+    year: int | None = None,
+    before_latest: str | None = None,
+    before_id: str | None = None,
 ) -> dict[str, Any]:
     started = time.perf_counter()
+    limit = GALLERY_PAGE_SIZE if cap is None else max(1, min(int(cap), GALLERY_PAGE_SIZE))
     if token and not token_live(token):
-        return {
-            "ok": True,
-            "cancelled": True,
-            "items": [],
-            "token": token,
-            "query_ms": 0,
-        }
+        return _cancelled(token, started)
     gid = active_generation_id(conn)
+    is_first = not before_id and year is None
     if gid is None:
         cached = _last_complete.get(person_id) or {}
         return {
             "ok": True,
             "stale": True,
             "updated_through": cached.get("updated_through"),
-            "items": list(cached.get("items") or []),
+            "items": list(cached.get("items") or []) if is_first else [],
             "thread_total": int(cached.get("thread_total") or 0),
+            "reachable_total": int(cached.get("thread_total") or 0),
             "excluded": cached.get("excluded") or {},
+            "years": list(cached.get("years") or []),
+            "undated_n": int(cached.get("undated_n") or 0),
+            "has_more": False,
+            "next_cursor": None,
+            "person_match": cached.get("person_match")
+            or {"status": "no_active_generation"},
+            "page_size": limit,
             "token": token,
             "query_ms": int((time.perf_counter() - started) * 1000),
             "active_generation": False,
@@ -125,6 +178,37 @@ def list_person_threads(
     ).fetchall()
     excl = {str(r["gallery_eligibility"]): int(r["n"]) for r in excluded}
     shown = int(excl.get("show_by_default") or 0)
+    any_n = sum(int(v) for v in excl.values())
+    if any_n == 0:
+        match = {"status": "no_prepared_participant", "reachable_show_by_default": 0}
+    elif shown == 0:
+        match = {"status": "linked_but_filtered", "reachable_show_by_default": 0}
+    else:
+        match = {"status": "linked", "reachable_show_by_default": shown}
+    year_rows = conn.execute(
+        """
+        SELECT EXTRACT(YEAR FROM t.latest_at)::int AS y, COUNT(*)::int AS n
+          FROM comms_prepared_threads t
+         WHERE t.generation_id = %s
+           AND t.gallery_eligibility = 'show_by_default'
+           AND t.latest_at IS NOT NULL
+           AND EXISTS (
+                 SELECT 1
+                   FROM comms_prepared_messages m
+                   JOIN comms_prepared_participants p ON p.message_id = m.id
+                  WHERE m.thread_id = t.id AND p.person_id = %s
+               )
+         GROUP BY 1
+         ORDER BY 1 DESC
+        """,
+        (gid, person_id),
+    ).fetchall()
+    years = [{"year": int(r["y"]), "n": int(r["n"])} for r in year_rows if r.get("y") is not None]
+    undated_n = int(shown - sum(y["n"] for y in years))
+    if undated_n < 0:
+        undated_n = 0
+    if token and not token_live(token):
+        return _cancelled(token, started)
     rows = conn.execute(
         """
         SELECT t.display_id, t.earliest_at, t.latest_at, t.message_count,
@@ -167,54 +251,48 @@ def list_person_threads(
                    JOIN comms_prepared_participants p ON p.message_id = m.id
                   WHERE m.thread_id = t.id AND p.person_id = %s
                )
-         ORDER BY t.latest_at DESC NULLS LAST, t.display_id
+           AND (%s::int IS NULL OR EXTRACT(YEAR FROM t.latest_at)::int = %s)
+           AND (
+                 %s::text IS NULL
+                 OR (COALESCE(t.latest_at, '-infinity'::timestamptz), t.display_id)
+                    < (COALESCE(%s::timestamptz, '-infinity'::timestamptz), %s)
+               )
+         ORDER BY COALESCE(t.latest_at, '-infinity'::timestamptz) DESC,
+                  t.display_id DESC
          LIMIT %s
         """,
-        (PREVIEW_CHARS, list(DISPLAY_COMMERCIAL), gid, person_id, cap),
+        (
+            PREVIEW_CHARS,
+            list(DISPLAY_COMMERCIAL),
+            gid,
+            person_id,
+            year,
+            year,
+            before_id,
+            before_latest,
+            before_id,
+            limit + 1,
+        ),
     ).fetchall()
     if token and not token_live(token):
-        return {
-            "ok": True,
-            "cancelled": True,
-            "items": [],
-            "token": token,
-            "query_ms": int((time.perf_counter() - started) * 1000),
-        }
+        return _cancelled(token, started)
+    has_more = len(rows) > limit
+    page = rows[:limit]
     items = []
     seen: set[str] = set()
-    for rec in rows:
+    for rec in page:
         did = str(rec["display_id"])
         if did in seen:
             continue
         seen.add(did)
-        earliest = _iso(rec["earliest_at"])
-        latest = _iso(rec["latest_at"])
-        date = latest or earliest
-        title = str(rec["subject"] or "").strip() or "Email thread"
-        who = str(rec.get("participants") or "").strip() or "Email"
-        items.append(
-            {
-                "id": f"prepared:{did}",
-                "type": "email",
-                "kind": "email",
-                "media_type": "email",
-                "title": title[:120],
-                "date": date,
-                "date_end": latest if latest and earliest and latest != earliest else "",
-                "undated": not date,
-                "preview": str(rec["preview"] or "").strip(),
-                "detail": str(rec["preview"] or "").strip(),
-                "from": who,
-                "to": "",
-                "display_id": did,
-                "prepared": True,
-                "gallery_default_hidden": False,
-                "attachment_count": int(rec["attachment_count"] or 0),
-                "message_count": int(rec["message_count"] or 0),
-                "identity_confidence": rec["identity_confidence"],
-                "people": [],
-            }
-        )
+        items.append(_item_from_row(rec))
+    next_cursor = None
+    if has_more and items:
+        last = items[-1]
+        next_cursor = {
+            "before_latest": last.get("latest_at"),
+            "before_id": last["display_id"],
+        }
     updated = datetime.now(timezone.utc).date().isoformat()
     payload = {
         "ok": True,
@@ -224,21 +302,33 @@ def list_person_threads(
         "updated_through": updated,
         "items": items,
         "thread_total": shown,
+        "reachable_total": shown,
         "excluded": {
             "suppress_default": int(excl.get("suppress_default") or 0),
             "hold_uncertain": int(excl.get("hold_uncertain") or 0),
             "show_by_default": shown,
         },
+        "years": years,
+        "undated_n": undated_n,
+        "has_more": has_more,
+        "next_cursor": next_cursor,
+        "person_match": match,
+        "page_size": limit,
+        "year": year,
         "token": token,
         "query_ms": int((time.perf_counter() - started) * 1000),
-        "card_cap": cap,
+        "card_cap": limit,
     }
-    _last_complete[person_id] = {
-        "updated_through": updated,
-        "items": items,
-        "thread_total": shown,
-        "excluded": payload["excluded"],
-    }
+    if is_first:
+        _last_complete[person_id] = {
+            "updated_through": updated,
+            "items": items,
+            "thread_total": shown,
+            "excluded": payload["excluded"],
+            "years": years,
+            "undated_n": undated_n,
+            "person_match": match,
+        }
     return payload
 
 
@@ -297,9 +387,16 @@ def load_thread(conn: Any, display_id: str) -> dict[str, Any]:
             {
                 "ordinal": msg["ordinal"],
                 "evidence_ref": msg["evidence_ref"],
-                "evidence_id": str(msg["evidence_id"]),
+                "evidence_id": str(msg["evidence_id"]) if msg.get("evidence_id") else None,
+                "original_href": (
+                    "/explore/api/email/" + str(msg["evidence_id"])
+                    if msg.get("evidence_id")
+                    else None
+                ),
                 "subject": msg["subject"],
-                "sent_at": msg["sent_at"].isoformat() if hasattr(msg["sent_at"], "isoformat") else str(msg["sent_at"]),
+                "sent_at": msg["sent_at"].isoformat()
+                if hasattr(msg["sent_at"], "isoformat")
+                else str(msg["sent_at"]),
                 "from": from_p,
                 "to": to_p,
                 "cc": cc_p,
@@ -316,7 +413,9 @@ def load_thread(conn: Any, display_id: str) -> dict[str, Any]:
                         "byte_size": a["byte_size"],
                         "gallery_action": a["gallery_action"],
                         "attachment_ordinal": a["attachment_ordinal"],
-                        "parent_evidence_id": str(msg["evidence_id"]),
+                        "parent_evidence_id": str(msg["evidence_id"])
+                        if msg.get("evidence_id")
+                        else None,
                         "attachment_evidence_id": str(a["attachment_evidence_id"])
                         if a["attachment_evidence_id"]
                         else None,
@@ -326,9 +425,8 @@ def load_thread(conn: Any, display_id: str) -> dict[str, Any]:
                 ],
             }
         )
-        if body.strip():
-            who = from_p[0]["label"] if from_p else "Someone"
-            story_parts.append(f"{who}: {body.strip()}")
+        who = from_p[0]["label"] if from_p else "Someone"
+        story_parts.append(f"{who}: {body.strip()}" if body.strip() else f"{who}:")
     return {
         "ok": True,
         "display_id": display_id,
@@ -340,4 +438,36 @@ def load_thread(conn: Any, display_id: str) -> dict[str, Any]:
             "source_id": display_id,
             "label_snapshot": str((msgs[0]["subject"] if msgs else "") or display_id),
         },
+        "attachments_copied_into_story": False,
+    }
+
+
+def interaction_proof(thread: dict[str, Any]) -> dict[str, Any]:
+    """Deterministic checks for original, attachments, story, warnings."""
+    msgs = list(thread.get("messages") or [])
+    authored = [m for m in msgs if str(m.get("cleaned_authored_text") or "").strip()]
+    story = str(thread.get("story_body") or "")
+    atts = [a for m in msgs for a in (m.get("attachments") or [])]
+    mem = thread.get("story_memory") or {}
+    return {
+        "original_on_demand": all(bool(m.get("evidence_id")) for m in msgs) if msgs else False,
+        "story_covers_authored": all(
+            str(m.get("cleaned_authored_text") or "").strip() in story for m in authored
+        ),
+        "story_kind_email_thread": mem.get("source_kind") == "email_thread",
+        "story_source_is_display_id": mem.get("source_id") == thread.get("display_id"),
+        "attachments_linked_not_copied": all("bytes" not in a for a in atts)
+        and thread.get("attachments_copied_into_story") is False,
+        "quote_or_identity_warnings": any(bool(m.get("warnings")) for m in msgs)
+        or not msgs
+        or all(
+            str(m.get("quote_quality") or "") == "clean"
+            and str(m.get("identity_quality") or "") not in {"uncertain", "unverified"}
+            for m in msgs
+        ),
+        "viewable_attachments_have_parent": all(
+            bool(a.get("parent_evidence_id"))
+            for a in atts
+            if a.get("available") and a.get("gallery_action") != "record_only"
+        ),
     }

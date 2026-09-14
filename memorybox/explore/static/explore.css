@@ -2015,6 +2015,39 @@ html[data-mb-surface="explore"] .mb-explore.is-present-locked .mb-explore-timeli
   margin: 0;
 }
 
+.mb-comms-pager {
+  display: grid;
+  gap: 0.45rem;
+  padding: 0.5rem 0 1rem;
+}
+
+.mb-comms-pager-meta {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--mb-muted, #9aa4b2);
+}
+
+.mb-year-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.mb-year-chip {
+  border: 1px solid var(--mb-line, #1f2937);
+  background: #141b27;
+  color: inherit;
+  border-radius: 999px;
+  padding: 0.2rem 0.65rem;
+  font: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.mb-year-chip.is-on {
+  border-color: #93c5fd;
+}
+
 .mb-ev-turns {
   display: grid;
   gap: 0.65rem;

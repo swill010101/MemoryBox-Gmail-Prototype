@@ -1186,8 +1186,16 @@ def build_explore_find(
     prepared_pending = False
     prepared_token = ""
     person_ids = [str(p) for p in (plan_early.get("person_ids") or []) if str(p).strip()]
+    person_names_early = [str(n) for n in (plan_early.get("person_names") or []) if str(n).strip()]
     from memorybox.explore.prepared_comms import gallery_comms_enabled, new_ask_token
 
+    prepared_unresolved = bool(
+        gallery_comms_enabled()
+        and person_names_early
+        and not person_ids
+        and not tell_mode
+        and not clarifying
+    )
     use_prepared = (
         gallery_comms_enabled()
         and bool(person_ids)
@@ -1365,6 +1373,7 @@ def build_explore_find(
             "person_ids": person_ids,
             "prepared_comms_pending": prepared_pending,
             "prepared_comms_token": prepared_token,
+            "prepared_comms_unresolved": prepared_unresolved,
             "prefer_story_filter": bool(
                 plan.get("want_story")
                 and re.search(r"(?i)\bstor(?:y|ies|ied|iest)\b", text or "")

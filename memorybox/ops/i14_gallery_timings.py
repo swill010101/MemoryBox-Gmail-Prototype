@@ -8,7 +8,6 @@ from __future__ import annotations
 import json
 import os
 import re
-import sys
 import time
 from datetime import datetime, timezone
 from typing import Any
@@ -55,75 +54,155 @@ def require_flags(conn: Any) -> str:
     return name
 
 
-def _person_id(conn: Any, label: str) -> str | None:
-    row = conn.execute(
-        """
-        SELECT p.id::text AS id
-          FROM people p
-          JOIN comms_prepared_participants pp ON pp.person_id = p.id
-          JOIN comms_prepared_messages m ON m.id = pp.message_id
-          JOIN comms_prepared_threads t ON t.id = m.thread_id
-          JOIN comms_prepared_active_generations ag ON ag.id = t.generation_id
-         WHERE p.status <> 'merged_away'
-           AND ag.scope_key = 'household_email'
-           AND (
-             lower(coalesce(p.display_name, '')) = lower(%s)
-             OR lower(coalesce(p.display_name, '')) LIKE lower(%s) || ' %%'
-           )
-         GROUP BY p.id
-         ORDER BY COUNT(DISTINCT t.id) DESC
-         LIMIT 1
-        """,
-        (label, label),
-    ).fetchone()
-    if not row:
+def _ask_person_id(label: str) -> str | None:
+    from memorybox.person import find_ask_person_by_name
+
+    view = find_ask_person_by_name(label, lazy_seed=False)
+    if view is None or not getattr(view, "id", None):
         return None
-    return str(row["id"])
+    return str(view.id)
 
 
 def measure_label(conn: Any, label: str) -> dict[str, Any]:
-    from memorybox.explore.prepared_comms import GALLERY_CARD_CAP, list_person_threads, load_thread, new_ask_token
+    from memorybox.explore.prepared_comms import (
+        GALLERY_PAGE_SIZE,
+        interaction_proof,
+        list_person_threads,
+        load_thread,
+        new_ask_token,
+    )
 
-    pid = _person_id(conn, label)
+    pid = _ask_person_id(label)
     if not pid:
-        return {"label": label, "ok": False, "error": "person_not_found"}
+        return {"label": label, "ok": False, "error": "ask_person_unresolved"}
     token = new_ask_token()
     t0 = time.perf_counter()
-    listed = list_person_threads(conn, person_id=pid, token=token)
-    wall_ms = int((time.perf_counter() - t0) * 1000)
+    page1 = list_person_threads(conn, person_id=pid, token=token)
+    first_page_ms = int((time.perf_counter() - t0) * 1000)
+    years = page1.get("years") or []
+    year_sum = sum(int(y.get("n") or 0) for y in years)
+    undated = int(page1.get("undated_n") or 0)
+    reachable = int(page1.get("reachable_total") or 0)
+    histogram_covers = year_sum + undated == reachable
+    page2_ms = None
+    page2_n = 0
+    disjoint = True
+    ids1 = {str(i.get("display_id")) for i in page1.get("items") or []}
+    if page1.get("has_more") and page1.get("next_cursor") and token:
+        cur = page1["next_cursor"]
+        t1 = time.perf_counter()
+        page2 = list_person_threads(
+            conn,
+            person_id=pid,
+            token=token,
+            before_latest=cur.get("before_latest"),
+            before_id=cur.get("before_id"),
+        )
+        page2_ms = int((time.perf_counter() - t1) * 1000)
+        ids2 = {str(i.get("display_id")) for i in page2.get("items") or []}
+        page2_n = len(ids2)
+        disjoint = ids1.isdisjoint(ids2) and not page2.get("cancelled")
+    year_page_ms = None
+    year_page_n = 0
+    year_walk_ok = None
+    walkable = [y for y in years if 0 < int(y.get("n") or 0) <= 240]
+    if walkable:
+        y = int(walkable[-1]["year"])
+        t2 = time.perf_counter()
+        yp = list_person_threads(conn, person_id=pid, token=token, year=y)
+        year_page_ms = int((time.perf_counter() - t2) * 1000)
+        year_page_n = len(yp.get("items") or [])
+        expected = int(walkable[-1]["n"])
+        got = 0
+        cursor = None
+        guard = 0
+        while guard < 40:
+            guard += 1
+            chunk = list_person_threads(
+                conn,
+                person_id=pid,
+                token=token,
+                year=y,
+                before_latest=(cursor or {}).get("before_latest"),
+                before_id=(cursor or {}).get("before_id"),
+            )
+            got += len(chunk.get("items") or [])
+            if not chunk.get("has_more"):
+                break
+            cursor = chunk.get("next_cursor")
+            if not cursor:
+                break
+        year_walk_ok = got == expected
+    cancel_page = False
+    if page1.get("next_cursor"):
+        old = token
+        new_ask_token()
+        late = list_person_threads(
+            conn,
+            person_id=pid,
+            token=old,
+            before_id=page1["next_cursor"].get("before_id"),
+            before_latest=page1["next_cursor"].get("before_latest"),
+        )
+        cancel_page = bool(late.get("cancelled"))
+    token = new_ask_token()
+    page1 = list_person_threads(conn, person_id=pid, token=token)
     attach_n = 0
     attach_unavail = 0
+    originals = 0
+    warnings = 0
+    proof_ok = True
     sample = 0
     load_t0 = time.perf_counter()
-    for card in listed.get("items") or []:
-        if sample >= 8:
+    for card in page1.get("items") or []:
+        if sample >= 5:
             break
         did = str(card.get("display_id") or "")
         if not did:
             continue
         sample += 1
         loaded = load_thread(conn, did)
+        proof = interaction_proof(loaded)
+        proof_ok = proof_ok and all(proof.values())
+        originals += sum(1 for m in loaded.get("messages") or [] if m.get("evidence_id"))
+        warnings += sum(1 for m in loaded.get("messages") or [] if m.get("warnings"))
         for msg in loaded.get("messages") or []:
             for att in msg.get("attachments") or []:
                 attach_n += 1
-                if not att.get("available"):
+                if not att.get("available") or att.get("gallery_action") == "record_only":
                     attach_unavail += 1
     load_ms = int((time.perf_counter() - load_t0) * 1000)
+    match = (page1.get("person_match") or {}).get("status")
     return {
         "label": label,
         "ok": True,
-        "query_ms": listed.get("query_ms"),
-        "wall_ms": wall_ms,
+        "ask_path": "find_ask_person_by_name",
+        "ask_lazy_seed": False,
+        "person_match": match,
+        "first_comms_page_ms": first_page_ms,
+        "query_ms": page1.get("query_ms"),
+        "second_page_ms": page2_ms,
+        "second_page_cards": page2_n,
+        "pages_disjoint": disjoint,
+        "year_page_ms": year_page_ms,
+        "year_page_cards": year_page_n,
+        "year_fully_walked_matches_histogram": year_walk_ok,
+        "histogram_covers_reachable": histogram_covers,
+        "year_count": len(years),
+        "undated_n": undated,
+        "cards_in_browser_window": len(page1.get("items") or []),
+        "page_size": GALLERY_PAGE_SIZE,
+        "reachable_show_by_default": reachable,
+        "excluded": page1.get("excluded") or {},
+        "cancel_stale_page_request": cancel_page,
         "thread_open_sample_ms": load_ms,
-        "cards_returned": len(listed.get("items") or []),
-        "thread_total_show_by_default": listed.get("thread_total"),
-        "card_cap": GALLERY_CARD_CAP,
-        "excluded": listed.get("excluded") or {},
-        "stale": bool(listed.get("stale")),
-        "cancelled": bool(listed.get("cancelled")),
         "attachment_sample_threads": sample,
         "attachment_records_in_sample": attach_n,
-        "attachment_unavailable_in_sample": attach_unavail,
+        "attachment_unavailable_or_record_only": attach_unavail,
+        "originals_in_sample_messages": originals,
+        "messages_with_warnings_in_sample": warnings,
+        "interaction_proof_ok": proof_ok,
+        "browser_card_bound": GALLERY_PAGE_SIZE,
     }
 
 
@@ -139,20 +218,23 @@ def run() -> dict[str, Any]:
         second = new_ask_token()
         cancel_ok = (not token_live(first)) and token_live(second)
         abandon_token(second)
+    unresolved = [p["label"] for p in people if p.get("error") == "ask_person_unresolved"]
     report = {
         "ok": True,
-        "phase": "C",
+        "phase": "C2",
         "read_only": True,
         "database_kind": "memorybox" if dbname == "memorybox" else "other",
         "measured_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%MZ"),
         "gallery_flag_default": "off",
         "flightsim_serve_flag_not_set_by_this_tool": True,
+        "time_to_first_photo_video": "Find payload (photos/video) returns before prepared-comms fetch; not delayed by paging.",
         "people": people,
+        "ask_unresolved": unresolved,
         "cancel_previous_ask_token": cancel_ok,
         "notes": [
-            "query_ms is SQL list_person_threads; photos-first Gallery TTFV is separate serve latency.",
-            "thread_total_show_by_default is full Person match after commercial default filter.",
-            "cards_returned is capped for founder-facing Gallery.",
+            "reachable_show_by_default is every default-visible thread; browser shows one page (80).",
+            "Year chips plus Load older page through the reachable set without loading all cards.",
+            "Ask path is find_ask_person_by_name(lazy_seed=False), same resolver as Person Ask.",
         ],
     }
     assert_counts_only(report)
