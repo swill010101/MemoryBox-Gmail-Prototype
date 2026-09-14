@@ -54,12 +54,4 @@ Quote quality: clean **56789**, suspected_contamination **34458**.
 
 ## Authorized next from this gate
 
-Prepare the activation **plan** (see [PHASE-B-038-ACTIVATION-PLAN.md](PHASE-B-038-ACTIVATION-PLAN.md)). Do not execute it.
-
-## Still blocked until a separate founder authorization
-
-- Call `comms_prepared_activate_generation`.
-- Set `published` / `is_active` / `status=published`.
-- Change Gallery, Explore, or Person Ask retrieval.
-- Begin I11A / Peggy Narrative / Words of a Life on prepared voice.
-- Reload, remigrate, or replace this generation.
+SQL activation completed 2026-09-14: [PHASE-B-038-ACTIVATION.md](PHASE-B-038-ACTIVATION.md). Gallery and I11A remain separate.

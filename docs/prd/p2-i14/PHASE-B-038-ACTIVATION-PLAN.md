@@ -1,10 +1,8 @@
 # I14 Phase B — activation plan (unpublished 038 household-email generation)
 
-**Status:** Plan and preconditions only. **Not authorized to execute.**  
+**Status:** Executed 2026-09-14. SQL published+active. Gallery/I11A still unwired. See [PHASE-B-038-ACTIVATION.md](PHASE-B-038-ACTIVATION.md).  
 **Depends on:** [PHASE-B-038-ACTIVATION-REVIEW-ACCEPT.md](PHASE-B-038-ACTIVATION-REVIEW-ACCEPT.md) (founder visual review accepted 2026-09-14).  
-**Branch:** `codex/p2-i14-communications`
-
-This is the product request for a future activation increment. Do not build the activator or call SQL until Tom authorizes this plan separately.
+**Execute record:** [PHASE-B-038-ACTIVATION.md](PHASE-B-038-ACTIVATION.md)
 
 ## Problem
 
@@ -91,11 +89,9 @@ Optional `startmb.cmd -Restart` only if serve HEAD must match; startup migrate m
 - Dump after activate is not a substitute for the pre-activation dump.
 - Future Gallery work could start reading the active view without a new load; keep that wiring gated.
 
-## Open questions (Tom)
+## Confirmed before execute
 
-1. Confirm you want the first authorized increment to **publish+activate in SQL** while leaving Gallery/I11A unwired.
-2. Confirm the confirm string `activate-unpublished-voice-038-v1`.
-3. Confirm a new dump is required even though a pre-038 dump already exists.
-4. FlightSim git pull to `57d6759` (or later) was not completed from Toms-Desktop (SSH closed). Confirm that pull happens before execute.
-
-Until those are answered and execute is authorized: no activator CLI, no SQL activate, no Gallery, no I11A.
+1. SQL publish+activate with Gallery/I11A unwired.
+2. Confirm string `activate-unpublished-voice-038-v1`.
+3. New pre-activation dump required.
+4. FlightSim git pull still cannot run from Toms-Desktop (SSH closed); SQL activate was run from desktop against FlightSim Postgres. Pull the activator SHA on FlightSim for tree alignment only.
