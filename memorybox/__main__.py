@@ -997,6 +997,10 @@ def main(argv: list[str] | None = None) -> int:
         help="Household-email prepared load on disposable Postgres only; never activates",
     )
     p_i14_load.add_argument("--source-id", action="append", default=[])
+    sub.add_parser(
+        "i14-prepared-load",
+        help="Guarded unpublished household-email production load (requires confirm flags)",
+    )
 
     args = parser.parse_args(argv)
     if args.cmd in {"prove-p2-i1", "prove-p2-i8b", "prove-p2-i9"} or (args.cmd == "recognition-people-apply" and not args.dry_run):
@@ -1989,6 +1993,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "i14-prepared-load-rehearse":
         print(json.dumps({"ok": False, "error": "use_unittest_rehearsal_not_live_dsn"}))
         return 2
+
+    if args.cmd == "i14-prepared-load":
+        from memorybox.ops.i14_prepared_load_prod import main as load_prod_main
+
+        return load_prod_main([])
 
     if args.cmd == "serve":
         import uvicorn

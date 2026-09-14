@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import tempfile
 import time
 import unittest
 from pathlib import Path
@@ -372,6 +373,57 @@ class PreparedLoaderPg(_DisposablePg):
                 conn.execute("SELECT COUNT(*) AS n FROM comms_prepared_active_generations").fetchone()["n"],
                 0,
             )
+
+    def test_persist_batches_marks_failed_generation(self) -> None:
+        self._require_dsn()
+        with psycopg.connect(self.dsn, row_factory=dict_row, connect_timeout=5) as conn:
+            self._wipe(conn)
+            src = self._source(conn)
+            ledger, _, _ = self._ledger(conn)
+            self._evidence(conn, src, _payload())
+            conn.commit()
+            messages = read_source_messages(conn, [src])
+            with self.assertRaises(LoaderError):
+                run_load(
+                    conn,
+                    messages,
+                    ledger,
+                    dsn=self.dsn,
+                    persist_batches=True,
+                    fail_after="after_generation",
+                )
+            row = conn.execute(
+                "SELECT status, published, is_active FROM comms_prepared_generations"
+            ).fetchone()
+            self.assertIsNotNone(row)
+            self.assertEqual(row["status"], "failed")
+            self.assertFalse(row["published"])
+            self.assertFalse(row["is_active"])
+            self.assertEqual(
+                conn.execute("SELECT COUNT(*) AS n FROM comms_prepared_messages").fetchone()["n"],
+                0,
+            )
+            self.assertEqual(
+                conn.execute("SELECT COUNT(*) AS n FROM comms_prepared_active_generations").fetchone()["n"],
+                0,
+            )
+
+    def test_loaded_review_packet_is_bounded(self) -> None:
+        self._require_dsn()
+        from memorybox.ops.i14_prepared_load_prod import write_loaded_review_packet
+
+        with psycopg.connect(self.dsn, row_factory=dict_row, connect_timeout=5) as conn:
+            self._wipe(conn)
+            src = self._source(conn)
+            ledger, _, _ = self._ledger(conn)
+            self._evidence(conn, src, _payload())
+            conn.commit()
+            loaded = run_load(conn, read_source_messages(conn, [src]), ledger, dsn=self.dsn)
+            with tempfile.TemporaryDirectory() as tmp:
+                meta = write_loaded_review_packet(conn, loaded["generation_id"], Path(tmp))
+                self.assertLessEqual(meta["thread_count_written"], 12)
+                self.assertTrue((Path(tmp) / "INDEX.txt").is_file())
+                self.assertTrue((Path(tmp) / "packet-001.txt").is_file())
 
     def test_audit_and_loader_scale_budget(self) -> None:
         self._require_dsn()

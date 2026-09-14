@@ -1,9 +1,28 @@
 # I14 Phase B — prepared-email loader (build and rehearsal)
 
-**Status:** Directionally accepted (2026-09-13) plus pre-load validation. **Not** a production load.  
-**Schema:** 036 remains the prepared tables. **037** widens `display_id` / `evidence_ref` CHECKs (empty apply authorized separately).
+**Status:** Guarded unpublished household-email load is authorized. Activation/Gallery/I11A remain separate.
 
-Voice is household-wide: any authenticated canonical From Person may qualify. `IdentityLedger.focal_person_id` does not gate another Person’s authored voice. Ask later joins From `person_id`.
+Voice is household-wide: any authenticated canonical From Person may qualify. `IdentityLedger.focal_person_id` does not gate another Person’s authored voice.
+
+## Production load (unpublished, inactive)
+
+Requires FlightSim ledger **001–037**, pending empty, empty 035/prepared tables, and:
+
+```
+MEMORYBOX_I14_LOAD_ALLOW_FLIGHTSIM=1
+MEMORYBOX_I14_LOAD_ALLOW_MEMORYBOX_DB=1
+MEMORYBOX_I14_LOAD_CONFIRM=household-email-unpublished-v1
+MEMORYBOX_I14_CENSUS_ALLOW_FLIGHTSIM=1
+MEMORYBOX_I14_AUDIT_ALLOW_MEMORYBOX_DB=1
+```
+
+```powershell
+C:\MemoryBox\.venv\Scripts\python.exe -m memorybox i14-prepared-load
+```
+
+Never calls `comms_prepared_activate_generation`. Failure marks the generation `failed` (unpublished, inactive) when batches were persisted.
+
+Private review (gitignored): `MEMORYBOX_I14_REVIEW_EMIT_PRIVATE=1` and `MEMORYBOX_I14_REVIEW_OUT`.
 
 ## Founder decisions (locked)
 
@@ -21,11 +40,9 @@ Evidence originals are never updated. Identity extras keep survivor lineage.
 ## Tests
 
 ```
-python -m unittest tests.test_i14_consolidation tests.test_i14_prepared_loader tests.test_i14_duplicate_audit tests.test_i14_prepared_text tests.test_p2_i14_037_schema tests.test_i14_preload_census
+python -m unittest tests.test_i14_consolidation tests.test_i14_prepared_loader tests.test_i14_duplicate_audit tests.test_i14_prepared_text tests.test_p2_i14_037_schema tests.test_i14_preload_census tests.test_i14_prepared_load_prod
 ```
 
 ## Review
 
-Counts-only: [PHASE-B-PRELOAD-VALIDATION.md](PHASE-B-PRELOAD-VALIDATION.md) and JSON beside it. No HTML dump. No corpus TXT.
-
-Production unpublished load remains a separate founder authorization. Apply **037** on FlightSim before that load.
+Counts-only: [PHASE-B-PRELOAD-VALIDATION.md](PHASE-B-PRELOAD-VALIDATION.md) and JSON beside it. No HTML dump. No corpus TXT. Private 12-thread packet is gitignored.

@@ -1,7 +1,9 @@
-"""Household-email prepared generation loader. Disposable Postgres only.
+"""Household-email prepared generation loader.
 
-Never activates or publishes. Never updates evidence. Refuses FlightSim and
-dbname memorybox. Failed loads roll back the whole generation.
+Never activates or publishes. Never updates evidence. Disposable runs refuse
+FlightSim and dbname memorybox and roll back the whole generation. Production
+loads require explicit allow flags, persist building batches, and mark the
+generation failed (unpublished, inactive) if a batch cannot finish.
 
 One household-email generation stores each message once. Authored voice is any
 authenticated From Person with clean quote quality, not one focal Person.
@@ -10,6 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import time
 from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
@@ -62,17 +65,36 @@ class LoaderError(RuntimeError):
         self.code = code
 
 
-def _dbname(conn: Any, dsn: str | None = None) -> str:
+def _dbname(conn: Any, dsn: str | None = None, *, allow_live: bool = False) -> str:
     row = conn.execute("SELECT current_database() AS d").fetchone()
     name = str(row["d"] if isinstance(row, dict) else row[0])
     info = getattr(conn, "info", None)
     host = str(getattr(info, "host", "") or "") if info is not None else ""
     blob = dsn or host
     try:
-        refuse_live_dsn(blob, name)
+        refuse_live_dsn(blob, None if allow_live else name, allow_flightsim=allow_live)
     except ProductionDSNError as exc:
         raise LoaderError(str(exc)) from None
+    if str(name).lower() == "memorybox" and not allow_live:
+        raise LoaderError("refused_memorybox_dbname")
     return name
+
+
+def _deadline_guard(deadline_mono: float | None) -> None:
+    if deadline_mono is not None and time.monotonic() >= deadline_mono:
+        raise LoaderError("run_deadline")
+
+
+def mark_generation_failed(conn: Any, gid: Any) -> None:
+    """Unusable failed generation. Never published or active."""
+    conn.execute(
+        """
+        UPDATE comms_prepared_generations
+           SET status = 'failed', published = FALSE, is_active = FALSE, updated_at = now()
+         WHERE id = %s AND NOT published AND NOT is_active
+        """,
+        (gid,),
+    )
 
 
 def _quote_quality(msg: dict[str, Any]) -> str:
@@ -279,8 +301,7 @@ def forecast_prepared_counts(
     from memorybox.ops.i14_thread_review import extract_parties
 
     def _guard() -> None:
-        if deadline_mono is not None and time.monotonic() >= deadline_mono:
-            raise LoaderError("run_deadline")
+        _deadline_guard(deadline_mono)
 
     _guard()
     partition = consolidate_messages(messages)
@@ -505,8 +526,10 @@ def _insert_attachments(conn: Any, message_id: Any, evidence_id: Any, msg: dict[
     return n
 
 
-def read_source_messages(conn: Any, source_ids: list[Any]) -> list[dict[str, Any]]:
-    _dbname(conn)
+def read_source_messages(
+    conn: Any, source_ids: list[Any], *, dsn: str | None = None, allow_live: bool = False
+) -> list[dict[str, Any]]:
+    _dbname(conn, dsn, allow_live=allow_live)
     if not source_ids:
         return []
     rows = conn.execute(
@@ -562,8 +585,14 @@ def load_household_email_generation(
     *,
     dsn: str | None = None,
     fail_after: str | None = None,
+    allow_live: bool = False,
+    persist_batches: bool = False,
+    batch_threads: int = 200,
+    deadline_mono: float | None = None,
+    on_progress: Any = None,
 ) -> dict[str, Any]:
-    _dbname(conn, dsn)
+    _dbname(conn, dsn, allow_live=allow_live)
+    _deadline_guard(deadline_mono)
     evidence_before = conn.execute(
         "SELECT COUNT(*) AS n, COALESCE(SUM(length(summary)),0) AS s FROM evidence"
     ).fetchone()
@@ -584,6 +613,7 @@ def load_household_email_generation(
     if fail_after == "before_write":
         raise LoaderError("injected_failure")
 
+    _deadline_guard(deadline_mono)
     clustered = cluster_threads(prepared_in) if prepared_in else {}
     threads: dict[str, list[dict[str, Any]]] = {}
     for msg in prepared_in:
@@ -620,11 +650,16 @@ def load_household_email_generation(
         (ALGO_VERSION, logical_id, checksum),
     ).fetchone()
     gid = gen["id"] if isinstance(gen, dict) else gen[0]
+    if persist_batches:
+        conn.commit()
+        if on_progress:
+            on_progress({"stage": "generation_building", "threads": len(threads)})
     if fail_after == "after_generation":
         raise LoaderError("injected_failure")
 
     thread_items = []
-    for cluster_key, members in threads.items():
+    for done, (cluster_key, members) in enumerate(threads.items(), start=1):
+        _deadline_guard(deadline_mono)
         compacted = _compact_thread_messages(members)
         annotated = annotate_messages(compacted, ledger)
         for row in annotated:
@@ -632,6 +667,8 @@ def load_household_email_generation(
             row.update(fields)
         ordered = sorted(annotated, key=message_sort_key)
         thread_items.append((cluster_key, ordered))
+        if on_progress and done % 50 == 0:
+            on_progress({"stage": "annotate_threads", "threads_done": done})
     thread_items.sort(key=lambda item: (item[1][0]["sent_at"], str(item[1][0]["evidence_id"])))
 
     omitted_by_cluster: dict[str, int] = {}
@@ -649,6 +686,7 @@ def load_household_email_generation(
     unresolved_identities = 0
     quote_flags = 0
     for idx, (cluster_key, ordered) in enumerate(thread_items, start=1):
+        _deadline_guard(deadline_mono)
         display_id = format_display_id(idx)
         gallery, suppress_reason = _thread_gallery(ordered)
         earliest = ordered[0]["sent_at"]
@@ -752,6 +790,16 @@ def load_household_email_generation(
             if fields["quote_quality"] != "clean":
                 quote_flags += 1
             displayed_ids.add(str(msg["evidence_id"]))
+        if persist_batches and idx % max(1, int(batch_threads)) == 0:
+            conn.commit()
+            if on_progress:
+                on_progress(
+                    {
+                        "stage": "insert_threads",
+                        "threads_done": idx,
+                        "messages_done": msg_n,
+                    }
+                )
 
     conn.execute(
         """
@@ -798,12 +846,30 @@ def load_household_email_generation(
 
 
 def run_load(conn: Any, *args: Any, **kwargs: Any) -> dict[str, Any]:
+    persist = bool(kwargs.get("persist_batches"))
     try:
         result = load_household_email_generation(conn, *args, **kwargs)
         conn.commit()
         return result
     except Exception:
-        conn.rollback()
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        if persist:
+            try:
+                rows = conn.execute(
+                    """
+                    SELECT id FROM comms_prepared_generations
+                     WHERE status = 'building' AND NOT published AND NOT is_active
+                    """
+                ).fetchall()
+                for row in rows:
+                    ident = row["id"] if isinstance(row, dict) else row[0]
+                    mark_generation_failed(conn, ident)
+                conn.commit()
+            except Exception:
+                conn.rollback()
         raise
 
 

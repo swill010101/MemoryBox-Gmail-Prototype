@@ -1,0 +1,35 @@
+"""Guarded production-load flags and packet bounds. Disposable Postgres only."""
+from __future__ import annotations
+
+import os
+import unittest
+
+from memorybox.ops.i14_prepared_load_prod import (
+    CONFIRM,
+    LoadProdError,
+    MAX_PACKET_THREADS,
+    _require_flags,
+)
+
+
+class Flags(unittest.TestCase):
+    def test_refuses_without_confirm_flags(self) -> None:
+        os.environ.pop("MEMORYBOX_I14_LOAD_ALLOW_FLIGHTSIM", None)
+        os.environ.pop("MEMORYBOX_I14_LOAD_ALLOW_MEMORYBOX_DB", None)
+        os.environ.pop("MEMORYBOX_I14_LOAD_CONFIRM", None)
+        with self.assertRaises(LoadProdError) as ctx:
+            _require_flags()
+        self.assertEqual(str(ctx.exception), "load_flightsim_not_allowed")
+
+    def test_accepts_exact_confirm(self) -> None:
+        os.environ["MEMORYBOX_I14_LOAD_ALLOW_FLIGHTSIM"] = "1"
+        os.environ["MEMORYBOX_I14_LOAD_ALLOW_MEMORYBOX_DB"] = "1"
+        os.environ["MEMORYBOX_I14_LOAD_CONFIRM"] = CONFIRM
+        _require_flags()
+
+    def test_packet_thread_cap_is_twelve(self) -> None:
+        self.assertEqual(MAX_PACKET_THREADS, 12)
+
+
+if __name__ == "__main__":
+    unittest.main()
