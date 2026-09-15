@@ -92,7 +92,7 @@ class HtmlSourceSelection(unittest.TestCase):
         self.assertEqual(
             disposition_for(
                 cleaned="",
-                source_text="quoted history only text here",
+                source_text="> q",
                 has_attachments=False,
                 quote_history_removed=True,
                 method="on_wrote",
@@ -108,6 +108,45 @@ class HtmlSourceSelection(unittest.TestCase):
                 method="",
             ),
             "prepared_text_unavailable",
+        )
+
+    def test_voice_drop_reasons_are_mutually_exclusive(self) -> None:
+        from memorybox.ops.i14_prepared_recovery import classify_voice_drop
+
+        self.assertEqual(
+            classify_voice_drop(
+                stored_voice=True,
+                after_voice=False,
+                cleaned="",
+                disposition="prepared_text_unavailable",
+                quote_after="clean",
+                from_authenticated=True,
+                commercial_after="not_commercial",
+            ),
+            "prepared_text_unavailable",
+        )
+        self.assertEqual(
+            classify_voice_drop(
+                stored_voice=True,
+                after_voice=False,
+                cleaned="kept text here",
+                disposition="authored_prepared",
+                quote_after="suspected_contamination",
+                from_authenticated=True,
+                commercial_after="suppress_default",
+            ),
+            "quote_contamination",
+        )
+        self.assertIsNone(
+            classify_voice_drop(
+                stored_voice=True,
+                after_voice=True,
+                cleaned="kept",
+                disposition="authored_prepared",
+                quote_after="clean",
+                from_authenticated=True,
+                commercial_after="not_commercial",
+            )
         )
 
     def test_john_html_only_recovers_without_markup(self) -> None:

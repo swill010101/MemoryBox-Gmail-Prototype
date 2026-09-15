@@ -39,7 +39,7 @@ class EmptyBody(unittest.TestCase):
         kept = prepare_message_text(raw).authored
         self.assertTrue(len(kept.strip()) > 8)
         self.assertEqual(c["category"], "cleanup_removed_meaningful")
-        self.assertEqual(c["disposition"], "defect")
+        self.assertEqual(c["disposition"], "prepared_text_unavailable")
 
     def test_defect_when_unique_text_sits_inside_hotmail_block(self) -> None:
         raw = (
@@ -50,7 +50,7 @@ class EmptyBody(unittest.TestCase):
             "I am so sorry to hear this about your sister.\n"
         )
         c = classify_empty_prepared(body_text=raw, commercial_class="not_commercial")
-        self.assertEqual(c["disposition"], "defect")
+        self.assertEqual(c["disposition"], "prepared_text_unavailable")
         self.assertEqual(c["category"], "cleanup_removed_meaningful")
 
     def test_html_only_defect_when_html_has_authored(self) -> None:

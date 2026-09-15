@@ -130,6 +130,8 @@
   let peopleOptions = [];
   let liveMode = true;
   let sessionId = null;
+  let preparedCommsToken = "";
+  let preparedAbort = null;
   let contextPlaceOverride = null;
   let bandDrag = null;
   let handleDrag = null;
@@ -259,7 +261,7 @@
   function timelineDatedItems() {
     const filter = (state && state.domain && state.domain.typeFilter) || "all";
     const place = state && state.domain ? state.domain.placeFilter : null;
-    const plotHiddenSms = !filter || filter === "all" || filter === "email";
+    const plotHiddenSms = false;
     return rawItems.filter((it) => {
       if (!isDated(it)) return false;
       if (isSmsTextItem(it)) {
@@ -340,6 +342,33 @@
     return { start: lo - pad, end: hi + pad, empty: false };
   }
 
+  function calendarYearBounds(t0, t1) {
+    const a = String(t0 || "").slice(0, 10);
+    const b = String(t1 || "").slice(0, 10);
+    const y0 = a.slice(0, 4);
+    const y1 = b.slice(0, 4);
+    if (/^\d{4}$/.test(y0) && y0 === y1) {
+      return {
+        start: dayMs(+y0, 1, 1),
+        end: dayMs(+y0, 12, 31) + 86400000 - 1,
+      };
+    }
+    return null;
+  }
+
+  function clampRangeToAskWindow(rangeStart, rangeEnd, t0, t1) {
+    const yearBand = calendarYearBounds(t0, t1);
+    if (yearBand) return yearBand;
+    const a = parseISO(String(t0 || "").slice(0, 10));
+    const b = parseISO(String(t1 || "").slice(0, 10));
+    if (!Number.isFinite(a) || !Number.isFinite(b)) {
+      return { start: rangeStart, end: rangeEnd };
+    }
+    const lo = Math.min(a, b);
+    const hi = Math.max(a, b) + 86400000 - 1;
+    return { start: lo, end: hi };
+  }
+
   function hasDatedExtent() {
     return (
       state &&
@@ -392,6 +421,7 @@
         return true;
       }
       if (!filter || filter === "all") {
+        if (!includeTexts) return false;
         if (item.gallery_default_hidden) return false;
         if (attachmentsOnly && !itemAttachCount(item)) return false;
         return true;
@@ -637,12 +667,15 @@
     state.timeline.empty = false;
     state.timeline.fullExtentStart = ext.start;
     state.timeline.fullExtentEnd = ext.end;
-    state.timeline.extentStart = ext.start;
-    state.timeline.extentEnd = ext.end;
-    state.timeline.rangeStart = ext.start;
-    state.timeline.rangeEnd = ext.end;
-    state.timeline.precision = computePrecision(ext.start, ext.end);
-    state.timeline.playhead = ext.start;
+    const t0 = state.domain && state.domain.timeStart;
+    const t1 = state.domain && state.domain.timeEnd;
+    const band = clampRangeToAskWindow(ext.start, ext.end, t0, t1);
+    state.timeline.extentStart = band.start;
+    state.timeline.extentEnd = band.end;
+    state.timeline.rangeStart = band.start;
+    state.timeline.rangeEnd = band.end;
+    state.timeline.precision = computePrecision(band.start, band.end);
+    state.timeline.playhead = band.start;
   }
 
   /** Zoom axis so the current range fills the track (higher precision). */
@@ -723,12 +756,21 @@
       state.domain.includeEmail = false;
       state.domain.includeCalendar = false;
     } else if (id === "all") {
-      // Filter-only Email/Text must not pin SMS onto All. I7 hides texts
-      // on All unless this find was an explicit text ask or Add texts.
-      if (!state.domain.galleryShowSms && !state.domain.textsPinned) {
+      // I14 mixed: Email and SMS stay independent members of All.
+      // Pre-I14: do not pin SMS onto All unless this find was an explicit
+      // text ask or Add texts.
+      if (
+        !state.domain.galleryMixedComms &&
+        !state.domain.galleryShowSms &&
+        !state.domain.textsPinned
+      ) {
         state.domain.includeTexts = false;
       }
-      if (!state.domain.galleryShowEmail && !state.domain.emailPinned) {
+      if (
+        !state.domain.galleryMixedComms &&
+        !state.domain.galleryShowEmail &&
+        !state.domain.emailPinned
+      ) {
         state.domain.includeEmail = false;
       }
       if (!state.domain.galleryShowCalendar && !state.domain.calendarPinned) {
@@ -1455,14 +1497,14 @@
     const galleryShowSms = Boolean(exploreHint.gallery_show_sms);
     const galleryShowEmail = Boolean(exploreHint.gallery_show_email);
     const galleryShowCalendar = Boolean(exploreHint.gallery_show_calendar);
+    const galleryMixedComms = Boolean(exploreHint.gallery_mixed_comms);
     const nextOutputMode =
       payload.output_mode || (payload.plan || {}).output_mode || "show";
-    // New find owns visibility. Do not keep includeTexts from a prior SMS ask
-    // when this Ask is a broad memory query (FlightSim: Show me Peggy after texts).
-    // Photos pill must not leak SMS.
-    const includeTexts = galleryShowSms;
+    // I14 mixed All includes Email and SMS independently. gallery_show_* only
+    // selects the Communications pill for an explicit text/email Ask.
+    const includeTexts = galleryShowSms || galleryMixedComms;
     const keepTexts = includeTexts;
-    const includeEmail = galleryShowEmail;
+    const includeEmail = galleryShowEmail || galleryMixedComms;
     const includeCalendar = galleryShowCalendar;
     if (nextOutputMode === "tell") {
       // I11: tell uses hidden comms in prose; stay on All, not Communications.
@@ -1505,7 +1547,7 @@
         if (!isDated(it)) return false;
         if (isSmsTextItem(it)) {
           if (nextType === "photo" || nextType === "video") return false;
-          if (it.gallery_default_hidden) return nextType === "all" || nextType === "email";
+          if (it.gallery_default_hidden) return false;
           return matchesType(it, nextType, {
             includeTexts,
             domain: { includeTexts, galleryShowSms, typeFilter: nextType },
@@ -1522,20 +1564,12 @@
     const emptyTl = Boolean(ext.empty);
     let rangeStart = emptyTl ? NaN : ext.start;
     let rangeEnd = emptyTl ? NaN : ext.end;
-    // Band timeline to plan union (or single year/season/holiday span).
     const t0 = exploreHint.time_start || plan.time_start;
     const t1 = exploreHint.time_end || plan.time_end;
     if (!emptyTl && t0 && t1) {
-      const a = parseISO(String(t0).slice(0, 10));
-      const b = parseISO(String(t1).slice(0, 10));
-      if (Number.isFinite(a) && Number.isFinite(b)) {
-        rangeStart = Math.max(ext.start, Math.min(a, b));
-        rangeEnd = Math.min(ext.end, Math.max(a, b));
-        if (rangeEnd < rangeStart) {
-          rangeStart = ext.start;
-          rangeEnd = ext.end;
-        }
-      }
+      const band = clampRangeToAskWindow(rangeStart, rangeEnd, t0, t1);
+      rangeStart = band.start;
+      rangeEnd = band.end;
     }
     const tellNarrative =
       nextOutputMode === "tell"
@@ -1568,8 +1602,9 @@
         galleryShowSms: galleryShowSms,
         galleryShowEmail: galleryShowEmail,
         galleryShowCalendar: galleryShowCalendar,
-        textsPinned: Boolean(galleryShowSms),
-        emailPinned: Boolean(galleryShowEmail),
+        galleryMixedComms: galleryMixedComms,
+        textsPinned: Boolean(galleryShowSms || galleryMixedComms),
+        emailPinned: Boolean(galleryShowEmail || galleryMixedComms),
         calendarPinned: Boolean(galleryShowCalendar),
         memoryPresentation: false,
         attachmentsOnly: false,
@@ -1653,8 +1688,8 @@
     const artifacts = rawItems.filter((i) => String(i.type) === "artifact").length;
     const d = state.domain || {};
     const tf = d.typeFilter || "all";
-    const wantEmail = tf === "all" || (tf === "email" && Boolean(d.includeEmail));
-    const wantSms = tf === "all" || (tf === "email" && Boolean(d.includeTexts));
+    const wantEmail = (tf === "all" || tf === "email") && Boolean(d.includeEmail);
+    const wantSms = (tf === "all" || tf === "email") && Boolean(d.includeTexts);
     const wantCal = tf === "all" || tf === "calendar" || (tf === "email" && Boolean(d.includeCalendar));
     const sms = wantSms ? Number(d.smsMatchTotal || d.smsAvailable || 0) : 0;
     const threads = wantEmail ? Number((pc && pc.scopedThreads) || 0) : 0;
@@ -1693,8 +1728,20 @@
     return null;
   }
 
-  let preparedCommsToken = "";
-  let preparedAbort = null;
+  function abortPreparedFetch() {
+    if (preparedAbort) {
+      preparedAbort.abort();
+      preparedAbort = null;
+    }
+    preparedCommsToken = "";
+  }
+
+  function mintAskSession() {
+    sessionId = "";
+    try {
+      localStorage.removeItem("mb_ask_session");
+    } catch (_) {}
+  }
 
   function dropPreparedItems() {
     rawItems = rawItems.filter((x) => !x.prepared);
@@ -2244,12 +2291,14 @@
 
     // New find query — live path re-runs Ask; demo path keeps fixture membership
     if (liveMode) {
+      abortPreparedFetch();
+      mintAskSession();
       const gen = bumpFindGen();
       showSearching(text);
       liveFind(text)
         .then((payload) => {
           if (gen !== findGen) return;
-          applyPayloadToState(payload, { keepPresentation: true });
+          applyPayloadToState(payload, { keepPresentation: false });
           ensureLockedPersonChip();
           const tellOut =
             payload.output_mode ||
@@ -2258,7 +2307,8 @@
           if (
             tellOut !== "tell" &&
             payload.explore_state &&
-            payload.explore_state.gallery_show_sms
+            payload.explore_state.gallery_show_sms &&
+            !payload.explore_state.gallery_mixed_comms
           ) {
             setTypeFilter("email");
             state.domain.includeTexts = true;
@@ -3267,8 +3317,8 @@
   function mergePreparedGallery(items, pc) {
     const d = state.domain || {};
     const filterEmail = d.typeFilter === "email";
-    const wantEmail = !filterEmail || Boolean(d.includeEmail);
-    const wantSms = !filterEmail || Boolean(d.includeTexts);
+    const wantEmail = Boolean(d.includeEmail) && (d.typeFilter === "all" || filterEmail);
+    const wantSms = Boolean(d.includeTexts) && (d.typeFilter === "all" || filterEmail);
     const grain = (pc && pc.grain) || "year";
     const buckets = wantEmail ? (pc && pc.buckets) || [] : [];
     const mem = memoryLikeItems(items);

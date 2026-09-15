@@ -841,15 +841,18 @@ def _attach_hidden_sms(
     *,
     ask_text: str,
     show_sms: bool,
+    mixed_gallery: bool = False,
 ) -> tuple[list[dict[str, Any]], int, int]:
     """Keep SMS eligible for Add texts without dumping cards on broad memory asks.
 
-    Gallery visibility is not evidence exclusion. Caps hidden cards so Explore
-    stays usable; full retrieve/count remains on the SMS Ask path.
+    I14 mixed Gallery treats SMS as an independent Communications member: retrieve
+    and count even when Email is off and this was not an explicit text Ask.
+    Pre-I14 All still hides texts until presentation.
     """
     existing_ids = {str(i.get("evidence_id") or "") for i in items if i.get("evidence_id")}
     sms_already = [i for i in items if _is_sms_type(i.get("type"))]
-    if show_sms and sms_already:
+    visible = bool(show_sms or mixed_gallery)
+    if visible and sms_already and not mixed_gallery:
         for i in sms_already:
             i["gallery_default_hidden"] = False
         return items, len(sms_already), 0
@@ -870,12 +873,13 @@ def _attach_hidden_sms(
     ).lower()
     holiday_ask = any(m in holiday_blob for m in _HOLIDAY_WINDOW_MARKERS)
     # Retrieve already scoped holiday SMS. Do not pad with the person-wide cap
-    # (Peggy Christmas curator was 500 all-time texts).
-    if sms_already and (tw or holiday_ask):
+    # (Peggy Christmas curator was 500 all-time texts). Mixed I14 still retrieves
+    # the Ask window instead of trusting a partial orchestrator SMS sample.
+    if sms_already and (tw or holiday_ask) and not mixed_gallery:
         for i in sms_already:
             i["gallery_default_hidden"] = True
         return items, len(sms_already), len(sms_already)
-    if holiday_ask and not tw:
+    if holiday_ask and not tw and not mixed_gallery:
         for i in sms_already:
             i["gallery_default_hidden"] = True
         hidden = sum(1 for i in sms_already if i.get("gallery_default_hidden"))
@@ -918,7 +922,7 @@ def _attach_hidden_sms(
             eid = str(it.get("evidence_id") or "")
             if eid and eid in existing_ids:
                 continue
-            it["gallery_default_hidden"] = False
+            it["gallery_default_hidden"] = not visible
             extra.append(it)
             if eid:
                 existing_ids.add(eid)
@@ -926,6 +930,9 @@ def _attach_hidden_sms(
         extra = []
 
     out = list(items) + extra
+    for i in out:
+        if _is_sms_type(i.get("type")):
+            i["gallery_default_hidden"] = not visible
     sms_n = sum(1 for i in out if _is_sms_type(i.get("type")))
     hidden_n = sum(
         1
@@ -934,7 +941,7 @@ def _attach_hidden_sms(
     )
     if match_total > sms_n:
         sms_n = match_total
-        if not show_sms:
+        if not visible:
             hidden_n = match_total
     return out, sms_n, hidden_n
 
@@ -1147,7 +1154,19 @@ def build_explore_find(
         result.get("answer_kind") == "clarification"
         or plan_early.get("requires_clarification")
     )
-    if plan_early.get("want_cross_source") and not clarifying:
+    person_ids_early = [
+        str(p) for p in (plan_early.get("person_ids") or []) if str(p).strip()
+    ]
+    from memorybox.explore.prepared_comms import gallery_comms_enabled
+
+    i14_mixed = (
+        gallery_comms_enabled()
+        and bool(person_ids_early)
+        and str(plan_early.get("output_mode") or result.get("output_mode") or "show")
+        != "tell"
+        and not clarifying
+    )
+    if plan_early.get("want_cross_source") and not clarifying and not i14_mixed:
         show_sms = True
         show_email = True
         show_calendar = True
@@ -1177,7 +1196,7 @@ def build_explore_find(
     prepared_token = ""
     person_ids = [str(p) for p in (plan_early.get("person_ids") or []) if str(p).strip()]
     person_names_early = [str(n) for n in (plan_early.get("person_names") or []) if str(n).strip()]
-    from memorybox.explore.prepared_comms import gallery_comms_enabled, new_ask_token
+    from memorybox.explore.prepared_comms import new_ask_token
 
     prepared_unresolved = bool(
         gallery_comms_enabled()
@@ -1197,7 +1216,11 @@ def build_explore_find(
         prepared_token = new_ask_token()
     if not tell_mode or show_sms or show_email or show_calendar:
         items, sms_available, sms_hidden = _attach_hidden_sms(
-            items, result, ask_text=text, show_sms=show_sms
+            items,
+            result,
+            ask_text=text,
+            show_sms=show_sms,
+            mixed_gallery=use_prepared,
         )
         if use_prepared:
             email_available = 0
@@ -1357,6 +1380,7 @@ def build_explore_find(
             "gallery_show_sms": show_sms,
             "gallery_show_email": show_email,
             "gallery_show_calendar": show_calendar,
+            "gallery_mixed_comms": bool(use_prepared),
             "person_ids": person_ids,
             "prepared_comms_pending": prepared_pending,
             "prepared_comms_token": prepared_token,

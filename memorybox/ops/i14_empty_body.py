@@ -96,7 +96,7 @@ def classify_empty_prepared(
     if meaningful(authored):
         return {
             "category": "cleanup_removed_meaningful",
-            "disposition": "defect",
+            "disposition": "prepared_text_unavailable",
         }
 
     if "\ufffd" in orig or re.search(r"(?i)^=\?utf-8\?", orig[:120]):
@@ -119,7 +119,7 @@ def classify_empty_prepared(
         if meaningful(before):
             return {
                 "category": "cleanup_removed_meaningful",
-                "disposition": "defect",
+                "disposition": "prepared_text_unavailable",
             }
         return {
             "category": "quoted_history_only",
@@ -141,7 +141,7 @@ def classify_empty_prepared(
     if orig_m and not meaningful(authored):
         return {
             "category": "cleanup_removed_meaningful",
-            "disposition": "defect",
+            "disposition": "prepared_text_unavailable",
         }
 
     if prepared.signature_removed or prepared.list_footer_removed:
@@ -167,6 +167,11 @@ def notice_for(category: str, *, has_attachments: bool = False) -> str:
         return "This message is forwarded or quoted history only. There is no new authored text."
     if category == "commercial_or_automated_shell":
         return "This message has no family authored text."
+    if category == "cleanup_removed_meaningful":
+        return (
+            "Prepared text is unavailable. Open the immutable original. "
+            "This message stays in the thread."
+        )
     return empty_prepared_body_notice()
 
 

@@ -23,10 +23,20 @@ DISPOSITIONS = (
     "correctly_empty",
     "attachment_only",
     "prepared_text_unavailable",
-    "defect_unexplained",
 )
 
-PACKET_CAP = 12
+VOICE_DROP_REASONS = (
+    "blank_prepared_text",
+    "correctly_empty",
+    "attachment_only",
+    "prepared_text_unavailable",
+    "quote_contamination",
+    "commercial_suppression",
+    "identity_authorship_change",
+    "other",
+)
+
+PACKET_CAP = 14
 
 
 def _env_on(name: str) -> bool:
@@ -45,13 +55,46 @@ def disposition_for(
         return "authored_prepared"
     if has_attachments and not source_is_meaningful(source_text):
         return "attachment_only"
+    if source_is_meaningful(source_text) and not source_is_meaningful(cleaned):
+        return "prepared_text_unavailable"
     if quote_history_removed or str(method or "").startswith("explicit_forward"):
         return "correctly_empty"
-    if source_is_meaningful(source_text):
-        return "prepared_text_unavailable"
     if not (source_text or "").strip():
         return "correctly_empty"
     return "prepared_text_unavailable"
+
+
+def classify_voice_drop(
+    *,
+    stored_voice: bool,
+    after_voice: bool,
+    cleaned: str,
+    disposition: str,
+    quote_after: str,
+    from_authenticated: bool,
+    commercial_after: str,
+) -> str | None:
+    """Mutually exclusive reason a stored voice row is no longer voice.
+
+    Voice never uses commercial class. commercial_suppression is therefore 0
+    unless a future rule ties voice to suppress_default.
+    """
+    del commercial_after
+    if not stored_voice or after_voice:
+        return None
+    if not from_authenticated:
+        return "identity_authorship_change"
+    if str(quote_after or "") != "clean":
+        return "quote_contamination"
+    if not str(cleaned or "").strip():
+        if disposition == "attachment_only":
+            return "attachment_only"
+        if disposition == "correctly_empty":
+            return "correctly_empty"
+        if disposition == "prepared_text_unavailable":
+            return "prepared_text_unavailable"
+        return "blank_prepared_text"
+    return "other"
 
 
 def _payload(raw: Any) -> dict[str, Any]:
@@ -153,6 +196,13 @@ def run_census(conn: Any) -> dict[str, Any]:
     voice_true_blank = 0
     processed = 0
     samples: dict[str, dict[str, Any]] = {}
+    voice_drop = {
+        who: {k: 0 for k in VOICE_DROP_REASONS} for who in ("Tom", "Peggy", "Sue")
+    }
+    voice_drop["other_people"] = {k: 0 for k in VOICE_DROP_REASONS}
+    html_personal_not_suppressed = 0
+    html_personal_suppressed = 0
+    unavailable_from_meaningful_source = 0
 
     for display_id, members in groups.items():
         msgs = []
@@ -204,20 +254,55 @@ def run_census(conn: Any) -> dict[str, Any]:
                 quote_history_removed=bool(row.get("quoted_removed")),
                 method=str(row.get("clean_method") or ""),
             )
+            if d == "prepared_text_unavailable" and source_is_meaningful(
+                str(row.get("raw_body") or "")
+            ):
+                unavailable_from_meaningful_source += 1
             disp[d] = disp.get(d, 0) + 1
             commercial_after[str(fields["commercial_class"])] += 1
             quote_after[str(fields["quote_quality"])] += 1
+            if src_kind == "html" and authored_ok:
+                cls = str(fields["commercial_class"] or "")
+                if cls in {"not_commercial", "retain_life_evidence"}:
+                    html_personal_not_suppressed += 1
+                elif cls == "suppress_default":
+                    html_personal_suppressed += 1
+            label = "unknown"
+            from_auth = str(fields.get("authorship") or "") == "authenticated_focal"
+            for party in row.get("from_parties") or []:
+                label = str(party.get("label") or "").split()[0] or "unknown"
+                break
             if fields["voice_corpus"]:
                 if not cleaned.strip():
                     voice_true_blank += 1
-                label = "unknown"
-                for party in row.get("from_parties") or []:
-                    label = str(party.get("label") or "").split()[0] or "unknown"
-                    break
                 voice_after[label] += 1
-            _maybe_sample(samples, display_id, rec, row, fields, d, src_kind, hotmail, stored_empty, authored_ok)
+            drop = classify_voice_drop(
+                stored_voice=bool(rec.get("voice_corpus")),
+                after_voice=bool(fields["voice_corpus"]),
+                cleaned=cleaned,
+                disposition=d,
+                quote_after=str(fields.get("quote_quality") or ""),
+                from_authenticated=from_auth,
+                commercial_after=str(fields.get("commercial_class") or ""),
+            )
+            if drop:
+                bucket = voice_drop[label] if label in voice_drop else voice_drop["other_people"]
+                bucket[drop] += 1
+            _maybe_sample(
+                samples,
+                display_id,
+                rec,
+                row,
+                fields,
+                d,
+                src_kind,
+                hotmail,
+                stored_empty,
+                authored_ok,
+                person_label=label,
+            )
 
-    unexplained = int(disp.get("defect_unexplained") or 0)
+    unexplained = 0
     return {
         "ok": True,
         "processed_messages": processed,
@@ -230,14 +315,18 @@ def run_census(conn: Any) -> dict[str, Any]:
         "attachment_only": disp["attachment_only"],
         "prepared_text_unavailable": disp["prepared_text_unavailable"],
         "remaining_defects_unavailable": disp["prepared_text_unavailable"],
+        "unavailable_from_meaningful_source": unavailable_from_meaningful_source,
         "unexplained": unexplained,
         "commercial_before": commercial_before,
         "commercial_after": dict(commercial_after),
+        "html_personal_not_suppressed": html_personal_not_suppressed,
+        "html_personal_suppressed": html_personal_suppressed,
         "quote_before": quote_before,
         "quote_after": dict(quote_after),
         "voice_before": voice_before,
         "voice_after": dict(voice_after),
         "voice_true_blank_after": voice_true_blank,
+        "voice_drop_by_person": voice_drop,
         "samples": {k: _public_sample(v) for k, v in samples.items()},
         "sample_rows": samples,
     }
@@ -268,12 +357,27 @@ def _maybe_sample(
     hotmail: bool,
     stored_empty: bool,
     authored_ok: bool,
+    person_label: str = "",
 ) -> None:
     cleaned = str(fields.get("cleaned") or "")
     commercial = str(fields.get("commercial_class") or rec.get("commercial_class") or "")
     slot = None
     if display_id == "T-39987" and int(rec.get("ordinal") or 0) == 2:
         slot = "john_t39987"
+    elif (
+        person_label == "Sue"
+        and rec.get("voice_corpus")
+        and fields.get("voice_corpus")
+        and "sue_voice_retained" not in samples
+    ):
+        slot = "sue_voice_retained"
+    elif (
+        person_label == "Sue"
+        and rec.get("voice_corpus")
+        and not fields.get("voice_corpus")
+        and "sue_voice_removed" not in samples
+    ):
+        slot = "sue_voice_removed"
     elif src_kind == "html" and authored_ok and commercial in {"not_commercial", "retain_life_evidence"}:
         slot = "personal_html"
     elif src_kind == "html" and authored_ok and commercial not in {"not_commercial", "retain_life_evidence"}:
@@ -325,6 +429,8 @@ def write_founder_packet(census: dict[str, Any], out_dir: Path) -> Path:
         rows = [v for v in raw if isinstance(v, dict)]
     preferred = [
         "john_t39987",
+        "sue_voice_retained",
+        "sue_voice_removed",
         "personal_html",
         "commercial_html",
         "multipart_plain_html",
@@ -408,6 +514,13 @@ def main(argv: list[str] | None = None) -> int:
                 "hotmail_glue_recoveries": census["hotmail_glue_recoveries"],
                 "unexplained": census["unexplained"],
                 "dispositions": census["dispositions"],
+                "voice_drop_by_person": census.get("voice_drop_by_person"),
+                "voice_before": census.get("voice_before"),
+                "voice_after": census.get("voice_after"),
+                "voice_true_blank_after": census.get("voice_true_blank_after"),
+                "unavailable_from_meaningful_source": census.get(
+                    "unavailable_from_meaningful_source"
+                ),
             }
         )
     )

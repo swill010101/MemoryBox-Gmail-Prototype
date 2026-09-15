@@ -1,10 +1,22 @@
--- PROPOSED. Do not apply on FlightSim until founder review.
--- Activation-time only: refuse a generation that marks voice_corpus on blank
--- prepared text. This replaces comms_prepared_assert_generation_ready in place
--- and does not ALTER comms_prepared_messages, so the currently active flawed
--- generation is not rewritten and does not fail a table CHECK.
+-- PROPOSED activation-function migration. Do not apply on FlightSim until
+-- separately authorized. Do not copy into memorybox/migrations/ yet.
+--
+-- Identity: replaces comms_prepared_assert_generation_ready in place.
+-- This is a function-only change. It does not ALTER comms_prepared_messages,
+-- does not add a table CHECK, and does not UPDATE existing rows. The currently
+-- active generation is therefore not rewritten.
+--
+-- Activation invariant: a candidate generation cannot become active while any
+-- row has voice_corpus AND blank/whitespace cleaned_authored_text
+-- (voice_requires_nonblank_prepared_text).
+--
+-- Failure mode: CREATE OR REPLACE FUNCTION is transactional with the session
+-- that applies it. Activation still uses the existing
+-- comms_prepared_activate_generation path, which only flips
+-- comms_prepared_active_generations after assert succeeds. If assert raises,
+-- the active generation pointer is unchanged.
+--
 -- Ledger remains 001–038 until this file is authorized as 039.
--- Do not place this file in memorybox/migrations/ until authorized.
 
 CREATE OR REPLACE FUNCTION comms_prepared_assert_generation_ready(p_id UUID)
 RETURNS void
