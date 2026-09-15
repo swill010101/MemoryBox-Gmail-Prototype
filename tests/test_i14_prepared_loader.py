@@ -25,6 +25,7 @@ from tests.test_p2_i14_lineage_pg import SQL_001, SQL_035, _DisposablePg, _apply
 
 SQL_037 = Path(__file__).resolve().parents[1] / "memorybox" / "migrations" / "037_p2_i14_prepared_evidence_ref_scale.sql"
 SQL_038 = Path(__file__).resolve().parents[1] / "memorybox" / "migrations" / "038_p2_i14_voice_without_recipient_identity.sql"
+SQL_039 = Path(__file__).resolve().parents[1] / "memorybox" / "migrations" / "039_p2_i14_voice_requires_prepared_text.sql"
 
 RFC_SQL = """
 CREATE TABLE IF NOT EXISTS communication_rfc_ids (
@@ -90,6 +91,8 @@ class PreparedLoaderPg(_DisposablePg):
             _apply_file(conn, SQL_037)
             conn.commit()
             _apply_file(conn, SQL_038)
+            conn.commit()
+            _apply_file(conn, SQL_039)
             conn.commit()
 
     def _wipe(self, conn) -> None:
@@ -829,13 +832,7 @@ class PreparedLoaderPg(_DisposablePg):
 
     def test_proposed_039_blocks_blank_voice_without_rewriting_rows(self) -> None:
         self._require_dsn()
-        sql_039 = (
-            Path(__file__).resolve().parents[1]
-            / "docs"
-            / "prd"
-            / "p2-i14"
-            / "039_p2_i14_voice_requires_prepared_text.PROPOSED.sql"
-        )
+        sql_039 = SQL_039
         with psycopg.connect(self.dsn, row_factory=dict_row, connect_timeout=5) as conn:
             self._wipe(conn)
             src = self._source(conn)

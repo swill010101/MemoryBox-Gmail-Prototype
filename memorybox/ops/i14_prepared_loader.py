@@ -160,7 +160,7 @@ def _threading_confidence(msgs: list[dict[str, Any]]) -> str:
 
 
 def _checksum(ids: list[Any]) -> str:
-    blob = "\n".join(sorted(str(i) for i in ids)).encode("utf-8")
+    blob = (ALGO_VERSION + "\n" + "\n".join(sorted(str(i) for i in ids))).encode("utf-8")
     return hashlib.sha256(blob).hexdigest()
 
 

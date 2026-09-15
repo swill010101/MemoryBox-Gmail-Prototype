@@ -5,6 +5,7 @@ import os
 import unittest
 
 from memorybox.ops.i14_prepared_load_prod import (
+    ALONGSIDE_CONFIRM,
     CONFIRM,
     LoadProdError,
     MAX_PACKET_THREADS,
@@ -26,6 +27,22 @@ class Flags(unittest.TestCase):
         os.environ["MEMORYBOX_I14_LOAD_ALLOW_MEMORYBOX_DB"] = "1"
         os.environ["MEMORYBOX_I14_LOAD_CONFIRM"] = CONFIRM
         _require_flags()
+
+    def test_accepts_alongside_confirm(self) -> None:
+        os.environ["MEMORYBOX_I14_LOAD_ALLOW_FLIGHTSIM"] = "1"
+        os.environ["MEMORYBOX_I14_LOAD_ALLOW_MEMORYBOX_DB"] = "1"
+        os.environ["MEMORYBOX_I14_LOAD_ALONGSIDE_ACTIVE"] = "1"
+        os.environ["MEMORYBOX_I14_LOAD_CONFIRM"] = ALONGSIDE_CONFIRM
+        _require_flags(alongside=True)
+
+    def test_alongside_refuses_old_confirm(self) -> None:
+        os.environ["MEMORYBOX_I14_LOAD_ALLOW_FLIGHTSIM"] = "1"
+        os.environ["MEMORYBOX_I14_LOAD_ALLOW_MEMORYBOX_DB"] = "1"
+        os.environ["MEMORYBOX_I14_LOAD_ALONGSIDE_ACTIVE"] = "1"
+        os.environ["MEMORYBOX_I14_LOAD_CONFIRM"] = CONFIRM
+        with self.assertRaises(LoadProdError) as ctx:
+            _require_flags(alongside=True)
+        self.assertEqual(str(ctx.exception), "load_confirm_mismatch")
 
     def test_replace_unpublished_requires_confirm(self) -> None:
         os.environ.pop("MEMORYBOX_I14_REPLACE_UNPUBLISHED", None)

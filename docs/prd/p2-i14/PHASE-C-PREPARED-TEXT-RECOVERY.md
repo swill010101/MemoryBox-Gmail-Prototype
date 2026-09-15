@@ -1,8 +1,8 @@
 # I14 prepared-text recovery (review, not authorized to load)
 
-**Status:** Recovery direction at `0c005f516907332d4621659469902b7cd124ed61` remains provisionally accepted. Mixed-Gallery SMS, Ask reset, 42-message disposition, commercial identity, and proposed 039 are implemented on this follow-on SHA. **Do not load, migrate, activate, or begin I11A.**  
+**Status:** Founder recovery packet accepted. Replacement unpublished load is separately authorized: [PHASE-C-REPLACEMENT-GENERATION.md](PHASE-C-REPLACEMENT-GENERATION.md). **Do not activate.** Phase C Gallery remains in review.  
 **Date:** 2026-09-15  
-**Active generation:** unchanged. Archive evidence: unchanged. Ledger on FlightSim: **001–038**. Proposed **039** is review-only.
+**Active generation:** unchanged until a later activation authorization. Ledger after this work: **001–039**.
 
 ## Mixed Gallery SMS (Phase C)
 

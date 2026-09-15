@@ -23,6 +23,7 @@ DISPOSITIONS = (
     "correctly_empty",
     "attachment_only",
     "prepared_text_unavailable",
+    "cleanup_removed_meaningful",
 )
 
 VOICE_DROP_REASONS = (
@@ -56,6 +57,9 @@ def disposition_for(
     if has_attachments and not source_is_meaningful(source_text):
         return "attachment_only"
     if source_is_meaningful(source_text) and not source_is_meaningful(cleaned):
+        method_l = str(method or "")
+        if quote_history_removed or "hotmail" in method_l:
+            return "cleanup_removed_meaningful"
         return "prepared_text_unavailable"
     if quote_history_removed or str(method or "").startswith("explicit_forward"):
         return "correctly_empty"
@@ -91,8 +95,8 @@ def classify_voice_drop(
             return "attachment_only"
         if disposition == "correctly_empty":
             return "correctly_empty"
-        if disposition == "prepared_text_unavailable":
-            return "prepared_text_unavailable"
+        if disposition in {"prepared_text_unavailable", "cleanup_removed_meaningful"}:
+            return disposition
         return "blank_prepared_text"
     return "other"
 

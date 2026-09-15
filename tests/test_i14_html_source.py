@@ -109,6 +109,16 @@ class HtmlSourceSelection(unittest.TestCase):
             ),
             "prepared_text_unavailable",
         )
+        self.assertEqual(
+            disposition_for(
+                cleaned="",
+                source_text="I am so sorry to hear this news about Peggy.",
+                has_attachments=False,
+                quote_history_removed=True,
+                method="hotmail_date_from_to_subject",
+            ),
+            "cleanup_removed_meaningful",
+        )
 
     def test_voice_drop_reasons_are_mutually_exclusive(self) -> None:
         from memorybox.ops.i14_prepared_recovery import classify_voice_drop

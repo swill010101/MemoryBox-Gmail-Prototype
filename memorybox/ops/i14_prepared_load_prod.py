@@ -29,9 +29,22 @@ from memorybox.ops.i14_thread_review import (
 )
 
 CONFIRM = "household-email-unpublished-v1"
+ALONGSIDE_CONFIRM = "household-email-unpublished-v2-alongside-active"
 REPLACE_CONFIRM = "replace-unpublished-voice-038-v1"
-REQUIRED_LEDGER = 38
-LEDGER_LAST = "038_p2_i14_voice_without_recipient_identity.sql"
+REQUIRED_LEDGER = 39
+LEDGER_LAST = "039_p2_i14_voice_requires_prepared_text.sql"
+JOHN_EVIDENCE_ID = "5941e1bb-5354-4bba-9bac-fb1f0a9fd963"
+ARCHIVE_BASELINE = {
+    "evidence": 188656,
+    "sources": 27,
+    "communication_rfc_ids": 287010,
+}
+ACTIVE_CHILD_COUNTS = {
+    "threads": 40996,
+    "messages": 91247,
+    "participants": 294061,
+    "attachments": 28467,
+}
 ACCEPTED = {
     "mbox_rows": 91281,
     "assigned_rows": 91275,
@@ -70,13 +83,16 @@ def _env_on(name: str) -> bool:
     return os.environ.get(name, "").strip() == "1"
 
 
-def _require_flags() -> None:
+def _require_flags(*, alongside: bool = False) -> None:
     if not _env_on("MEMORYBOX_I14_LOAD_ALLOW_FLIGHTSIM"):
         raise LoadProdError("load_flightsim_not_allowed")
     if not _env_on("MEMORYBOX_I14_LOAD_ALLOW_MEMORYBOX_DB"):
         raise LoadProdError("load_memorybox_db_not_allowed")
-    if os.environ.get("MEMORYBOX_I14_LOAD_CONFIRM", "").strip() != CONFIRM:
+    want = ALONGSIDE_CONFIRM if alongside else CONFIRM
+    if os.environ.get("MEMORYBOX_I14_LOAD_CONFIRM", "").strip() != want:
         raise LoadProdError("load_confirm_mismatch")
+    if alongside and not _env_on("MEMORYBOX_I14_LOAD_ALONGSIDE_ACTIVE"):
+        raise LoadProdError("alongside_active_not_allowed")
 
 
 def _empty_counts(conn: Any) -> dict[str, int]:
@@ -162,6 +178,75 @@ def _reject_unpublished_snapshot(conn: Any) -> dict[str, Any]:
     }
 
 
+def _assert_alongside_active(conn: Any) -> dict[str, Any]:
+    gens = conn.execute(
+        """
+        SELECT id, status, published, is_active, algo_version
+          FROM comms_prepared_generations
+         ORDER BY created_at
+        """
+    ).fetchall()
+    active = [g for g in gens if g["published"] or g["is_active"]]
+    if len(active) != 1 or not active[0]["published"] or not active[0]["is_active"]:
+        raise LoadProdError("alongside_requires_one_active")
+    if str(active[0]["status"]) != "published":
+        raise LoadProdError("alongside_active_status_unexpected")
+    validated_unpub = [
+        g
+        for g in gens
+        if str(g["status"]) == "validated" and not g["published"] and not g["is_active"]
+    ]
+    if validated_unpub:
+        raise LoadProdError("unpublished_already_present")
+    building = [g for g in gens if str(g["status"]) == "building"]
+    if building:
+        raise LoadProdError("building_generation_present")
+    gid = active[0]["id"]
+    child = {
+        "threads": int(
+            conn.execute(
+                "SELECT COUNT(*) AS n FROM comms_prepared_threads WHERE generation_id = %s",
+                (gid,),
+            ).fetchone()["n"]
+        ),
+        "messages": int(
+            conn.execute(
+                "SELECT COUNT(*) AS n FROM comms_prepared_messages WHERE generation_id = %s",
+                (gid,),
+            ).fetchone()["n"]
+        ),
+        "participants": int(
+            conn.execute(
+                """
+                SELECT COUNT(*) AS n FROM comms_prepared_participants p
+                  JOIN comms_prepared_messages m ON m.id = p.message_id
+                 WHERE m.generation_id = %s
+                """,
+                (gid,),
+            ).fetchone()["n"]
+        ),
+        "attachments": int(
+            conn.execute(
+                """
+                SELECT COUNT(*) AS n FROM comms_prepared_attachments a
+                  JOIN comms_prepared_messages m ON m.id = a.message_id
+                 WHERE m.generation_id = %s
+                """,
+                (gid,),
+            ).fetchone()["n"]
+        ),
+    }
+    diffs = _agree(child, ACTIVE_CHILD_COUNTS)
+    if diffs:
+        raise LoadProdError("active_child_counts_mismatch:" + ",".join(diffs))
+    return {
+        "active_generation_id": str(gid),
+        "active_algo_version": str(active[0].get("algo_version") or ""),
+        "active_child_counts": child,
+        "active_generation_untouched": True,
+    }
+
+
 def _assert_pre_empty(conn: Any) -> dict[str, Any] | None:
     counts = _empty_counts(conn)
     if all(int(v) == 0 for v in counts.values()):
@@ -233,6 +318,178 @@ def _ledger(conn: Any) -> Any:
     return load_identity_ledger(
         conn, focal_person_id=str(row["pid"]), focal_label=str(row["n"] or "Person")
     )
+
+
+def count_loaded_dispositions(conn: Any, gid: Any) -> dict[str, int]:
+    from memorybox.ops.i14_empty_body import classify_empty_prepared
+    from memorybox.ops.i14_prepared_text import source_is_meaningful
+
+    rows = conn.execute(
+        """
+        SELECT m.cleaned_authored_text, m.forward_status, m.commercial_class, m.subject,
+               m.voice_corpus,
+               (
+                 SELECT COUNT(*)::int FROM comms_prepared_attachments a
+                  WHERE a.message_id = m.id
+               ) AS att_n,
+               e.payload_json
+          FROM comms_prepared_messages m
+          JOIN evidence e ON e.id = m.evidence_id
+         WHERE m.generation_id = %s
+        """,
+        (gid,),
+    ).fetchall()
+    out = {
+        "authored_prepared": 0,
+        "correctly_empty": 0,
+        "attachment_only": 0,
+        "prepared_text_unavailable": 0,
+        "cleanup_removed_meaningful": 0,
+        "unexplained": 0,
+        "blank_voice": 0,
+    }
+    correct_empty_cats = {
+        "original_genuinely_empty",
+        "quoted_history_only",
+        "forward_history_only",
+        "commercial_or_automated_shell",
+        "other_known",
+    }
+    for rec in rows:
+        cleaned = str(rec.get("cleaned_authored_text") or "")
+        if rec.get("voice_corpus") and not cleaned.strip():
+            out["blank_voice"] += 1
+        if source_is_meaningful(cleaned):
+            out["authored_prepared"] += 1
+            continue
+        payload = rec.get("payload_json") or {}
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload)
+            except json.JSONDecodeError:
+                payload = {}
+        if not isinstance(payload, dict):
+            payload = {}
+        cls = classify_empty_prepared(
+            body_text=str(payload.get("body_text") or payload.get("body") or ""),
+            body_html=str(payload.get("body_html") or ""),
+            html_only=bool(payload.get("html_only")),
+            has_attachments=int(rec.get("att_n") or 0) > 0,
+            commercial_class=str(rec.get("commercial_class") or ""),
+            subject=str(rec.get("subject") or ""),
+            forward_status=str(rec.get("forward_status") or ""),
+        )
+        cat = str(cls.get("category") or "")
+        if cat == "attachment_only":
+            out["attachment_only"] += 1
+        elif cat == "cleanup_removed_meaningful":
+            out["cleanup_removed_meaningful"] += 1
+        elif cat in correct_empty_cats:
+            out["correctly_empty"] += 1
+        elif cat == "unexplained":
+            out["unexplained"] += 1
+        else:
+            out["prepared_text_unavailable"] += 1
+    return out
+
+
+def prove_john_recovered(conn: Any, gid: Any) -> dict[str, Any]:
+    from memorybox.ops.i14_prepared_text import source_is_meaningful
+
+    row = conn.execute(
+        """
+        SELECT m.ordinal, t.display_id, m.cleaned_authored_text, m.voice_corpus,
+               m.evidence_id::text AS evidence_id
+          FROM comms_prepared_messages m
+          JOIN comms_prepared_threads t ON t.id = m.thread_id
+         WHERE m.generation_id = %s AND m.evidence_id = %s
+         ORDER BY m.ordinal
+        """,
+        (gid, JOHN_EVIDENCE_ID),
+    ).fetchone()
+    if not row:
+        raise LoadProdError("john_t39987_missing")
+    cleaned = str(row.get("cleaned_authored_text") or "")
+    if not source_is_meaningful(cleaned):
+        raise LoadProdError("john_t39987_not_recovered")
+    if "<" in cleaned or "script" in cleaned.lower():
+        raise LoadProdError("john_t39987_markup_present")
+    return {
+        "display_id": str(row["display_id"]),
+        "ordinal": int(row["ordinal"] or 0),
+        "recovered": True,
+        "voice_corpus": bool(row["voice_corpus"]),
+        "prepared_chars": len(cleaned.strip()),
+    }
+
+
+def voice_delta_against_active(conn: Any, gid: Any) -> dict[str, Any]:
+    from memorybox.ops.i14_prepared_recovery import classify_voice_drop
+
+    rows = conn.execute(
+        """
+        SELECT split_part(pe.display_name, ' ', 1) AS who,
+               old.voice_corpus AS stored_voice,
+               new.voice_corpus AS after_voice,
+               new.cleaned_authored_text,
+               new.quote_quality,
+               new.authorship,
+               new.commercial_class
+          FROM comms_prepared_messages new
+          JOIN comms_prepared_active_generations ag ON TRUE
+          JOIN comms_prepared_messages old
+            ON old.generation_id = ag.id AND old.evidence_id = new.evidence_id
+          JOIN comms_prepared_participants p
+            ON p.message_id = old.id AND p.role = 'from'
+          JOIN people pe ON pe.id = p.person_id
+         WHERE new.generation_id = %s
+        """,
+        (gid,),
+    ).fetchall()
+    drop = {
+        who: {
+            "blank_prepared_text": 0,
+            "correctly_empty": 0,
+            "attachment_only": 0,
+            "prepared_text_unavailable": 0,
+            "cleanup_removed_meaningful": 0,
+            "quote_contamination": 0,
+            "commercial_suppression": 0,
+            "identity_authorship_change": 0,
+            "other": 0,
+        }
+        for who in ("Tom", "Peggy", "Sue")
+    }
+    after = {"Tom": 0, "Peggy": 0, "Sue": 0}
+    before = {"Tom": 0, "Peggy": 0, "Sue": 0}
+    for rec in rows:
+        who = str(rec["who"] or "")
+        if who not in drop:
+            continue
+        if rec["stored_voice"]:
+            before[who] += 1
+        if rec["after_voice"]:
+            after[who] += 1
+        reason = classify_voice_drop(
+            stored_voice=bool(rec["stored_voice"]),
+            after_voice=bool(rec["after_voice"]),
+            cleaned=str(rec.get("cleaned_authored_text") or ""),
+            disposition="authored_prepared"
+            if str(rec.get("cleaned_authored_text") or "").strip()
+            else "blank_prepared_text",
+            quote_after=str(rec.get("quote_quality") or ""),
+            from_authenticated=str(rec.get("authorship") or "") == "authenticated_focal",
+            commercial_after=str(rec.get("commercial_class") or ""),
+        )
+        if reason:
+            if reason == "blank_prepared_text" and not str(rec.get("cleaned_authored_text") or "").strip():
+                # keep mutually exclusive blank bucket when quote is still clean
+                drop[who][reason] += 1
+            elif reason in drop[who]:
+                drop[who][reason] += 1
+            else:
+                drop[who]["other"] += 1
+    return {"voice_before": before, "voice_after": after, "voice_drop_by_person": drop}
 
 
 def post_load_validation(conn: Any, gid: Any, *, held_rows: int) -> dict[str, Any]:
@@ -695,11 +952,17 @@ def run_production_load(conn: Any, dsn: str, *, deadline_s: int) -> dict[str, An
     if pending_files:
         raise LoadProdError("pending_not_empty")
     if len(applied) != REQUIRED_LEDGER:
-        raise LoadProdError("ledger_not_001_038")
+        raise LoadProdError("ledger_not_001_039")
     last = applied[-1]["filename"] if applied else ""
     if last != LEDGER_LAST:
-        raise LoadProdError("ledger_last_not_038")
-    rejected = _assert_pre_empty(conn)
+        raise LoadProdError("ledger_last_not_039")
+    alongside = _env_on("MEMORYBOX_I14_LOAD_ALONGSIDE_ACTIVE")
+    kept_active = None
+    rejected = None
+    if alongside:
+        kept_active = _assert_alongside_active(conn)
+    else:
+        rejected = _assert_pre_empty(conn)
     evidence_before = int(conn.execute("SELECT COUNT(*) AS n FROM evidence").fetchone()["n"])
     sources_before = int(conn.execute("SELECT COUNT(*) AS n FROM sources").fetchone()["n"])
     rfc_before = int(conn.execute("SELECT COUNT(*) AS n FROM communication_rfc_ids").fetchone()["n"])
@@ -744,17 +1007,72 @@ def run_production_load(conn: Any, dsn: str, *, deadline_s: int) -> dict[str, An
     gid = result["generation_id"]
     held = int(structural["held_rows"])
     validation = post_load_validation(conn, gid, held_rows=held)
-    if validation["published_generations"] != 0 or validation["active_generations"] != 0:
+    if alongside:
+        if validation["published_generations"] != 1 or validation["active_generations"] != 1:
+            raise LoadProdError("active_generation_changed")
+        if str(kept_active["active_generation_id"]) == str(gid):
+            raise LoadProdError("new_generation_is_active")
+        after_active = conn.execute(
+            """
+            SELECT COUNT(*) AS n FROM comms_prepared_messages m
+              JOIN comms_prepared_active_generations g ON g.id = m.generation_id
+            """
+        ).fetchone()["n"]
+        if int(after_active) != ACTIVE_CHILD_COUNTS["messages"]:
+            raise LoadProdError("active_messages_changed")
+    elif validation["published_generations"] != 0 or validation["active_generations"] != 0:
         raise LoadProdError("generation_not_unpublished")
     if validation["generation_status"] != "validated":
         raise LoadProdError("generation_not_validated")
+    if validation["generation_published"] or validation["generation_active"]:
+        raise LoadProdError("generation_not_unpublished")
     if not validation["completeness"]["check"]:
         raise LoadProdError("completeness_failed")
+    dup_eids = int(
+        conn.execute(
+            """
+            SELECT COUNT(*) AS n FROM (
+              SELECT evidence_id FROM comms_prepared_messages
+               WHERE generation_id = %s
+               GROUP BY evidence_id HAVING COUNT(*) > 1
+            ) x
+            """,
+            (gid,),
+        ).fetchone()["n"]
+    )
+    if dup_eids != 0:
+        raise LoadProdError("duplicate_prepared_evidence")
+    distinct_eids = int(
+        conn.execute(
+            """
+            SELECT COUNT(DISTINCT evidence_id) AS n
+              FROM comms_prepared_messages WHERE generation_id = %s
+            """,
+            (gid,),
+        ).fetchone()["n"]
+    )
+    if distinct_eids != validation["prepared"]["messages"]:
+        raise LoadProdError("prepared_not_one_per_evidence")
+    emit_progress({"stage": "text_disposition_census"})
+    dispositions = count_loaded_dispositions(conn, gid)
+    if int(dispositions["unexplained"]) != 0:
+        raise LoadProdError("unexplained_not_zero")
+    if int(dispositions["blank_voice"]) != 0:
+        raise LoadProdError("blank_voice_present")
+    john = prove_john_recovered(conn, gid)
+    voice_delta = voice_delta_against_active(conn, gid) if alongside else None
+    conn.execute("SELECT comms_prepared_assert_generation_ready(%s)", (gid,))
     evidence_after = int(conn.execute("SELECT COUNT(*) AS n FROM evidence").fetchone()["n"])
     sources_after = int(conn.execute("SELECT COUNT(*) AS n FROM sources").fetchone()["n"])
     rfc_after = int(conn.execute("SELECT COUNT(*) AS n FROM communication_rfc_ids").fetchone()["n"])
     if (evidence_after, sources_after, rfc_after) != (evidence_before, sources_before, rfc_before):
         raise LoadProdError("evidence_or_sources_changed")
+    if (evidence_after, sources_after, rfc_after) != (
+        ARCHIVE_BASELINE["evidence"],
+        ARCHIVE_BASELINE["sources"],
+        ARCHIVE_BASELINE["communication_rfc_ids"],
+    ):
+        raise LoadProdError("archive_baseline_mismatch")
     actual = {
         "mbox_rows": ACCEPTED["mbox_rows"],
         "assigned_rows": ACCEPTED["assigned_rows"],
@@ -775,9 +1093,13 @@ def run_production_load(conn: Any, dsn: str, *, deadline_s: int) -> dict[str, An
         ),
     }
     recon_diffs = _agree(actual, ACCEPTED)
-    private: dict[str, Any] = {"generation_id": gid}
+    if recon_diffs:
+        raise LoadProdError("accepted_forecast_mismatch:" + ",".join(recon_diffs))
+    private: dict[str, Any] = {"generation_id": gid, "john": john}
     if rejected:
         private["rejected_snapshot"] = rejected
+    if kept_active:
+        private["kept_active"] = kept_active
     review_meta = None
     review_out = os.environ.get("MEMORYBOX_I14_REVIEW_OUT", "").strip()
     if review_out:
@@ -811,6 +1133,13 @@ def run_production_load(conn: Any, dsn: str, *, deadline_s: int) -> dict[str, An
         "quote_quality": validation["quote_quality"],
         "authored_voice_by_from_person": validation["authored_voice_by_from_person"],
         "duplicate_omitted_count": validation["duplicate_omitted_count"],
+        "text_dispositions": dispositions,
+        "john_recovered": True,
+        "john_ordinal": john["ordinal"],
+        "voice_delta": voice_delta,
+        "alongside_active": alongside,
+        "algo_version": result.get("algo_version"),
+        "ready_assert_ok": True,
         "completeness": validation["completeness"],
         "baseline": {
             "evidence": evidence_after,
@@ -836,7 +1165,7 @@ def run_production_load(conn: Any, dsn: str, *, deadline_s: int) -> dict[str, An
 def main(argv: list[str] | None = None) -> int:
     del argv
     try:
-        _require_flags()
+        _require_flags(alongside=_env_on("MEMORYBOX_I14_LOAD_ALONGSIDE_ACTIVE"))
         dsn = os.environ.get("MEMORYBOX_DATABASE_URL")
         if not dsn:
             raise LoadProdError("MEMORYBOX_DATABASE_URL_missing")
