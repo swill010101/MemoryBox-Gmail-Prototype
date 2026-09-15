@@ -1,0 +1,23 @@
+MemoryBox Phase C — founder visual review (date-bucket Gallery)
+Flag: MEMORYBOX_I14_GALLERY_COMMS=1
+Rollback: set MEMORYBOX_I14_GALLERY_COMMS=0 in config\memorybox_app.env, then startmb.cmd -Restart. Do not change prepared data.
+
+Open Explore: http://127.0.0.1:8790/explore/ui
+Hard-refresh so explore.js?v=i14-c3 loads.
+
+[ ] Ask "Show me Sue Will in 2017"
+    Photos/videos first. Mixed Gallery stays on All (Communications pill is not auto-selected).
+    Result dates stay in 2017. No 2016/2018 comms. No undated Stories.
+    Month cards that have Sue email show the full month thread count (never "0 email threads" when threads exist).
+    Expand a month: actual threads; open a thread for chronology / From-To-Cc / attachments / original. Close restores Ask, month, All, scroll.
+[ ] Ask "Show me Sue Will" (no year)
+    Year cards use full-year conversation counts, not an 80-thread mailbox.
+[ ] Repeat unbounded and 2017 Asks for Peggy and Tom.
+[ ] Click Communications only when you want that filter; background load must not have selected it.
+[ ] Start a new Ask quickly: prior conversations and counts disappear.
+[ ] Normal Gallery has no year-chip bar, no "Load older email", no "80 of N reachable" copy.
+    Diagnostic only: /explore/ui?mb_comms_diag=1
+[ ] Historian Capture email still healthy; historian_capture_email still Active.
+
+Do not stamp threads accepted. Do not start I11A. Do not add SMS/calendar.
+Phase C remains in review — not accepted.

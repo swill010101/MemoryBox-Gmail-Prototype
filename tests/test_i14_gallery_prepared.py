@@ -48,6 +48,8 @@ class FakeConn:
         ]
         self.years = [{"y": 2020, "n": 3}]
 
+        self.bucket_rows = [{"y": 2020, "mo": 1, "thread_n": 3, "message_n": 6}]
+
     def execute(self, sql: str, params: tuple | None = None) -> _Rows:
         text = " ".join(sql.split())
         self.sql.append(text)
@@ -55,9 +57,9 @@ class FakeConn:
             return _Rows([{"id": self.active}] if self.active else [])
         if "GROUP BY t.gallery_eligibility" in text:
             return _Rows(self.eligibility)
-        if "GROUP BY 1" in text:
-            return _Rows(self.years)
-        if "gallery_eligibility = 'show_by_default'" in text:
+        if "gallery_buckets" in text:
+            return _Rows(self.bucket_rows)
+        if "gallery_threads" in text or "scoped.in_scope_latest" in text:
             assert "voice_corpus" not in text
             rows = list(self.thread_rows)
             fetch_n = 81
@@ -65,12 +67,17 @@ class FakeConn:
             if params:
                 fetch_n = int(params[-1])
                 if len(params) >= 9:
-                    before_id = params[6]
+                    before_id = params[-4]
             if before_id:
                 ids = [str(r["display_id"]) for r in rows]
                 if str(before_id) in ids:
                     rows = rows[ids.index(str(before_id)) + 1 :]
-            return _Rows(rows[:fetch_n])
+            out = []
+            for rec in rows[:fetch_n]:
+                row = dict(rec)
+                row["in_scope_latest"] = rec.get("latest_at")
+                out.append(row)
+            return _Rows(out)
         if "FROM comms_prepared_threads" in text and "display_id" in text:
             return _Rows(
                 [
@@ -171,8 +178,7 @@ class ListThreads(unittest.TestCase):
         self.assertEqual(out["items"][0]["id"], "prepared:T-100")
         self.assertEqual(out["excluded"]["suppress_default"], 2)
         self.assertEqual(out["excluded"]["hold_uncertain"], 1)
-        self.assertEqual(out["thread_total"], 3)
-        self.assertEqual(out["reachable_total"], 3)
+        self.assertEqual(out["view"], "threads")
         self.assertEqual(out["person_match"]["status"], "linked")
         self.assertFalse(out["items"][0]["gallery_default_hidden"])
 
@@ -184,7 +190,7 @@ class ListThreads(unittest.TestCase):
         page1 = pc.list_person_threads(conn, person_id="person-p", token=token, cap=2)
         self.assertEqual(len(page1["items"]), 2)
         self.assertTrue(page1["has_more"])
-        self.assertEqual(page1["reachable_total"], 5)
+        self.assertLessEqual(len(page1["items"]), 2)
         ids1 = {i["display_id"] for i in page1["items"]}
         cur = page1["next_cursor"]
         page2 = pc.list_person_threads(
@@ -211,9 +217,10 @@ class ListThreads(unittest.TestCase):
         token = pc.new_ask_token()
         conn = FakeConn(threads=[])
         conn.eligibility = []
-        conn.years = []
-        out = pc.list_person_threads(conn, person_id="missing", token=token)
+        conn.bucket_rows = []
+        out = pc.list_person_buckets(conn, person_id="missing", token=token)
         self.assertEqual(out["person_match"]["status"], "no_prepared_participant")
+        self.assertEqual(out["scoped_thread_total"], 0)
         self.assertEqual(out["reachable_total"], 0)
 
     def test_cancel_after_abandon(self) -> None:
@@ -228,16 +235,61 @@ class ListThreads(unittest.TestCase):
         pc.new_ask_token()
         self.assertFalse(pc.token_live(first))
 
-    def test_stale_uses_last_complete(self) -> None:
+    def test_stale_uses_last_complete_buckets(self) -> None:
         token = pc.new_ask_token()
-        first = pc.list_person_threads(FakeConn(), person_id="person-p", token=token)
+        first = pc.list_person_buckets(FakeConn(), person_id="person-p", token=token)
         token2 = pc.new_ask_token()
-        stale = pc.list_person_threads(
+        stale = pc.list_person_buckets(
             FakeConn(active=None), person_id="person-p", token=token2
         )
         self.assertTrue(stale["stale"])
-        self.assertEqual(len(stale["items"]), len(first["items"]))
+        self.assertEqual(len(stale["buckets"]), len(first["buckets"]))
         self.assertTrue(stale["updated_through"])
+
+    def test_year_ask_month_buckets_are_complete_not_paged(self) -> None:
+        token = pc.new_ask_token()
+        conn = FakeConn()
+        conn.bucket_rows = [
+            {"y": 2017, "mo": 3, "thread_n": 4, "message_n": 9},
+            {"y": 2017, "mo": 6, "thread_n": 6, "message_n": 11},
+        ]
+        out = pc.list_person_buckets(
+            conn,
+            person_id="sue",
+            token=token,
+            date_from="2017-01-01",
+            date_to="2017-12-31",
+        )
+        self.assertEqual(out["grain"], "month")
+        self.assertEqual(out["scope_year"], 2017)
+        self.assertEqual(len(out["items"]), 0)
+        self.assertEqual(out["scoped_thread_total"], 10)
+        keys = [b["key"] for b in out["buckets"]]
+        self.assertEqual(set(keys), {"2017-06", "2017-03"})
+        self.assertEqual(sum(b["thread_n"] for b in out["buckets"]), 10)
+        listing = "\n".join(conn.sql)
+        self.assertNotIn("LIMIT 80", listing)
+
+    def test_unbounded_year_counts_ignore_page_size(self) -> None:
+        token = pc.new_ask_token()
+        conn = FakeConn()
+        conn.bucket_rows = [
+            {"y": 2016, "mo": 1, "thread_n": 100, "message_n": 100},
+            {"y": 2017, "mo": 1, "thread_n": 200, "message_n": 200},
+            {"y": 2018, "mo": 1, "thread_n": 50, "message_n": 50},
+        ]
+        out = pc.list_person_buckets(conn, person_id="sue", token=token)
+        self.assertEqual(out["grain"], "year")
+        self.assertEqual(out["scoped_thread_total"], 350)
+        by = {b["key"]: b["thread_n"] for b in out["buckets"]}
+        self.assertEqual(by["2017"], 200)
+        self.assertEqual(by["2016"], 100)
+
+    def test_new_ask_cancels_bucket_and_thread_reads(self) -> None:
+        first = pc.new_ask_token()
+        pc.new_ask_token()
+        self.assertTrue(pc.list_person_buckets(FakeConn(), person_id="p", token=first)["cancelled"])
+        self.assertTrue(pc.list_person_threads(FakeConn(), person_id="p", token=first)["cancelled"])
 
     def test_roles_not_voice_only(self) -> None:
         token = pc.new_ask_token()
@@ -346,7 +398,7 @@ class ExploreFind(unittest.TestCase):
             )
         self.assertTrue(payload["explore_state"]["prepared_comms_pending"])
         self.assertTrue(payload["explore_state"]["prepared_comms_token"])
-        self.assertTrue(payload["explore_state"]["gallery_show_email"])
+        self.assertFalse(payload["explore_state"]["gallery_show_email"])
         types_ = {str(i.get("type")) for i in payload["items"]}
         self.assertIn("photo", types_)
         self.assertNotIn("email", types_)
@@ -374,6 +426,58 @@ class ExploreFind(unittest.TestCase):
         self.assertTrue(payload["explore_state"]["prepared_comms_unresolved"])
         self.assertFalse(payload["explore_state"]["prepared_comms_pending"])
         self.assertIn("photo", {str(i.get("type")) for i in payload["items"]})
+
+    def test_dated_ask_excludes_undated_stories_and_other_years(self) -> None:
+        os.environ["MEMORYBOX_I14_GALLERY_COMMS"] = "1"
+        orch = types.SimpleNamespace(
+            ask=lambda *a, **k: {
+                "plan": {
+                    "person_ids": ["11111111-1111-1111-1111-111111111111"],
+                    "person_names": ["Sue Will"],
+                    "output_mode": "show",
+                    "time_start": "2017-01-01",
+                    "time_end": "2017-12-31",
+                },
+                "photo_hits": [
+                    {
+                        "external_id": "photo-2017",
+                        "people": ["Sue"],
+                        "taken_at": "2017-04-02",
+                    },
+                    {
+                        "external_id": "photo-2016",
+                        "people": ["Sue"],
+                        "taken_at": "2016-04-02",
+                    },
+                ],
+                "story_hits": [
+                    {"story_id": "s-undated", "title": "Undated story", "taken_at": ""},
+                    {
+                        "story_id": "s-2017",
+                        "title": "Dated story",
+                        "taken_at": "2017-08-01",
+                    },
+                ],
+                "video_hits": [],
+                "evidence_hits": [],
+                "provider_status": {},
+            }
+        )
+        payload = build_explore_find(
+            ask_text="Show me Sue Will in 2017", session_id="s", orchestrator=orch
+        )
+        types_dates = [
+            (str(i.get("type")), str(i.get("date") or ""), bool(i.get("undated")))
+            for i in payload["items"]
+        ]
+        self.assertIn(("photo", "2017-04-02", False), types_dates)
+        self.assertNotIn(("photo", "2016-04-02", False), types_dates)
+        self.assertNotIn(("story", "", True), types_dates)
+        story_dates = [i.get("date") for i in payload["items"] if i.get("type") == "story"]
+        self.assertEqual(story_dates, ["2017-08-01"])
+        self.assertFalse(payload["explore_state"]["gallery_show_email"])
+        self.assertTrue(payload["explore_state"]["prepared_comms_pending"])
+        self.assertIn("2017", payload.get("title") or payload.get("ask_text") or "")
 
 
 if __name__ == "__main__":

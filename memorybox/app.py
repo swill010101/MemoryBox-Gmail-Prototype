@@ -860,25 +860,46 @@ def explore_find_post(
 def explore_prepared_comms(
     person_id: str = Query(...),
     token: str = Query(""),
+    view: str = Query("buckets"),
     year: int | None = Query(None),
+    month: int | None = Query(None),
+    date_from: str | None = Query(None),
+    date_to: str | None = Query(None),
     before_latest: str | None = Query(None),
     before_id: str | None = Query(None),
 ) -> dict[str, Any]:
-    """Background Gallery attach of prepared household-email threads. Flag-gated."""
+    """Ask-scoped prepared comms. Buckets are full counts; threads are paged."""
     from memorybox.db import connection
-    from memorybox.explore.prepared_comms import gallery_comms_enabled, list_person_threads
+    from memorybox.explore.prepared_comms import (
+        gallery_comms_enabled,
+        list_person_buckets,
+        list_person_threads,
+    )
 
     if not gallery_comms_enabled():
-        return {"ok": True, "enabled": False, "items": [], "token": token}
+        return {"ok": True, "enabled": False, "items": [], "buckets": [], "token": token}
     with connection() as conn:
         conn.execute("SET TRANSACTION READ ONLY")
-        return list_person_threads(
+        if str(view or "buckets").strip().lower() == "threads":
+            return list_person_threads(
+                conn,
+                person_id=person_id,
+                token=token,
+                year=year,
+                month=month,
+                date_from=date_from or None,
+                date_to=date_to or None,
+                before_latest=before_latest or None,
+                before_id=before_id or None,
+            )
+        return list_person_buckets(
             conn,
             person_id=person_id,
             token=token,
+            date_from=date_from or None,
+            date_to=date_to or None,
             year=year,
-            before_latest=before_latest or None,
-            before_id=before_id or None,
+            month=month,
         )
 
 

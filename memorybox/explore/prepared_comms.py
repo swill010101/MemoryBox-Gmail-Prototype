@@ -2,8 +2,9 @@
 
 Flag MEMORYBOX_I14_GALLERY_COMMS=1 (default off). Never parses raw mbox.
 Never writes comms_* or evidence. Active generation only.
-First page is bounded; every show_by_default thread remains reachable via
-keyset pages and year drill-down.
+
+Date-bucket counts are complete and scoped to the Ask. The 80-row bound
+applies only when opening a month/year communication bucket.
 """
 from __future__ import annotations
 
@@ -13,6 +14,8 @@ import time
 import uuid
 from datetime import datetime, timezone
 from typing import Any
+
+from memorybox.explore.gallery_scope import CommsAskScope, comms_ask_scope
 
 DISPLAY_COMMERCIAL = frozenset({"not_commercial", "retain_life_evidence"})
 HIDE_ELIGIBILITY = frozenset({"suppress_default", "hold_uncertain"})
@@ -123,48 +126,47 @@ def _cancelled(token: str, started: float) -> dict[str, Any]:
         "ok": True,
         "cancelled": True,
         "items": [],
+        "buckets": [],
         "token": token,
         "query_ms": int((time.perf_counter() - started) * 1000),
     }
 
 
-def list_person_threads(
-    conn: Any,
+def _scope_kwargs(
     *,
-    person_id: str,
-    token: str,
-    cap: int | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
     year: int | None = None,
-    before_latest: str | None = None,
-    before_id: str | None = None,
-) -> dict[str, Any]:
-    started = time.perf_counter()
-    limit = GALLERY_PAGE_SIZE if cap is None else max(1, min(int(cap), GALLERY_PAGE_SIZE))
-    if token and not token_live(token):
-        return _cancelled(token, started)
-    gid = active_generation_id(conn)
-    is_first = not before_id and year is None
-    if gid is None:
-        cached = _last_complete.get(person_id) or {}
-        return {
-            "ok": True,
-            "stale": True,
-            "updated_through": cached.get("updated_through"),
-            "items": list(cached.get("items") or []) if is_first else [],
-            "thread_total": int(cached.get("thread_total") or 0),
-            "reachable_total": int(cached.get("thread_total") or 0),
-            "excluded": cached.get("excluded") or {},
-            "years": list(cached.get("years") or []),
-            "undated_n": int(cached.get("undated_n") or 0),
-            "has_more": False,
-            "next_cursor": None,
-            "person_match": cached.get("person_match")
-            or {"status": "no_active_generation"},
-            "page_size": limit,
-            "token": token,
-            "query_ms": int((time.perf_counter() - started) * 1000),
-            "active_generation": False,
-        }
+    month: int | None = None,
+) -> CommsAskScope:
+    if date_from or date_to:
+        return comms_ask_scope(date_from, date_to)
+    if year is not None and month is not None:
+        mo = int(month)
+        last = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][mo - 1]
+        return CommsAskScope(
+            f"{int(year):04d}-{mo:02d}-01",
+            f"{int(year):04d}-{mo:02d}-{last:02d}",
+            "month",
+            int(year),
+        )
+    if year is not None:
+        y = int(year)
+        return CommsAskScope(f"{y:04d}-01-01", f"{y:04d}-12-31", "month", y)
+    return comms_ask_scope(None, None)
+
+
+def _match_status(excl: dict[str, int]) -> dict[str, Any]:
+    shown = int(excl.get("show_by_default") or 0)
+    any_n = sum(int(v) for v in excl.values())
+    if any_n == 0:
+        return {"status": "no_prepared_participant", "reachable_show_by_default": 0}
+    if shown == 0:
+        return {"status": "linked_but_filtered", "reachable_show_by_default": 0}
+    return {"status": "linked", "reachable_show_by_default": shown}
+
+
+def _eligibility_counts(conn: Any, gid: Any, person_id: str) -> dict[str, int]:
     excluded = conn.execute(
         """
         SELECT t.gallery_eligibility, COUNT(DISTINCT t.id)::int AS n
@@ -176,43 +178,219 @@ def list_person_threads(
         """,
         (gid, person_id),
     ).fetchall()
-    excl = {str(r["gallery_eligibility"]): int(r["n"]) for r in excluded}
-    shown = int(excl.get("show_by_default") or 0)
-    any_n = sum(int(v) for v in excl.values())
-    if any_n == 0:
-        match = {"status": "no_prepared_participant", "reachable_show_by_default": 0}
-    elif shown == 0:
-        match = {"status": "linked_but_filtered", "reachable_show_by_default": 0}
-    else:
-        match = {"status": "linked", "reachable_show_by_default": shown}
-    year_rows = conn.execute(
+    return {str(r["gallery_eligibility"]): int(r["n"]) for r in excluded}
+
+
+def list_person_buckets(
+    conn: Any,
+    *,
+    person_id: str,
+    token: str,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    year: int | None = None,
+    month: int | None = None,
+) -> dict[str, Any]:
+    """Full date-bucket counts for the Ask. Never limited to 80 threads."""
+    started = time.perf_counter()
+    if token and not token_live(token):
+        return _cancelled(token, started)
+    scope = _scope_kwargs(date_from=date_from, date_to=date_to, year=year, month=month)
+    gid = active_generation_id(conn)
+    if gid is None:
+        cached = _last_complete.get(person_id) or {}
+        return {
+            "ok": True,
+            "stale": True,
+            "view": "buckets",
+            "updated_through": cached.get("updated_through"),
+            "items": [],
+            "buckets": list(cached.get("buckets") or []),
+            "grain": cached.get("grain") or scope.grain,
+            "scoped_thread_total": int(cached.get("scoped_thread_total") or 0),
+            "scoped_message_total": int(cached.get("scoped_message_total") or 0),
+            "thread_total": int(cached.get("thread_total") or 0),
+            "reachable_total": int(cached.get("scoped_thread_total") or cached.get("thread_total") or 0),
+            "excluded": cached.get("excluded") or {},
+            "person_match": cached.get("person_match")
+            or {"status": "no_active_generation"},
+            "token": token,
+            "query_ms": int((time.perf_counter() - started) * 1000),
+            "active_generation": False,
+            "undated_n": 0,
+            "scope_year": scope.calendar_year,
+            "date_from": scope.date_from,
+            "date_to": scope.date_to,
+        }
+    excl = _eligibility_counts(conn, gid, person_id)
+    match = _match_status(excl)
+    if token and not token_live(token):
+        return _cancelled(token, started)
+    grain_month = scope.grain == "month"
+    rows = conn.execute(
         """
-        SELECT EXTRACT(YEAR FROM t.latest_at)::int AS y, COUNT(*)::int AS n
-          FROM comms_prepared_threads t
-         WHERE t.generation_id = %s
-           AND t.gallery_eligibility = 'show_by_default'
-           AND t.latest_at IS NOT NULL
-           AND EXISTS (
-                 SELECT 1
-                   FROM comms_prepared_messages m
-                   JOIN comms_prepared_participants p ON p.message_id = m.id
-                  WHERE m.thread_id = t.id AND p.person_id = %s
-               )
-         GROUP BY 1
-         ORDER BY 1 DESC
+        -- gallery_buckets
+        WITH scoped AS (
+          SELECT t.id AS thread_id,
+                 MAX(m.sent_at) AS in_scope_latest,
+                 COUNT(m.id)::int AS message_n
+            FROM comms_prepared_threads t
+            JOIN comms_prepared_messages m ON m.thread_id = t.id
+           WHERE t.generation_id = %s
+             AND t.gallery_eligibility = 'show_by_default'
+             AND m.sent_at IS NOT NULL
+             AND (%s::date IS NULL OR m.sent_at::date >= %s::date)
+             AND (%s::date IS NULL OR m.sent_at::date <= %s::date)
+             AND EXISTS (
+                   SELECT 1
+                     FROM comms_prepared_participants p
+                    WHERE p.message_id = m.id AND p.person_id = %s
+                 )
+           GROUP BY t.id
+        )
+        SELECT EXTRACT(YEAR FROM in_scope_latest)::int AS y,
+               EXTRACT(MONTH FROM in_scope_latest)::int AS mo,
+               COUNT(*)::int AS thread_n,
+               SUM(message_n)::int AS message_n
+          FROM scoped
+         GROUP BY 1, 2
+         ORDER BY 1 DESC, 2 DESC
         """,
-        (gid, person_id),
+        (
+            gid,
+            scope.date_from,
+            scope.date_from,
+            scope.date_to,
+            scope.date_to,
+            person_id,
+        ),
     ).fetchall()
-    years = [{"year": int(r["y"]), "n": int(r["n"])} for r in year_rows if r.get("y") is not None]
-    undated_n = int(shown - sum(y["n"] for y in years))
-    if undated_n < 0:
-        undated_n = 0
+    buckets: list[dict[str, Any]] = []
+    if grain_month:
+        for r in rows:
+            y, mo = r.get("y"), r.get("mo")
+            if y is None or mo is None:
+                continue
+            buckets.append(
+                {
+                    "key": f"{int(y):04d}-{int(mo):02d}",
+                    "year": int(y),
+                    "month": int(mo),
+                    "thread_n": int(r["thread_n"]),
+                    "message_n": int(r["message_n"]),
+                }
+            )
+    else:
+        by_year: dict[int, dict[str, int]] = {}
+        for r in rows:
+            y = r.get("y")
+            if y is None:
+                continue
+            yi = int(y)
+            slot = by_year.setdefault(yi, {"thread_n": 0, "message_n": 0})
+            slot["thread_n"] += int(r["thread_n"])
+            slot["message_n"] += int(r["message_n"])
+        for yi in sorted(by_year, reverse=True):
+            slot = by_year[yi]
+            buckets.append(
+                {
+                    "key": f"{yi:04d}",
+                    "year": yi,
+                    "month": None,
+                    "thread_n": slot["thread_n"],
+                    "message_n": slot["message_n"],
+                }
+            )
+    scoped_threads = sum(int(b["thread_n"]) for b in buckets)
+    scoped_msgs = sum(int(b["message_n"]) for b in buckets)
+    updated = datetime.now(timezone.utc).date().isoformat()
+    payload = {
+        "ok": True,
+        "cancelled": False,
+        "stale": False,
+        "view": "buckets",
+        "active_generation": True,
+        "updated_through": updated,
+        "items": [],
+        "buckets": buckets,
+        "grain": scope.grain,
+        "scoped_thread_total": scoped_threads,
+        "scoped_message_total": scoped_msgs,
+        "thread_total": int(excl.get("show_by_default") or 0),
+        "reachable_total": scoped_threads,
+        "excluded": {
+            "suppress_default": int(excl.get("suppress_default") or 0),
+            "hold_uncertain": int(excl.get("hold_uncertain") or 0),
+            "show_by_default": int(excl.get("show_by_default") or 0),
+        },
+        "person_match": match,
+        "undated_n": 0,
+        "has_more": False,
+        "next_cursor": None,
+        "page_size": GALLERY_PAGE_SIZE,
+        "token": token,
+        "query_ms": int((time.perf_counter() - started) * 1000),
+        "scope_year": scope.calendar_year,
+        "date_from": scope.date_from,
+        "date_to": scope.date_to,
+        "card_cap": GALLERY_PAGE_SIZE,
+    }
+    _last_complete[person_id] = {
+        "updated_through": updated,
+        "buckets": buckets,
+        "grain": scope.grain,
+        "scoped_thread_total": scoped_threads,
+        "scoped_message_total": scoped_msgs,
+        "thread_total": payload["thread_total"],
+        "excluded": payload["excluded"],
+        "person_match": match,
+    }
+    return payload
+
+
+def list_person_threads(
+    conn: Any,
+    *,
+    person_id: str,
+    token: str,
+    cap: int | None = None,
+    year: int | None = None,
+    month: int | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    before_latest: str | None = None,
+    before_id: str | None = None,
+) -> dict[str, Any]:
+    """Bounded thread page for one opened date bucket. Not Gallery card counts."""
+    started = time.perf_counter()
+    limit = GALLERY_PAGE_SIZE if cap is None else max(1, min(int(cap), GALLERY_PAGE_SIZE))
+    if token and not token_live(token):
+        return _cancelled(token, started)
+    scope = _scope_kwargs(date_from=date_from, date_to=date_to, year=year, month=month)
+    gid = active_generation_id(conn)
+    if gid is None:
+        return {
+            "ok": True,
+            "stale": True,
+            "view": "threads",
+            "items": [],
+            "has_more": False,
+            "next_cursor": None,
+            "page_size": limit,
+            "token": token,
+            "query_ms": int((time.perf_counter() - started) * 1000),
+            "active_generation": False,
+        }
+    excl = _eligibility_counts(conn, gid, person_id)
+    match = _match_status(excl)
     if token and not token_live(token):
         return _cancelled(token, started)
     rows = conn.execute(
         """
+        -- gallery_threads
         SELECT t.display_id, t.earliest_at, t.latest_at, t.message_count,
                t.identity_confidence, t.gallery_eligibility,
+               scoped.in_scope_latest,
                (
                  SELECT m.subject FROM comms_prepared_messages m
                   WHERE m.thread_id = t.id ORDER BY m.ordinal LIMIT 1
@@ -243,21 +421,27 @@ def list_person_threads(
                    ) names
                ) AS participants
           FROM comms_prepared_threads t
-         WHERE t.generation_id = %s
-           AND t.gallery_eligibility = 'show_by_default'
-           AND EXISTS (
-                 SELECT 1
-                   FROM comms_prepared_messages m
-                   JOIN comms_prepared_participants p ON p.message_id = m.id
-                  WHERE m.thread_id = t.id AND p.person_id = %s
-               )
-           AND (%s::int IS NULL OR EXTRACT(YEAR FROM t.latest_at)::int = %s)
-           AND (
+          JOIN (
+            SELECT t2.id AS thread_id, MAX(m2.sent_at) AS in_scope_latest
+              FROM comms_prepared_threads t2
+              JOIN comms_prepared_messages m2 ON m2.thread_id = t2.id
+             WHERE t2.generation_id = %s
+               AND t2.gallery_eligibility = 'show_by_default'
+               AND m2.sent_at IS NOT NULL
+               AND (%s::date IS NULL OR m2.sent_at::date >= %s::date)
+               AND (%s::date IS NULL OR m2.sent_at::date <= %s::date)
+               AND EXISTS (
+                     SELECT 1 FROM comms_prepared_participants p2
+                      WHERE p2.message_id = m2.id AND p2.person_id = %s
+                   )
+             GROUP BY t2.id
+          ) scoped ON scoped.thread_id = t.id
+         WHERE (
                  %s::text IS NULL
-                 OR (COALESCE(t.latest_at, '-infinity'::timestamptz), t.display_id)
+                 OR (COALESCE(scoped.in_scope_latest, '-infinity'::timestamptz), t.display_id)
                     < (COALESCE(%s::timestamptz, '-infinity'::timestamptz), %s)
                )
-         ORDER BY COALESCE(t.latest_at, '-infinity'::timestamptz) DESC,
+         ORDER BY COALESCE(scoped.in_scope_latest, '-infinity'::timestamptz) DESC,
                   t.display_id DESC
          LIMIT %s
         """,
@@ -265,9 +449,11 @@ def list_person_threads(
             PREVIEW_CHARS,
             list(DISPLAY_COMMERCIAL),
             gid,
+            scope.date_from,
+            scope.date_from,
+            scope.date_to,
+            scope.date_to,
             person_id,
-            year,
-            year,
             before_id,
             before_latest,
             before_id,
@@ -285,7 +471,17 @@ def list_person_threads(
         if did in seen:
             continue
         seen.add(did)
-        items.append(_item_from_row(rec))
+        item = _item_from_row(rec)
+        in_scope = rec.get("in_scope_latest")
+        if in_scope is not None:
+            item["date"] = _iso(in_scope)
+            item["undated"] = False
+            item["latest_at"] = (
+                in_scope.isoformat()
+                if hasattr(in_scope, "isoformat")
+                else str(in_scope)
+            )
+        items.append(item)
     next_cursor = None
     if has_more and items:
         last = items[-1]
@@ -293,43 +489,30 @@ def list_person_threads(
             "before_latest": last.get("latest_at"),
             "before_id": last["display_id"],
         }
-    updated = datetime.now(timezone.utc).date().isoformat()
-    payload = {
+    return {
         "ok": True,
         "cancelled": False,
         "stale": False,
+        "view": "threads",
         "active_generation": True,
-        "updated_through": updated,
         "items": items,
-        "thread_total": shown,
-        "reachable_total": shown,
-        "excluded": {
-            "suppress_default": int(excl.get("suppress_default") or 0),
-            "hold_uncertain": int(excl.get("hold_uncertain") or 0),
-            "show_by_default": shown,
-        },
-        "years": years,
-        "undated_n": undated_n,
         "has_more": has_more,
         "next_cursor": next_cursor,
         "person_match": match,
+        "excluded": {
+            "suppress_default": int(excl.get("suppress_default") or 0),
+            "hold_uncertain": int(excl.get("hold_uncertain") or 0),
+            "show_by_default": int(excl.get("show_by_default") or 0),
+        },
         "page_size": limit,
-        "year": year,
+        "card_cap": limit,
         "token": token,
         "query_ms": int((time.perf_counter() - started) * 1000),
-        "card_cap": limit,
+        "date_from": scope.date_from,
+        "date_to": scope.date_to,
+        "year": scope.calendar_year if month or year else year,
+        "month": month,
     }
-    if is_first:
-        _last_complete[person_id] = {
-            "updated_through": updated,
-            "items": items,
-            "thread_total": shown,
-            "excluded": payload["excluded"],
-            "years": years,
-            "undated_n": undated_n,
-            "person_match": match,
-        }
-    return payload
 
 
 def load_thread(conn: Any, display_id: str) -> dict[str, Any]:

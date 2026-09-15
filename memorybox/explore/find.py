@@ -1203,7 +1203,6 @@ def build_explore_find(
         and not clarifying
     )
     if use_prepared:
-        show_email = True
         prepared_pending = True
         prepared_token = new_ask_token()
     if not tell_mode or show_sms or show_email or show_calendar:
@@ -1220,6 +1219,14 @@ def build_explore_find(
         items, calendar_available = _attach_calendar(
             items, result, ask_text=text, show_calendar=show_calendar
         )
+    plan = result.get("plan") or {}
+    from memorybox.explore.gallery_scope import restrict_items_to_ask_dates
+
+    items = restrict_items_to_ask_dates(
+        items,
+        time_start=plan.get("time_start"),
+        time_end=plan.get("time_end"),
+    )
     visible_items = [
         i
         for i in items
@@ -1232,7 +1239,6 @@ def build_explore_find(
             )
         )
     ]
-    plan = result.get("plan") or {}
     tell_mode = str(plan.get("output_mode") or result.get("output_mode") or "show") == "tell"
     # All-ask curator counts the archive (photos + hidden texts + video).
     # Gallery hides Email/SMS/Calendar until explicit presentation (I8A Q3).

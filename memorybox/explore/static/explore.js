@@ -937,45 +937,25 @@
     const shown = parts.length
       ? parts.join(", ")
       : `${archiveN} memor${archiveN === 1 ? "y" : "ies"}`;
+    if (state.domain.preparedComms || state.domain.preparedCommsPending) {
+      state.domain.summary = naturalCommsSummary(state.domain.preparedComms || {});
+      return;
+    }
     state.domain.summary = `${shown} · ${range} (${filterLabel}).${trunc}${hideNote}${cardNote}`;
   }
 
   function appendPreparedCuratorNote() {
     const c = state.domain && state.domain.preparedComms;
-    if (!c) return;
-    const cur = String(state.domain.summary || "");
-    if (cur.indexOf("reachable email") >= 0 || cur.indexOf("not linked for this Person") >= 0) {
-      return;
-    }
-    if (c.match === "no_prepared_participant") {
-      state.domain.summary = (
-        cur +
-        " Email is not linked for this Person in the prepared generation (0 threads). Photos and video are unchanged."
-      ).trim();
-      return;
-    }
-    if (c.match === "linked_but_filtered") {
-      const ex = c.excluded || {};
-      state.domain.summary = (
-        cur +
-        " Email threads exist but are held from default Gallery (" +
-        Number(ex.suppress_default || 0) +
-        " commercial, " +
-        Number(ex.hold_uncertain || 0) +
-        " uncertain)."
-      ).trim();
-      return;
-    }
-    if (c.reachable) {
-      state.domain.summary = (
-        cur +
-        " " +
-        c.shown +
-        " of " +
-        c.reachable +
-        " reachable email threads in this Gallery window."
-      ).trim();
-    }
+    if (!c && !state.domain.preparedCommsPending) return;
+    const text = naturalCommsSummary(c || {});
+    if (!curatorLanguageOk(text)) return;
+    state.domain.summary = text;
+  }
+
+  function curatorLanguageOk(text) {
+    return !/80 of|page 80|reachable email|page size|ask token|keyset|load older/i.test(
+      String(text || "")
+    );
   }
 
   // ——— Ask command architecture (typed today; STT later shares this) ———
@@ -1599,6 +1579,11 @@
         placeMatch: placeMatch,
         undatedFilter: undatedFilter,
         mapRefineIds: null,
+        timeStart: exploreHint.time_start || plan.time_start || null,
+        timeEnd: exploreHint.time_end || plan.time_end || null,
+        person_ids: exploreHint.person_ids || [],
+        preparedCommsPending: Boolean(exploreHint.prepared_comms_pending),
+        preparedComms: null,
         temporalWindows: temporalWindows,
         items: [],
       },
@@ -1644,6 +1629,53 @@
     maybeLoadPreparedComms(payload);
   }
 
+  function commsDiagMode() {
+    try {
+      return new URLSearchParams(window.location.search).get("mb_comms_diag") === "1";
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function personChipLabel() {
+    const chip = ((state.domain && state.domain.chips) || []).find((c) => c.kind === "person");
+    return (chip && chip.label) || "this person";
+  }
+
+  function naturalCommsSummary(pc) {
+    const year = pc && pc.scopeYear;
+    const photos = rawItems.filter((i) => String(i.type) === "photo").length;
+    const videos = rawItems.filter((i) => String(i.type) === "video").length;
+    const stories = rawItems.filter((i) => String(i.type) === "story").length;
+    const threads = Number((pc && pc.scopedThreads) || 0);
+    const who = personChipLabel();
+    const when = year ? " during " + year : "";
+    const kinds = [];
+    if (photos) kinds.push("photos");
+    if (videos) kinds.push("videos");
+    if (stories) kinds.push("Stories");
+    if (threads) kinds.push("conversations");
+    const loading = Boolean(state.domain && state.domain.preparedCommsPending);
+    if (!kinds.length) {
+      if (loading) {
+        return (
+          "MemoryBox is gathering conversations involving " +
+          who +
+          when +
+          ". Photos and videos already in Gallery stay visible."
+        );
+      }
+      if (year) return "MemoryBox did not find dated memories involving " + who + when + ".";
+      return state.domain._askSummary || "";
+    }
+    let found = kinds[0];
+    if (kinds.length === 2) found = kinds[0] + " and " + kinds[1];
+    else if (kinds.length > 2) found = kinds.slice(0, -1).join(", ") + ", and " + kinds[kinds.length - 1];
+    let extra = "";
+    if (loading && kinds.indexOf("conversations") < 0) extra = " Conversations are still gathering.";
+    return "MemoryBox found " + found + " involving " + who + when + "." + extra;
+  }
+
   let preparedCommsToken = "";
   let preparedAbort = null;
 
@@ -1657,85 +1689,67 @@
     const personId = String((hint.person_ids || [])[0] || "");
     const qs = new URLSearchParams({ token: token, person_id: personId });
     const spec = extra || {};
+    qs.set("view", String(spec.view || "buckets"));
+    const dateFrom = spec.date_from || hint.timeStart;
+    const dateTo = spec.date_to || hint.timeEnd;
+    if (dateFrom) qs.set("date_from", String(dateFrom).slice(0, 10));
+    if (dateTo) qs.set("date_to", String(dateTo).slice(0, 10));
     if (spec.year) qs.set("year", String(spec.year));
+    if (spec.month) qs.set("month", String(spec.month));
     if (spec.before_latest) qs.set("before_latest", String(spec.before_latest));
     if (spec.before_id) qs.set("before_id", String(spec.before_id));
     return "/explore/api/prepared-comms?" + qs.toString();
   }
 
-  function applyPreparedPage(data, mode) {
+  function applyPreparedBuckets(data) {
     if (!data || data.token !== preparedCommsToken) return;
     if (data.cancelled) return;
-    if (mode !== "append") dropPreparedItems();
-    const extra = Array.isArray(data.items) ? data.items : [];
-    extra.forEach((it) => {
-      if (!rawItems.some((x) => x.id === it.id)) rawItems.push(Object.assign({}, it));
-    });
+    dropPreparedItems();
     if (!state.domain) return;
+    state.domain.preparedCommsPending = false;
+    const buckets = Array.isArray(data.buckets) ? data.buckets : [];
     state.domain.preparedComms = {
-      reachable: Number(data.reachable_total || data.thread_total || 0),
-      shown: rawItems.filter((x) => x.prepared).length,
-      hasMore: Boolean(data.has_more),
-      nextCursor: data.next_cursor || null,
-      years: Array.isArray(data.years) ? data.years : [],
-      undatedN: Number(data.undated_n || 0),
-      year: data.year == null ? null : data.year,
+      buckets: buckets,
+      grain: data.grain || "year",
+      scopedThreads: Number(data.scoped_thread_total || 0),
+      scopedMessages: Number(data.scoped_message_total || 0),
+      reachable: Number(data.scoped_thread_total || 0),
+      shown: 0,
+      hasMore: false,
+      nextCursor: null,
+      years: buckets
+        .filter((b) => b.year && !b.month)
+        .map((b) => ({ year: b.year, n: b.thread_n })),
+      undatedN: 0,
+      year: data.scope_year == null ? null : data.scope_year,
+      scopeYear: data.scope_year == null ? null : data.scope_year,
       match: (data.person_match && data.person_match.status) || "",
       excluded: data.excluded || {},
-      pageSize: Number(data.page_size || extra.length || 0),
+      pageSize: Number(data.page_size || 80),
     };
-    const reachable = state.domain.preparedComms.reachable;
     const match = state.domain.preparedComms.match;
     if (match === "no_prepared_participant") {
       state.domain.summary = (
-        (state.domain._askSummary || state.domain.summary || "") +
-        " Email is not linked for this Person in the prepared generation (0 threads). Photos and video are unchanged."
+        (state.domain._askSummary || "") +
+        " Conversations are not linked for this person yet. Photos and video are unchanged."
       ).trim();
     } else if (match === "linked_but_filtered") {
-      const ex = state.domain.preparedComms.excluded || {};
-      state.domain.summary = (
-        (state.domain._askSummary || state.domain.summary || "") +
-        " Email threads exist but are held from default Gallery (" +
-        Number(ex.suppress_default || 0) +
-        " commercial, " +
-        Number(ex.hold_uncertain || 0) +
-        " uncertain)."
-      ).trim();
-    } else if (reachable) {
-      const shown = state.domain.preparedComms.shown;
-      const yearBit = state.domain.preparedComms.year
-        ? " Year " + state.domain.preparedComms.year + "."
-        : "";
-      state.domain.summary = (
-        (state.domain._askSummary || state.domain.summary || "") +
-        " " +
-        shown +
-        " of " +
-        reachable +
-        " email threads in Gallery." +
-        yearBit
-      ).trim();
-    }
-    if (data.stale) {
-      state.domain.summary = (
-        (state.domain.summary || "") +
-        " Email updated through " +
-        String(data.updated_through || "last complete result") +
-        "."
-      ).trim();
+      state.domain.summary = naturalCommsSummary(state.domain.preparedComms);
+    } else {
+      state.domain.summary = naturalCommsSummary(state.domain.preparedComms);
     }
     render();
   }
 
-  function fetchPreparedPage(spec, mode) {
+  function fetchPreparedBuckets() {
     if (!preparedCommsToken) return;
     if (preparedAbort) preparedAbort.abort();
     preparedAbort = typeof AbortController !== "undefined" ? new AbortController() : null;
     const opts = { cache: "no-store" };
     if (preparedAbort) opts.signal = preparedAbort.signal;
-    fetch(preparedQuery(spec), opts)
+    fetch(preparedQuery({ view: "buckets" }), opts)
       .then((r) => (r.ok ? r.json() : null))
-      .then((data) => applyPreparedPage(data, mode || "replace"))
+      .then((data) => applyPreparedBuckets(data))
       .catch((err) => {
         if (err && err.name === "AbortError") return;
       });
@@ -1755,7 +1769,7 @@
     if (hint.prepared_comms_unresolved) {
       state.domain.summary = (
         (state.domain.summary || "") +
-        " Person was asked but not resolved, so email was not attached. Photos and video are unchanged."
+        " Person was asked but not resolved, so conversations were not attached. Photos and video are unchanged."
       ).trim();
     }
     if (!hint.prepared_comms_pending || !token) {
@@ -1764,12 +1778,21 @@
     }
     const personId = String((hint.person_ids || [])[0] || "");
     if (!personId) return;
-    fetchPreparedPage({}, "replace");
+    state.domain.preparedCommsPending = true;
+    if (state.domain._askSummary) {
+      state.domain.summary = naturalCommsSummary({ scopedThreads: 0, scopeYear: null });
+    }
+    fetchPreparedBuckets();
   }
 
   function renderCommsPager() {
     const el = document.getElementById("mb-comms-pager");
     if (!el) return;
+    if (!commsDiagMode()) {
+      el.hidden = true;
+      el.innerHTML = "";
+      return;
+    }
     const c = (state.domain && state.domain.preparedComms) || null;
     if (!c || !preparedCommsToken) {
       el.hidden = true;
@@ -1777,42 +1800,8 @@
       return;
     }
     el.hidden = false;
-    const years = (c.years || [])
-      .map((y) => {
-        const on = c.year === y.year ? " is-on" : "";
-        return `<button type="button" class="mb-year-chip${on}" data-year="${y.year}">${y.year} (${y.n})</button>`;
-      })
-      .join("");
-    const newest = c.year
-      ? `<button type="button" class="mb-year-chip" data-year="">Newest</button>`
-      : "";
-    const more = c.hasMore
-      ? `<button type="button" class="mb-pill-btn" id="mb-comms-load-older">Load older email</button>`
-      : "";
     el.innerHTML =
-      `<p class="mb-comms-pager-meta">${c.shown} of ${c.reachable} reachable email threads (page ${c.pageSize} max; commercial/uncertain stay hidden).</p>` +
-      `<div class="mb-year-row">${newest}${years}</div>${more}`;
-    el.querySelectorAll("[data-year]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const raw = btn.getAttribute("data-year");
-        if (!raw) fetchPreparedPage({}, "replace");
-        else fetchPreparedPage({ year: Number(raw) }, "replace");
-      });
-    });
-    const older = document.getElementById("mb-comms-load-older");
-    if (older) {
-      older.addEventListener("click", () => {
-        const cur = c.nextCursor || {};
-        fetchPreparedPage(
-          {
-            year: c.year || undefined,
-            before_latest: cur.before_latest || "",
-            before_id: cur.before_id || "",
-          },
-          "replace"
-        );
-      });
-    }
+      `<p class="mb-comms-pager-meta">diag grain=${c.grain} threads=${c.scopedThreads} buckets=${(c.buckets || []).length}</p>`;
   }
 
   const ASK_HIST_KEY = "mb_shell_recent_asks";
@@ -3177,10 +3166,105 @@
     return out;
   }
 
+  function memoryCountsForKey(mem, k, grain) {
+    const photos = mem.filter((it) => String(it.type) === "photo").length;
+    const videos = mem.filter((it) => String(it.type) === "video").length;
+    const stories = mem.filter((it) => String(it.type) === "story").length;
+    const artifacts = mem.filter((it) => String(it.type) === "artifact").length;
+    return { photos, videos, stories, artifacts, k, grain };
+  }
+
+  function makeBucketCard(k, slot, grain) {
+    const mem = slot.mem || [];
+    const threadN = Number(slot.thread_n || 0);
+    const messageN = Number(slot.message_n || 0);
+    const mc = memoryCountsForKey(mem, k, grain);
+    const s = {
+      emails: slot.threads || [],
+      texts: [],
+      cals: [],
+      emailN: messageN,
+      textN: 0,
+      calN: 0,
+      emailThreads: threadN,
+      textConvos: 0,
+      attachN: 0,
+      photoN: mc.photos,
+      videoN: mc.videos,
+      storyN: mc.stories,
+    };
+    const bits = [];
+    if (mc.photos) bits.push(mc.photos + " photo" + (mc.photos === 1 ? "" : "s"));
+    if (mc.videos) bits.push(mc.videos + " video" + (mc.videos === 1 ? "" : "s"));
+    if (mc.stories) bits.push(mc.stories + " stor" + (mc.stories === 1 ? "y" : "ies"));
+    if (threadN) bits.push(threadN + " email thread" + (threadN === 1 ? "" : "s"));
+    return {
+      id: "daycard:" + k,
+      type: "daycard",
+      title: grain === "month" ? "Memories" : "Communications",
+      date: k,
+      undated: false,
+      _dayItems: (slot.threads || []).concat(mem),
+      _daySummary: s,
+      _grain: grain,
+      _bucketKey: k,
+      _threadN: threadN,
+      _openLabel: "Open →",
+      _personThumb: photoThumbForBucket(k),
+      preview: bits.join(" · "),
+    };
+  }
+
+  function mergePreparedGallery(items, pc, commsFilterOn) {
+    const grain = (pc && pc.grain) || "year";
+    const buckets = (pc && pc.buckets) || [];
+    const mem = memoryLikeItems(items);
+    const byKey = {};
+    mem.forEach((it) => {
+      if (isUndated(it) || !String(it.date || "")) return;
+      const d = String(it.date);
+      const k = grain === "month" ? d.slice(0, 7) : d.slice(0, 4);
+      if (grain === "month" && !/^\d{4}-\d{2}$/.test(k)) return;
+      if (grain === "year" && !/^\d{4}$/.test(k)) return;
+      (byKey[k] = byKey[k] || { mem: [], thread_n: 0, message_n: 0, threads: [] });
+      byKey[k].mem.push(it);
+    });
+    buckets.forEach((b) => {
+      const k = String(b.key || "");
+      if (!k) return;
+      (byKey[k] = byKey[k] || { mem: [], thread_n: 0, message_n: 0, threads: [] });
+      byKey[k].thread_n = Number(b.thread_n || 0);
+      byKey[k].message_n = Number(b.message_n || 0);
+    });
+    const keys = Object.keys(byKey).filter((k) => {
+      const slot = byKey[k];
+      return (slot.mem && slot.mem.length) || Number(slot.thread_n || 0) > 0;
+    });
+    const sort = (state.gallery && state.gallery.sort) || "newest";
+    keys.sort((a, b) => (sort === "oldest" ? a.localeCompare(b) : b.localeCompare(a)));
+    const cards = keys.map((k) => makeBucketCard(k, byKey[k], grain));
+    if (commsFilterOn) return cards.filter((c) => Number(c._threadN || 0) > 0);
+    if (grain === "month") {
+      const comms = cards.filter((c) => Number(c._threadN || 0) > 0);
+      const mixed = comms.concat(mem);
+      mixed.sort((a, b) => {
+        const da = String(a.date || "");
+        const db = String(b.date || "");
+        return sort === "oldest" ? da.localeCompare(db) : db.localeCompare(da);
+      });
+      return mixed;
+    }
+    return insertCombinedIntoGallery(cards.filter((c) => Number(c._threadN || 0) > 0), items);
+  }
+
   function galleryCardsFromVisible(items) {
     const d = state.domain || {};
+    const pc = d.preparedComms;
     const commsOn = Boolean(d.includeTexts || d.includeEmail || d.typeFilter === "email");
     const calOn = Boolean(d.includeCalendar || d.typeFilter === "calendar");
+    if (pc && (Array.isArray(pc.buckets) || pc.grain)) {
+      return mergePreparedGallery(items, pc, commsOn && d.typeFilter === "email");
+    }
     const mix = memoryLikeItems(items).length > 0 && commsCalItems(items).length > 0;
     const commsOnly =
       commsCalItems(items).length > 0 && memoryLikeItems(items).length === 0;
@@ -3298,10 +3382,59 @@
     if (back) back.hidden = !has;
   }
 
+  function bucketThreadSpec(card) {
+    const key = String((card && (card._bucketKey || card.date)) || "");
+    const spec = { view: "threads" };
+    if (/^\d{4}-\d{2}$/.test(key)) {
+      spec.year = Number(key.slice(0, 4));
+      spec.month = Number(key.slice(5, 7));
+    } else if (/^\d{4}$/.test(key)) {
+      spec.year = Number(key);
+    }
+    return spec;
+  }
+
+  function fetchBucketThreads(card, cursor) {
+    const spec = Object.assign(bucketThreadSpec(card), cursor || {});
+    spec.view = "threads";
+    return fetch(preparedQuery(spec), { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!data || data.cancelled || (data.token && data.token !== preparedCommsToken)) {
+          return card;
+        }
+        const extra = Array.isArray(data.items) ? data.items : [];
+        card._fetchedThreads = (cursor && card._fetchedThreads) ? card._fetchedThreads.concat(extra) : extra;
+        if (card._fetchedThreads.length > 80 && !cursor) {
+          card._fetchedThreads = card._fetchedThreads.slice(0, 80);
+        }
+        card._threadCursor = data.next_cursor || null;
+        card._threadHasMore = Boolean(data.has_more);
+        const s = card._daySummary || {};
+        s.emails = card._fetchedThreads;
+        s.emailThreads = Number(card._threadN || s.emailThreads || card._fetchedThreads.length);
+        s.emailN = Number(s.emailN || 0);
+        card._daySummary = s;
+        const mem = (card._dayItems || []).filter((it) => !it.prepared);
+        card._dayItems = (card._fetchedThreads || []).concat(mem);
+        return card;
+      });
+  }
+
   function openDayStack(card, tab) {
     if (state.domain && state.domain.galleryLocked) return;
+    const threadN = Number((card && card._threadN) || 0);
+    const local = (card && card._dayItems) || [];
+    if (!local.length && !threadN) return;
+    if (threadN > 0 && !(card._fetchedThreads && card._fetchedThreads.length)) {
+      fetchBucketThreads(card).then(() => openDayStackLoaded(card, tab));
+      return;
+    }
+    openDayStackLoaded(card, tab);
+  }
+
+  function openDayStackLoaded(card, tab) {
     const items = (card && card._dayItems) || [];
-    if (!items.length) return;
     hideQuickPreview();
     const galleryEl = document.getElementById("mb-explore-gallery");
     const scrollTop = (galleryEl || {}).scrollTop || 0;
@@ -3321,10 +3454,10 @@
     if (viewer0) viewer0.classList.add("is-detail");
     const s = card._daySummary || summarizeDay(items);
     const want = String(tab || "");
-    if (want === "email" && s.emailN) dayStack.tab = "email";
+    if (want === "email" && (s.emailN || s.emailThreads)) dayStack.tab = "email";
     else if (want === "text" && s.textN) dayStack.tab = "text";
     else if (want === "calendar" && s.calN) dayStack.tab = "calendar";
-    else if (s.emailN) dayStack.tab = "email";
+    else if (s.emailN || s.emailThreads) dayStack.tab = "email";
     else if (s.textN) dayStack.tab = "text";
     else dayStack.tab = "calendar";
     renderDayStack();
@@ -3442,6 +3575,23 @@
         openDayDetailAt(+btn.getAttribute("data-row"));
       });
     });
+    if (dayStack.tab === "email" && card._threadHasMore) {
+      const more = document.createElement("button");
+      more.type = "button";
+      more.className = "mb-pill-btn";
+      more.textContent = "Show more conversations";
+      more.addEventListener("click", () => {
+        const cur = card._threadCursor || {};
+        fetchBucketThreads(card, {
+          before_latest: cur.before_latest || "",
+          before_id: cur.before_id || "",
+        }).then(() => {
+          dayStack.items = card._dayItems || dayStack.items;
+          renderDayStack();
+        });
+      });
+      list.appendChild(more);
+    }
     const viewer = document.getElementById("mb-day-viewer");
     if (viewer) viewer.classList.add("is-detail");
     if (rows.length) {
@@ -3507,6 +3657,12 @@
     const body = document.getElementById("mb-day-detail-body");
     if (!wrap || !body) return;
     wrap.hidden = false;
+    if (item && item.prepared) {
+      body.innerHTML =
+        `<h3>${escapeHtml(item.title || "Email")}</h3><div id="mb-email-turns"></div>`;
+      bindEmailStructuredView(item);
+      return;
+    }
     body.innerHTML = `<h3>${escapeHtml(item.title || "Detail")}</h3>
       <p>${escapeHtml(item.from || "")} · ${escapeHtml(fmtCardDate(item.date))}</p>
       <div>${escapeHtml(item.detail || item.preview || "")}</div>`;
@@ -3543,8 +3699,13 @@
         const haveVisibleMail = rawItems.some(
           (it) => isEmailItem(it) && !it.gallery_default_hidden
         );
+        const havePrepared = Boolean(
+          state.domain.preparedComms &&
+            (Number(state.domain.preparedComms.scopedThreads || 0) > 0 ||
+              ((state.domain.preparedComms.buckets || []).length > 0))
+        );
         const needTexts = wantText && !haveVisibleTexts;
-        const needMail = wantEmail && !haveVisibleMail;
+        const needMail = wantEmail && !haveVisibleMail && !havePrepared;
         if (needMail || needTexts) {
           if (wantEmail && wantText) presentWithoutRewritingAsk("communications");
           else if (wantEmail) presentWithoutRewritingAsk("email");

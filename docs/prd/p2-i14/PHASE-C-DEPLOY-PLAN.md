@@ -1,38 +1,22 @@
-# I14 Phase C — FlightSim deploy / review plan (not executed)
+# I14 Phase C — date-bucket Gallery review deploy
 
-**Status:** Plan only. Do not apply until founder authorization after this commit is on origin.  
-**Date:** 2026-09-14  
+**Status:** Redeploy for bounded FlightSim visual review. Not accepted.  
+**Date:** 2026-09-15  
 **Branch:** `codex/p2-i14-communications`
 
-This plan does **not** migrate, reload, or activate. Prepared data stays as Phase B closeout. Gallery remains unpublished until step 3.
-
-## After this implementation SHA is on origin
-
-1. On FlightSim `C:\MemoryBox`, pull the tracking branch (no migrate required for Phase C):
+No migrate. No prepared reload/activate. Flag should already be `MEMORYBOX_I14_GALLERY_COMMS=1`.
 
 ```powershell
 cd C:\MemoryBox
 git fetch origin
 git checkout codex/p2-i14-communications
 git pull --ff-only
+git rev-parse HEAD
+.\startmb.cmd -Restart -SkipChrome
 ```
 
-2. Confirm health and prepared counts unchanged (threads 40996, one active household-email generation). Do not run `i14-prepared-activate` or `i14-prepared-load`.
+Confirm `/health` ok, pending empty, ledger 001–038. Confirm `GET /explore/api/prepared-comms?person_id=...&token=x` returns JSON with `"buckets"` (not 404).
 
-3. **Only after founder says go live:** set `MEMORYBOX_I14_GALLERY_COMMS=1` in the FlightSim serve environment (same place as other `MEMORYBOX_*` serve vars). Recycle Ask/serve. Do not set the flag in this implementation turn.
+Review path: `/explore/ui` — start with **Show me Sue Will in 2017**. Checklist: `Desktop\PHASE-C-FOUNDER-REVIEW.txt` or `docs/prd/p2-i14/PHASE-C-FOUNDER-REVIEW.txt`.
 
-4. Founder review path (normal screens, no corpus dump):
-
-   - Open Explore `/explore/ui` (or Person Explorer).
-   - Ask `Show me Peggy`, then Sue, then Tom.
-   - Confirm photos/videos appear first; at most 80 email cards plus year chips / Load older so every default-visible thread is reachable.
-   - Open a thread; confirm cleaned chronology, warnings, attachment open/fail-closed, original on demand.
-   - Close; confirm the same Gallery/Ask position.
-   - Save as Story from the thread; confirm one `email_thread` memory and return without re-asking.
-   - Start a second Ask quickly; confirm the first Ask’s emails do not appear on the second result.
-
-5. Optional: keep `python -m memorybox i14-gallery-timings` for counts (read-only; does not require the serve flag).
-
-## Rollback
-
-Unset `MEMORYBOX_I14_GALLERY_COMMS` and recycle serve. Prepared tables are unchanged. No dump restore required for Gallery-only rollback.
+Rollback: unset the flag and recycle serve. Do not alter prepared data.

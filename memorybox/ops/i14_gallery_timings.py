@@ -67,6 +67,7 @@ def measure_label(conn: Any, label: str) -> dict[str, Any]:
     from memorybox.explore.prepared_comms import (
         GALLERY_PAGE_SIZE,
         interaction_proof,
+        list_person_buckets,
         list_person_threads,
         load_thread,
         new_ask_token,
@@ -77,76 +78,52 @@ def measure_label(conn: Any, label: str) -> dict[str, Any]:
         return {"label": label, "ok": False, "error": "ask_person_unresolved"}
     token = new_ask_token()
     t0 = time.perf_counter()
-    page1 = list_person_threads(conn, person_id=pid, token=token)
-    first_page_ms = int((time.perf_counter() - t0) * 1000)
-    years = page1.get("years") or []
-    year_sum = sum(int(y.get("n") or 0) for y in years)
-    undated = int(page1.get("undated_n") or 0)
-    reachable = int(page1.get("reachable_total") or 0)
-    histogram_covers = year_sum + undated == reachable
-    page2_ms = None
-    page2_n = 0
-    disjoint = True
-    ids1 = {str(i.get("display_id")) for i in page1.get("items") or []}
-    if page1.get("has_more") and page1.get("next_cursor") and token:
-        cur = page1["next_cursor"]
-        t1 = time.perf_counter()
-        page2 = list_person_threads(
-            conn,
-            person_id=pid,
-            token=token,
-            before_latest=cur.get("before_latest"),
-            before_id=cur.get("before_id"),
-        )
-        page2_ms = int((time.perf_counter() - t1) * 1000)
-        ids2 = {str(i.get("display_id")) for i in page2.get("items") or []}
-        page2_n = len(ids2)
-        disjoint = ids1.isdisjoint(ids2) and not page2.get("cancelled")
-    year_page_ms = None
-    year_page_n = 0
-    year_walk_ok = None
-    walkable = [y for y in years if 0 < int(y.get("n") or 0) <= 240]
-    if walkable:
-        y = int(walkable[-1]["year"])
-        t2 = time.perf_counter()
-        yp = list_person_threads(conn, person_id=pid, token=token, year=y)
-        year_page_ms = int((time.perf_counter() - t2) * 1000)
-        year_page_n = len(yp.get("items") or [])
-        expected = int(walkable[-1]["n"])
-        got = 0
-        cursor = None
-        guard = 0
-        while guard < 40:
-            guard += 1
-            chunk = list_person_threads(
-                conn,
-                person_id=pid,
-                token=token,
-                year=y,
-                before_latest=(cursor or {}).get("before_latest"),
-                before_id=(cursor or {}).get("before_id"),
-            )
-            got += len(chunk.get("items") or [])
-            if not chunk.get("has_more"):
-                break
-            cursor = chunk.get("next_cursor")
-            if not cursor:
-                break
-        year_walk_ok = got == expected
+    unbounded = list_person_buckets(conn, person_id=pid, token=token)
+    unbounded_ms = int((time.perf_counter() - t0) * 1000)
+    t1 = time.perf_counter()
+    y2017 = list_person_buckets(
+        conn,
+        person_id=pid,
+        token=token,
+        date_from="2017-01-01",
+        date_to="2017-12-31",
+    )
+    year_ms = int((time.perf_counter() - t1) * 1000)
+    year_keys = [str(b.get("key") or "") for b in (y2017.get("buckets") or [])]
+    off_year = [k for k in year_keys if not k.startswith("2017")]
+    month_sum = sum(int(b.get("thread_n") or 0) for b in (y2017.get("buckets") or []))
+    t2 = time.perf_counter()
+    detail = list_person_threads(
+        conn,
+        person_id=pid,
+        token=token,
+        date_from="2017-01-01",
+        date_to="2017-12-31",
+        cap=GALLERY_PAGE_SIZE,
+    )
+    detail_ms = int((time.perf_counter() - t2) * 1000)
     cancel_page = False
-    if page1.get("next_cursor"):
+    if detail.get("next_cursor"):
         old = token
         new_ask_token()
         late = list_person_threads(
             conn,
             person_id=pid,
             token=old,
-            before_id=page1["next_cursor"].get("before_id"),
-            before_latest=page1["next_cursor"].get("before_latest"),
+            date_from="2017-01-01",
+            date_to="2017-12-31",
+            before_id=detail["next_cursor"].get("before_id"),
+            before_latest=detail["next_cursor"].get("before_latest"),
         )
         cancel_page = bool(late.get("cancelled"))
-    token = new_ask_token()
-    page1 = list_person_threads(conn, person_id=pid, token=token)
+        token = new_ask_token()
+        detail = list_person_threads(
+            conn,
+            person_id=pid,
+            token=token,
+            date_from="2017-01-01",
+            date_to="2017-12-31",
+        )
     attach_n = 0
     attach_unavail = 0
     originals = 0
@@ -154,7 +131,7 @@ def measure_label(conn: Any, label: str) -> dict[str, Any]:
     proof_ok = True
     sample = 0
     load_t0 = time.perf_counter()
-    for card in page1.get("items") or []:
+    for card in detail.get("items") or []:
         if sample >= 5:
             break
         did = str(card.get("display_id") or "")
@@ -172,28 +149,37 @@ def measure_label(conn: Any, label: str) -> dict[str, Any]:
                 if not att.get("available") or att.get("gallery_action") == "record_only":
                     attach_unavail += 1
     load_ms = int((time.perf_counter() - load_t0) * 1000)
-    match = (page1.get("person_match") or {}).get("status")
+    match = (unbounded.get("person_match") or {}).get("status")
+    year_buckets = {
+        str(b.get("key")): int(b.get("thread_n") or 0)
+        for b in (unbounded.get("buckets") or [])
+    }
+    month_buckets = {
+        str(b.get("key")): {
+            "thread_n": int(b.get("thread_n") or 0),
+            "message_n": int(b.get("message_n") or 0),
+        }
+        for b in (y2017.get("buckets") or [])
+    }
     return {
         "label": label,
         "ok": True,
         "ask_path": "find_ask_person_by_name",
         "ask_lazy_seed": False,
         "person_match": match,
-        "first_comms_page_ms": first_page_ms,
-        "query_ms": page1.get("query_ms"),
-        "second_page_ms": page2_ms,
-        "second_page_cards": page2_n,
-        "pages_disjoint": disjoint,
-        "year_page_ms": year_page_ms,
-        "year_page_cards": year_page_n,
-        "year_fully_walked_matches_histogram": year_walk_ok,
-        "histogram_covers_reachable": histogram_covers,
-        "year_count": len(years),
-        "undated_n": undated,
-        "cards_in_browser_window": len(page1.get("items") or []),
+        "unbounded_bucket_ms": unbounded_ms,
+        "unbounded_thread_total": int(unbounded.get("scoped_thread_total") or 0),
+        "unbounded_year_buckets": year_buckets,
+        "year_2017_bucket_ms": year_ms,
+        "year_2017_thread_total": int(y2017.get("scoped_thread_total") or 0),
+        "year_2017_month_bucket_sum": month_sum,
+        "year_2017_month_buckets": month_buckets,
+        "year_2017_off_scope_keys": off_year,
+        "year_2017_grain": y2017.get("grain"),
+        "detail_page_ms": detail_ms,
+        "detail_page_cards": len(detail.get("items") or []),
         "page_size": GALLERY_PAGE_SIZE,
-        "reachable_show_by_default": reachable,
-        "excluded": page1.get("excluded") or {},
+        "excluded": unbounded.get("excluded") or {},
         "cancel_stale_page_request": cancel_page,
         "thread_open_sample_ms": load_ms,
         "attachment_sample_threads": sample,
@@ -203,6 +189,7 @@ def measure_label(conn: Any, label: str) -> dict[str, Any]:
         "messages_with_warnings_in_sample": warnings,
         "interaction_proof_ok": proof_ok,
         "browser_card_bound": GALLERY_PAGE_SIZE,
+        "query_ms": unbounded.get("query_ms"),
     }
 
 
@@ -221,19 +208,19 @@ def run() -> dict[str, Any]:
     unresolved = [p["label"] for p in people if p.get("error") == "ask_person_unresolved"]
     report = {
         "ok": True,
-        "phase": "C2",
+        "phase": "C3",
         "read_only": True,
         "database_kind": "memorybox" if dbname == "memorybox" else "other",
         "measured_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%MZ"),
         "gallery_flag_default": "off",
         "flightsim_serve_flag_not_set_by_this_tool": True,
-        "time_to_first_photo_video": "Find payload (photos/video) returns before prepared-comms fetch; not delayed by paging.",
+        "time_to_first_photo_video": "Find payload (photos/video) returns before prepared-comms buckets; mixed Gallery stays usable.",
         "people": people,
         "ask_unresolved": unresolved,
         "cancel_previous_ask_token": cancel_ok,
         "notes": [
-            "reachable_show_by_default is every default-visible thread; browser shows one page (80).",
-            "Year chips plus Load older page through the reachable set without loading all cards.",
+            "Bucket counts are the full Ask-scoped set. The 80-row bound is thread-detail only.",
+            "Year-precision Asks use month buckets; person-only Asks use year buckets.",
             "Ask path is find_ask_person_by_name(lazy_seed=False), same resolver as Person Ask.",
         ],
     }
