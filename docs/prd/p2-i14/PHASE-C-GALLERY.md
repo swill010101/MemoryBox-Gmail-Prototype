@@ -6,6 +6,8 @@
 **Phase B closeout (accepted):** `6500ef032fa038be6e5a34b6ed312c92160fdf91`  
 **Do not:** reload/activate prepared data, migrate, I11A, SMS/calendar prepared, stamp threads accepted.
 
+**Open acceptance item (deferred):** Ask wait is ~20–25 s for both “Sue Will” and “Sue Will in 2017”. Year constraint must be faster; photos/video must render before comms hydration. Do not optimize in empty-body recovery. See [PHASE-C-PERFORMANCE-DEFECT.md](PHASE-C-PERFORMANCE-DEFECT.md).
+
 ## Corrective contract
 
 Communications join the Gallery’s date-scoped aggregation. The 80-row bound is **thread-detail only**.

@@ -17,6 +17,7 @@ labeled and kept separately, not treated as ordinary reply history.
 """
 from __future__ import annotations
 
+import html as html_lib
 import re
 from dataclasses import dataclass
 
@@ -82,6 +83,126 @@ class PreparedText:
     residue_class: str | None
     urls_stripped: bool = False
     forward_omitted: str = ""
+
+
+@dataclass(frozen=True)
+class AuthoredSource:
+    """Immutable evidence body chosen for prepared-text input. Never rewritten."""
+
+    text: str
+    kind: str  # body_text | html | alt_part | empty
+    hotmail_glued: bool = False
+
+
+_SCRIPT_BLOCK = re.compile(
+    r"(?is)<(script|style|noscript|iframe|object|embed|applet|form)\b.*?</\1>"
+)
+_VOID_ACTIVE = re.compile(
+    r"(?is)<(script|style|noscript|iframe|object|embed|applet|form|link|meta|img|input|button)\b[^>]*/?>"
+)
+_HIDDEN_EL = re.compile(
+    r"(?is)<(?P<tag>[a-z][a-z0-9]*)\b[^>]*(?:hidden\b|aria-hidden\s*=\s*[\"']true[\"']|"
+    r"style\s*=\s*[\"'][^\"']*display\s*:\s*none[^\"']*[\"'])[^>]*>.*?</(?P=tag)>"
+)
+_BR = re.compile(r"(?is)<br\s*/?>")
+_BLOCK_CLOSE = re.compile(r"(?is)</(?:p|div|tr|h[1-6]|li|blockquote|section|article|table|thead|tbody)>")
+_TAG = re.compile(r"(?s)<[^>]+>")
+_PROHIBITED_HREF = re.compile(
+    r"(?i)\b(?:javascript:|data:|vbscript:)|(?:utm_|unsubscribe|prefcenter|click\.|smetrics)"
+)
+
+
+def source_is_meaningful(text: str) -> bool:
+    blob = re.sub(r"\s+", " ", text or "").strip()
+    if len(blob) < 8:
+        return False
+    letters = sum(ch.isalpha() for ch in blob)
+    return letters >= 8
+
+
+def html_to_plain(raw: str) -> str:
+    """Safe HTML → plain text. Never returns markup. Does not invent content."""
+    text = str(raw or "")
+    if not text.strip():
+        return ""
+    text = _SCRIPT_BLOCK.sub("\n", text)
+    text = _HIDDEN_EL.sub("\n", text)
+    text = _VOID_ACTIVE.sub(" ", text)
+    text = _BR.sub("\n", text)
+    text = _BLOCK_CLOSE.sub("\n", text)
+    text = re.sub(r"(?is)<a\b[^>]*href\s*=\s*[\"']([^\"']+)[\"'][^>]*>", _href_keep, text)
+    text = _TAG.sub("", text)
+    text = html_lib.unescape(text)
+    text = text.replace("\xa0", " ").replace("\u200b", "")
+    text = re.sub(r"[ \t]+\n", "\n", text)
+    text = re.sub(r"[ \t]{2,}", " ", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
+def _href_keep(match: re.Match[str]) -> str:
+    href = str(match.group(1) or "")
+    if _PROHIBITED_HREF.search(href):
+        return " "
+    if href.startswith(("http://", "https://", "www.")):
+        return " "
+    return " "
+
+
+def _hotmail_glued(text: str) -> bool:
+    blob = text or ""
+    return bool(HOTMAIL_DATE_FROM_TO_SUBJECT.search(blob))
+
+
+def _part_blob(part: dict) -> str:
+    for key in ("text", "body", "content", "body_text", "payload"):
+        val = part.get(key)
+        if isinstance(val, str) and val.strip():
+            return val
+    return ""
+
+
+def _alt_parts(payload: dict) -> list[dict]:
+    out: list[dict] = []
+    for key in ("body_parts", "parts", "mime_parts", "alternate_bodies", "text_parts"):
+        raw = payload.get(key)
+        if isinstance(raw, list):
+            out.extend(x for x in raw if isinstance(x, dict))
+    return out
+
+
+def select_authored_source(payload: dict | None) -> AuthoredSource:
+    """Prefer meaningful plain body_text. Recover HTML/alt MIME only when plain is empty."""
+    payload = payload if isinstance(payload, dict) else {}
+    body = str(payload.get("body_text") or payload.get("body") or "")
+    if source_is_meaningful(body):
+        return AuthoredSource(body, "body_text", _hotmail_glued(body))
+
+    html_raw = str(payload.get("body_html") or "")
+    if html_raw.strip():
+        plain = html_to_plain(html_raw)
+        if source_is_meaningful(plain):
+            return AuthoredSource(plain, "html", _hotmail_glued(plain))
+
+    for part in _alt_parts(payload):
+        mime = str(part.get("mime_type") or part.get("content_type") or part.get("type") or "").lower()
+        blob = _part_blob(part)
+        if not blob.strip():
+            continue
+        if "html" in mime:
+            plain = html_to_plain(blob)
+            kind = "alt_part"
+        else:
+            plain = blob
+            kind = "alt_part"
+        if source_is_meaningful(plain):
+            return AuthoredSource(plain, kind, _hotmail_glued(plain))
+
+    if html_raw.strip():
+        return AuthoredSource(html_to_plain(html_raw), "html", False)
+    if body.strip():
+        return AuthoredSource(body, "body_text", _hotmail_glued(body))
+    return AuthoredSource("", "empty", False)
 
 
 def is_forward(*, subject: str, body: str) -> bool:

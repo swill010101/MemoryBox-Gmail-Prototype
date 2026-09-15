@@ -308,19 +308,31 @@ def partition_population(messages: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def _compact_thread_messages(msgs: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    from memorybox.ops.i14_prepared_text import prepare_message_text
+    from memorybox.ops.i14_prepared_text import prepare_message_text, select_authored_source
 
     ordered = sorted(msgs, key=review.message_sort_key)
     prior: list[str] = []
     out: list[dict[str, Any]] = []
     for msg in ordered:
-        raw = str(msg.get("raw_body") or msg.get("body") or "")
+        payload = msg.get("payload") if isinstance(msg.get("payload"), dict) else {}
+        if payload:
+            src = select_authored_source(payload)
+            raw = src.text
+            source_kind = src.kind
+            hotmail_glued = src.hotmail_glued
+        else:
+            raw = str(msg.get("raw_body") or msg.get("body") or "")
+            source_kind = str(msg.get("source_kind") or "body_text")
+            hotmail_glued = bool(msg.get("hotmail_glued"))
         prep = prepare_message_text(
             raw,
             subject=str(msg.get("subject") or ""),
             prior_authored=prior,
         )
         row = dict(msg)
+        row["raw_body"] = raw
+        row["source_kind"] = source_kind
+        row["hotmail_glued"] = hotmail_glued
         row["cleaned_body"] = prep.authored
         row["forward_block"] = prep.forward_block
         row["raw_body_chars"] = len(raw)

@@ -1,7 +1,6 @@
 """Read-only empty prepared-body classification. Never writes comms_* or evidence."""
 from __future__ import annotations
 
-import html as html_lib
 import json
 import os
 import re
@@ -11,7 +10,13 @@ from typing import Any
 
 from memorybox.explore.gallery_scope import empty_prepared_body_notice
 from memorybox.ops.i14_dsn_guard import ProductionDSNError, refuse_live_dsn
-from memorybox.ops.i14_prepared_text import TRACKING_HINT, _cut_reply_history, prepare_message_text
+from memorybox.ops.i14_prepared_text import (
+    TRACKING_HINT,
+    _cut_reply_history,
+    html_to_plain,
+    prepare_message_text,
+    source_is_meaningful,
+)
 
 CATEGORIES = (
     "original_genuinely_empty",
@@ -34,21 +39,11 @@ def _env_on(name: str) -> bool:
 
 
 def meaningful(text: str) -> bool:
-    blob = re.sub(r"\s+", " ", text or "").strip()
-    if len(blob) < 8:
-        return False
-    letters = sum(ch.isalpha() for ch in blob)
-    return letters >= 8
+    return source_is_meaningful(text)
 
 
 def html_to_text(raw: str) -> str:
-    text = str(raw or "")
-    text = re.sub(r"(?is)<script.*?</script>", " ", text)
-    text = re.sub(r"(?is)<style.*?</style>", " ", text)
-    text = re.sub(r"(?is)<br\s*/?>", "\n", text)
-    text = re.sub(r"(?is)</p>", "\n", text)
-    text = re.sub(r"<[^>]+>", " ", text)
-    return html_lib.unescape(text)
+    return html_to_plain(raw)
 
 
 def classify_empty_prepared(

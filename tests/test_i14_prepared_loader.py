@@ -757,6 +757,121 @@ class PreparedLoaderPg(_DisposablePg):
             self.assertNotRegex(row["cleaned_authored_text"], r"(?i)https?://")
             self.assertTrue(row["urls_stripped"])
 
+    def test_html_only_body_recovers_authored_text_on_disposable_postgres(self) -> None:
+        self._require_dsn()
+        with psycopg.connect(self.dsn, row_factory=dict_row, connect_timeout=5) as conn:
+            self._wipe(conn)
+            src = self._source(conn)
+            ledger, focal, _ = self._ledger(conn)
+            html_only = _payload(
+                rfc="<html-only@example.test>",
+                body_text="",
+                content_hash=_hash("html-only"),
+            )
+            html_only["body_text"] = ""
+            html_only["body_html"] = (
+                "<html><head><style>p{color:red}</style><script>alert(1)</script></head>"
+                "<body><p>Thank you for telling us about the reunion.</p>"
+                "<img src='https://track.example.test/pixel.gif' width='1' height='1'>"
+                "</body></html>"
+            )
+            plain_keep = _payload(
+                rfc="<plain-keep@example.test>",
+                body_text="This plain sentence must be kept even when HTML exists.",
+                content_hash=_hash("plain-keep"),
+                sent_at="2011-09-29T16:00:00+00:00",
+            )
+            plain_keep["body_html"] = "<p>Different HTML that must not replace the plain text.</p>"
+            att_only = _payload(
+                rfc="<att-only@example.test>",
+                body_text="",
+                content_hash=_hash("att-only"),
+                sent_at="2011-09-29T17:00:00+00:00",
+                attachments=[{"filename": "scan.pdf", "mime_type": "application/pdf", "byte_size": 20}],
+            )
+            att_only["body_text"] = ""
+            self._evidence(conn, src, html_only)
+            self._evidence(conn, src, plain_keep)
+            self._evidence(conn, src, att_only)
+            conn.commit()
+            loaded = run_load(conn, read_source_messages(conn, [src]), ledger, dsn=self.dsn)
+            self.assertTrue(loaded["ok"])
+            rows = {
+                r["subject"] if False else r["cleaned_authored_text"]: r
+                for r in conn.execute(
+                    """
+                    SELECT cleaned_authored_text, voice_corpus, evidence_id
+                      FROM comms_prepared_messages
+                     ORDER BY sent_at
+                    """
+                ).fetchall()
+            }
+            texts = [
+                r["cleaned_authored_text"]
+                for r in conn.execute(
+                    "SELECT cleaned_authored_text, voice_corpus FROM comms_prepared_messages ORDER BY sent_at"
+                ).fetchall()
+            ]
+            voices = [
+                r["voice_corpus"]
+                for r in conn.execute(
+                    "SELECT voice_corpus FROM comms_prepared_messages ORDER BY sent_at"
+                ).fetchall()
+            ]
+            self.assertIn("Thank you for telling us about the reunion.", texts[0])
+            self.assertNotIn("<p>", texts[0])
+            self.assertNotIn("alert", texts[0])
+            self.assertTrue(voices[0])
+            self.assertIn("This plain sentence must be kept", texts[1])
+            self.assertNotIn("Different HTML", texts[1])
+            self.assertFalse(bool(str(texts[2] or "").strip()))
+            self.assertFalse(voices[2])
+
+    def test_proposed_039_blocks_blank_voice_without_rewriting_rows(self) -> None:
+        self._require_dsn()
+        sql_039 = (
+            Path(__file__).resolve().parents[1]
+            / "docs"
+            / "prd"
+            / "p2-i14"
+            / "039_p2_i14_voice_requires_prepared_text.PROPOSED.sql"
+        )
+        with psycopg.connect(self.dsn, row_factory=dict_row, connect_timeout=5) as conn:
+            self._wipe(conn)
+            src = self._source(conn)
+            ledger, _, _ = self._ledger(conn)
+            payload = _payload(rfc="<blank-voice@example.test>", body_text="   ", content_hash=_hash("blank-v"))
+            payload["body_text"] = "   "
+            self._evidence(conn, src, payload)
+            conn.commit()
+            loaded = run_load(conn, read_source_messages(conn, [src]), ledger, dsn=self.dsn)
+            self.assertTrue(loaded["ok"])
+            gid = loaded["generation_id"]
+            conn.execute(
+                """
+                UPDATE comms_prepared_messages
+                   SET voice_corpus = TRUE,
+                       quote_quality = 'clean',
+                       authorship = 'authenticated_focal'
+                 WHERE generation_id = %s
+                """,
+                (gid,),
+            )
+            conn.commit()
+            conn.execute(sql_039.read_text(encoding="utf-8"))
+            conn.commit()
+            try:
+                conn.execute("SELECT comms_prepared_assert_generation_ready(%s)", (gid,))
+                self.fail("expected voice_requires_nonblank_prepared_text")
+            except psycopg.Error as exc:
+                self.assertIn("voice_requires_nonblank_prepared_text", str(exc))
+            conn.rollback()
+            n = conn.execute(
+                "SELECT COUNT(*) AS n FROM comms_prepared_messages WHERE generation_id = %s",
+                (gid,),
+            ).fetchone()["n"]
+            self.assertEqual(n, 1)
+
 
 if __name__ == "__main__":
     unittest.main()

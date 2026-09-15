@@ -35,7 +35,7 @@ from memorybox.ops.i14_thread_review import (
     parse_sent_at,
 )
 
-ALGO_VERSION = "i14-prepared-email-v1"
+ALGO_VERSION = "i14-prepared-email-v2"
 MISSING_TS = datetime(1970, 1, 1, tzinfo=timezone.utc)
 HTTP_SUBSTRING = re.compile(r"(?i)https?://\S*")
 
@@ -269,10 +269,8 @@ def _schema_message_fields(msg: dict[str, Any]) -> dict[str, Any]:
     quote = _quote_quality(msg)
     commercial = COMMERCIAL_MAP.get(str(msg.get("commercial_class") or "not_commercial"), "not_commercial")
     direction = DIR_MAP.get(str(msg.get("direction") or ""), "unresolved")
-    # Household authored voice is authenticated From + clean quote.
-    # Unverified To/Cc keep identity_quality uncertain (thread mix) but must not
-    # strip the From Person's voice. Census counted that way (12071/1342/307).
-    voice = from_auth and quote == "clean"
+    # Household authored voice is authenticated From + clean quote + nonblank
+    # prepared text. Blank cleaned rows must not enter the voice corpus.
     fwd_status, fwd_omitted, fwd_block = _forward_fields(msg)
     sent = parse_sent_at(str(msg.get("timestamp") or msg.get("sent_at") or "")) or MISSING_TS
     from memorybox.ops.i14_prepared_text import sanitize_prepared
@@ -284,6 +282,7 @@ def _schema_message_fields(msg: dict[str, Any]) -> dict[str, Any]:
     if fwd_status == "none":
         fwd2 = ""
         fwd_omitted = ""
+    voice = from_auth and quote == "clean" and bool(cleaned2.strip())
     urls = bool(msg.get("urls_stripped")) or url_a or url_f or cleaned2 != cleaned or fwd2 != fwd_block
     return {
         "authorship": authorship,
@@ -370,7 +369,10 @@ def forecast_prepared_counts(
         prepared_text: list[dict[str, Any]] = []
         for i, msg in enumerate(prepared_in):
             _guard()
-            raw = str(msg.get("raw_body") or msg.get("body") or "")
+            from memorybox.ops.i14_prepared_text import select_authored_source as _select
+
+            payload = msg.get("payload") if isinstance(msg.get("payload"), dict) else {}
+            raw = _select(payload).text if payload else str(msg.get("raw_body") or msg.get("body") or "")
             prep = prepare_message_text(
                 raw,
                 subject=str(msg.get("subject") or ""),
@@ -566,6 +568,9 @@ def read_source_messages(
         if rfc:
             rfc = normalize_rfc_message_id(str(rfc)) or str(rfc)
         skip = str(payload.get("mailbox_skip") or "").lower()
+        from memorybox.ops.i14_prepared_text import select_authored_source
+
+        _source = select_authored_source(payload)
         out.append(
             {
                 "evidence_id": rec["id"],
@@ -575,8 +580,10 @@ def read_source_messages(
                 "rfc_message_id": rfc,
                 "timestamp": payload.get("sent_at"),
                 "subject": payload.get("subject") or "",
-                "raw_body": payload.get("body_text") or payload.get("body") or "",
-                "body": payload.get("body_text") or payload.get("body") or "",
+                "raw_body": _source.text,
+                "body": _source.text,
+                "source_kind": _source.kind,
+                "hotmail_glued": _source.hotmail_glued,
                 "from": payload.get("from"),
                 "to": payload.get("to"),
                 "cc": payload.get("cc"),

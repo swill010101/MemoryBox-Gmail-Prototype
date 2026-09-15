@@ -3,7 +3,7 @@ Flag: MEMORYBOX_I14_GALLERY_COMMS=1
 Rollback: set MEMORYBOX_I14_GALLERY_COMMS=0 in config\memorybox_app.env, then startmb.cmd -Restart. Do not change prepared data.
 
 Open Explore: http://127.0.0.1:8790/explore/ui
-Hard-refresh so explore.js?v=i14-c4 loads.
+Hard-refresh so explore.js?v=i14-c5 loads.
 
 Curator form (zeros omitted): “I found 246 photos, 8 videos, 328 text messages, and 10 email threads involving Sue Will during 2017.”
 
@@ -22,6 +22,8 @@ Curator form (zeros omitted): “I found 246 photos, 8 videos, 328 text messages
 [ ] T-39987 John reply: prepared cleaned text is empty (quote cleanup). UI says open immutable original. Do not activate a new generation without authorization.
 [ ] Diagnostic bar only at /explore/ui?mb_comms_diag=1
 [ ] Historian Capture email still healthy.
+
+Open (deferred, do not fix in empty-body work): Sue Will and Sue Will in 2017 both take ~20–25s. Year-scoped Ask must be faster. Photos/video before comms hydration. Full user-visible timeline (cold/warm, Peggy/Sue/Tom, bounded/unbounded) is required before Phase C closes. See docs/prd/p2-i14/PHASE-C-PERFORMANCE-DEFECT.md.
 
 Do not stamp threads accepted. Do not start I11A. Do not add a normalized SMS store.
 Phase C remains in review — not accepted.

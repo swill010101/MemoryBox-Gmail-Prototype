@@ -1018,6 +1018,10 @@ def main(argv: list[str] | None = None) -> int:
         help="Read-only empty prepared-body classification (FlightSim requires allow flags)",
     )
     sub.add_parser(
+        "i14-prepared-text-recovery-census",
+        help="Read-only HTML/alt-part recovery census (FlightSim requires allow flags; never writes)",
+    )
+    sub.add_parser(
         "i14-gallery-timings",
         help="Read-only Phase C prepared-comms timings (FlightSim requires allow flags)",
     )
@@ -2043,6 +2047,11 @@ def main(argv: list[str] | None = None) -> int:
         from memorybox.ops.i14_empty_body import main as empty_body_main
 
         return empty_body_main([])
+
+    if args.cmd == "i14-prepared-text-recovery-census":
+        from memorybox.ops.i14_prepared_recovery import main as recovery_main
+
+        return recovery_main([])
 
     if args.cmd == "serve":
         import uvicorn

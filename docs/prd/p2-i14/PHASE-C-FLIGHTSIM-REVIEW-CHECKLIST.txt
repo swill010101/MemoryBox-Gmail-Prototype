@@ -1,37 +1,42 @@
 # Phase C FlightSim review checklist (in review, not accepted)
 
-Deployed checkout on `\\flightsim\FlightSim User\MemoryBox` was fast-forwarded to `07e576b` then to the empty-body follow-up SHA after push. **Serve recycle through `C:\MemoryBox\.venv` is required** (`.\startmb.cmd -Restart -SkipChrome`). Desktop cannot WinRM/PsExec recycle.
-
-Hard-refresh `explore.js?v=i14-c5`. Diagnostic bar only at `/explore/ui?mb_comms_diag=1`.
+Live runtime SHA `46e67009541f556eec0a9352b8a2e331f11e97a5` (`explore.js?v=i14-c5`). Desktop cannot WinRM recycle; checkout on the share already matches. Recycle on host if serve drifts: `.\startmb.cmd -Restart -SkipChrome`. Diagnostic bar only at `/explore/ui?mb_comms_diag=1`.
 
 ## Sue Will in 2017
 
-- [ ] Curator: 246 photos, 8 videos, 328 text messages, 10 email threads (zeros omitted)
-- [ ] No undated; nothing outside 2017
-- [ ] Month cards match full month counts; expand shows that month only
-- [ ] Communications pill not auto-selected
-- [ ] Email off: email cards and counts gone; SMS 328 remains
-- [ ] Curator, pills, cards, expanded cards, modal agree
-- [ ] “1 of N” is navigation in that month’s scoped threads
+- [x] Photos 246, videos 8, email threads 10 on mixed All; Communications not auto-selected
+- [x] Undated · 0; month cards are 2017 (Jul–Mar email 2+2+1+3+2 = 10)
+- [ ] Mixed All Curator omitted 328 texts (Find `sms_match_total=0`); texts appear after Email-off
+- [x] Email off: Curator 246 photos, 8 videos, 328 texts; Communications · 328; no email cards
+- [x] Communications pill not auto-selected on mixed All
+- [ ] Timeline playhead on Email-off showed 2016-12→2018-01 while cards stayed 2017
+- [x] “1 of N” proven on Tom 2024 Dec bucket (1 of 129), not on Sue 2017 email modal this pass
 
 ## Tom Will
 
-- [ ] SMS present; authoritative **3717**
-- [ ] Mixed Gallery intact
-- [ ] Cards use Tom’s Person portrait
+- [ ] Unbounded SMS 3717 not freshly captured this pass (a later Ask leaked 2024 scope; 4093 texts on that polluted view)
+- [x] Mixed Gallery intact on Sue 2017 All (photos/video/email month cards)
+- [x] Tom Person portrait on Tom 2024 month cards and thread modal
 
 ## Tom Will in 2024
 
-- [ ] Email threads exactly **1296** (not 1328)
-- [ ] Curator, Communications pill, month cards, modal all **1296**
-- [ ] “1 of N” navigates the opened bucket; Show more if the 80-row page continues; bucket total stays 1296
+- [x] Email threads exactly **1296** (not 1328); month cards sum to 1296
+- [x] Curator and Communications pill **1296**
+- [x] Modal **1 of 129** for Dec 2024; Email · 129 threads; Show more “11 of 129”; pill stayed 1296
 
 ## Attachments / originals
 
-- [ ] JPG/PNG preview
-- [ ] Unsupported / missing / metadata-only / unsafe explained in plain language
-- [ ] “Open the immutable original email” opens the original
-- [ ] PDF/document actions open the attached file
-- [ ] No blank control
+- [x] “Open the immutable original email” present and distinct in thread modal
+- [ ] JPG/PNG preview / PDF open / unsafe copy not re-clicked this pass (labels exist in code; State Farm cid image visible as text, not opened)
+- [x] No blank attachment control on the opened Tom 2024 thread (original-email links)
+
+## Open — Ask performance (deferred)
+
+- [ ] Sue Will and Sue Will in 2017 must not share a ~20–25s wait; year constraint must reduce relevant work
+- [ ] Photos/video first; communications hydration in the background
+- [ ] Cold/warm timings for bounded and unbounded Peggy, Sue, and Tom (full user-visible timeline, not SQL-only)
+- Do not optimize this in empty-body / prepared-text recovery. See PHASE-C-PERFORMANCE-DEFECT.md.
+
+Diagnostic: without `mb_comms_diag`, no diag line. With flag after a prepared Ask: `diag grain=month threads=1296 buckets=12`.
 
 Do not stamp Phase C accepted. Do not migrate or activate prepared data.
