@@ -15,7 +15,12 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-from memorybox.explore.gallery_scope import CommsAskScope, comms_ask_scope
+from memorybox.explore.gallery_scope import (
+    CommsAskScope,
+    attachment_state_copy,
+    comms_ask_scope,
+    empty_prepared_body_notice,
+)
 
 DISPLAY_COMMERCIAL = frozenset({"not_commercial", "retain_life_evidence"})
 HIDE_ELIGIBILITY = frozenset({"suppress_default", "hold_uncertain"})
@@ -571,6 +576,10 @@ def load_thread(conn: Any, display_id: str) -> dict[str, Any]:
                 "ordinal": msg["ordinal"],
                 "evidence_ref": msg["evidence_ref"],
                 "evidence_id": str(msg["evidence_id"]) if msg.get("evidence_id") else None,
+                "empty_prepared_text": not bool(body.strip()),
+                "empty_body_notice": empty_prepared_body_notice()
+                if not body.strip()
+                else None,
                 "original_href": (
                     "/explore/api/email/" + str(msg["evidence_id"])
                     if msg.get("evidence_id")
@@ -603,6 +612,14 @@ def load_thread(conn: Any, display_id: str) -> dict[str, Any]:
                         if a["attachment_evidence_id"]
                         else None,
                         "available": bool(a["attachment_evidence_id"] or a["source_locator"]),
+                        "state_label": attachment_state_copy(
+                            action=a["gallery_action"],
+                            available=bool(
+                                a["attachment_evidence_id"] or a["source_locator"]
+                            ),
+                            mime=str(a["mime_type"] or ""),
+                            filename=str(a["filename"] or ""),
+                        ),
                     }
                     for a in atts
                 ],

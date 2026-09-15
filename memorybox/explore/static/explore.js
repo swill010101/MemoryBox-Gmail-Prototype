@@ -392,9 +392,9 @@
         return true;
       }
       if (!filter || filter === "all") {
-        if (item.gallery_default_hidden && !includeTexts) return false;
+        if (item.gallery_default_hidden) return false;
         if (attachmentsOnly && !itemAttachCount(item)) return false;
-        return includeTexts;
+        return true;
       }
       return false;
     }
@@ -938,8 +938,11 @@
       ? parts.join(", ")
       : `${archiveN} memor${archiveN === 1 ? "y" : "ies"}`;
     if (state.domain.preparedComms || state.domain.preparedCommsPending) {
-      state.domain.summary = naturalCommsSummary(state.domain.preparedComms || {});
-      return;
+      const tf = state.domain.typeFilter || "all";
+      if (tf === "all" || tf === "email" || tf === "calendar") {
+        state.domain.summary = naturalCommsSummary(state.domain.preparedComms || {});
+        return;
+      }
     }
     state.domain.summary = `${shown} · ${range} (${filterLabel}).${trunc}${hideNote}${cardNote}`;
   }
@@ -1573,7 +1576,7 @@
         smsAvailable: Number(exploreHint.sms_available || 0) || 0,
         smsHidden: Number(exploreHint.sms_hidden || 0) || 0,
         smsMatchTotal: Number(exploreHint.sms_match_total || 0) || 0,
-        emailMatchTotal: Number(exploreHint.email_match_total || exploreHint.email_available || 0) || 0,
+        calendarAvailable: Number(exploreHint.calendar_available || 0) || 0,
         smsTruncated: Boolean(exploreHint.sms_truncated),
         placeFilter: placeFilter,
         placeMatch: placeMatch,
@@ -1643,37 +1646,51 @@
   }
 
   function naturalCommsSummary(pc) {
-    const year = pc && pc.scopeYear;
+    const year = (pc && pc.scopeYear) || askYearFromDomain();
     const photos = rawItems.filter((i) => String(i.type) === "photo").length;
     const videos = rawItems.filter((i) => String(i.type) === "video").length;
     const stories = rawItems.filter((i) => String(i.type) === "story").length;
-    const threads = Number((pc && pc.scopedThreads) || 0);
+    const artifacts = rawItems.filter((i) => String(i.type) === "artifact").length;
+    const d = state.domain || {};
+    const tf = d.typeFilter || "all";
+    const wantEmail = tf === "all" || (tf === "email" && Boolean(d.includeEmail));
+    const wantSms = tf === "all" || (tf === "email" && Boolean(d.includeTexts));
+    const wantCal = tf === "all" || tf === "calendar" || (tf === "email" && Boolean(d.includeCalendar));
+    const sms = wantSms ? Number(d.smsMatchTotal || d.smsAvailable || 0) : 0;
+    const threads = wantEmail ? Number((pc && pc.scopedThreads) || 0) : 0;
+    const calendar = wantCal
+      ? Number(d.calendarAvailable || 0)
+      : 0;
     const who = personChipLabel();
     const when = year ? " during " + year : "";
-    const kinds = [];
-    if (photos) kinds.push("photos");
-    if (videos) kinds.push("videos");
-    if (stories) kinds.push("Stories");
-    if (threads) kinds.push("conversations");
-    const loading = Boolean(state.domain && state.domain.preparedCommsPending);
-    if (!kinds.length) {
+    const parts = [];
+    if (photos) parts.push(photos + " photo" + (photos === 1 ? "" : "s"));
+    if (videos) parts.push(videos + " video" + (videos === 1 ? "" : "s"));
+    if (sms) parts.push(sms + " text message" + (sms === 1 ? "" : "s"));
+    if (stories) parts.push(stories + " Stor" + (stories === 1 ? "y" : "ies"));
+    if (artifacts) parts.push(artifacts + " Artifact" + (artifacts === 1 ? "" : "s"));
+    if (calendar) parts.push(calendar + " calendar event" + (calendar === 1 ? "" : "s"));
+    if (threads) parts.push(threads + " email thread" + (threads === 1 ? "" : "s"));
+    const loading = Boolean(d.preparedCommsPending);
+    if (!parts.length) {
       if (loading) {
-        return (
-          "MemoryBox is gathering conversations involving " +
-          who +
-          when +
-          ". Photos and videos already in Gallery stay visible."
-        );
+        return "I am gathering conversations involving " + who + when + ".";
       }
-      if (year) return "MemoryBox did not find dated memories involving " + who + when + ".";
-      return state.domain._askSummary || "";
+      return d._askSummary || "";
     }
-    let found = kinds[0];
-    if (kinds.length === 2) found = kinds[0] + " and " + kinds[1];
-    else if (kinds.length > 2) found = kinds.slice(0, -1).join(", ") + ", and " + kinds[kinds.length - 1];
+    let found = parts[0];
+    if (parts.length === 2) found = parts[0] + " and " + parts[1];
+    else if (parts.length > 2) found = parts.slice(0, -1).join(", ") + ", and " + parts[parts.length - 1];
     let extra = "";
-    if (loading && kinds.indexOf("conversations") < 0) extra = " Conversations are still gathering.";
-    return "MemoryBox found " + found + " involving " + who + when + "." + extra;
+    if (loading && wantEmail && !threads) extra = " Email threads are still gathering.";
+    return "I found " + found + " involving " + who + when + "." + extra;
+  }
+
+  function askYearFromDomain() {
+    const a = String((state.domain && state.domain.timeStart) || "").slice(0, 4);
+    const b = String((state.domain && state.domain.timeEnd) || "").slice(0, 4);
+    if (/^\d{4}$/.test(a) && a === b) return Number(a);
+    return null;
   }
 
   let preparedCommsToken = "";
@@ -1690,12 +1707,13 @@
     const qs = new URLSearchParams({ token: token, person_id: personId });
     const spec = extra || {};
     qs.set("view", String(spec.view || "buckets"));
-    const dateFrom = spec.date_from || hint.timeStart;
-    const dateTo = spec.date_to || hint.timeEnd;
-    if (dateFrom) qs.set("date_from", String(dateFrom).slice(0, 10));
-    if (dateTo) qs.set("date_to", String(dateTo).slice(0, 10));
     if (spec.year) qs.set("year", String(spec.year));
     if (spec.month) qs.set("month", String(spec.month));
+    const useAskDates = !spec.year && !spec.month;
+    const dateFrom = spec.date_from || (useAskDates ? hint.timeStart : null);
+    const dateTo = spec.date_to || (useAskDates ? hint.timeEnd : null);
+    if (dateFrom) qs.set("date_from", String(dateFrom).slice(0, 10));
+    if (dateTo) qs.set("date_to", String(dateTo).slice(0, 10));
     if (spec.before_latest) qs.set("before_latest", String(spec.before_latest));
     if (spec.before_id) qs.set("before_id", String(spec.before_id));
     return "/explore/api/prepared-comms?" + qs.toString();
@@ -2599,11 +2617,35 @@
     probe.src = url;
   }
 
+  function filterPillCount(id) {
+    const d = state.domain || {};
+    const pc = d.preparedComms || {};
+    const nOf = (t) => rawItems.filter((i) => String(i.type) === t).length;
+    if (id === "photo") return nOf("photo") || null;
+    if (id === "video") return nOf("video") || null;
+    if (id === "story") return nOf("story") || null;
+    if (id === "artifact") return nOf("artifact") || null;
+    if (id === "calendar") return Number(d.calendarAvailable || 0) || null;
+    if (id === "email") {
+      const tf = d.typeFilter || "all";
+      const threads =
+        tf !== "email" || d.includeEmail ? Number(pc.scopedThreads || 0) : 0;
+      const sms =
+        tf !== "email" || d.includeTexts
+          ? Number(d.smsMatchTotal || d.smsAvailable || 0)
+          : 0;
+      return threads + sms || null;
+    }
+    return null;
+  }
+
   function renderFilters() {
     const el = document.getElementById("mb-explore-filters");
     el.innerHTML = FILTERS.map((f) => {
       const on = state.domain.typeFilter === f.id;
-      return `<button type="button" data-filter="${f.id}" aria-pressed="${on}">${f.label}</button>`;
+      const n = filterPillCount(f.id);
+      const label = n != null ? f.label + " · " + n : f.label;
+      return `<button type="button" data-filter="${f.id}" aria-pressed="${on}">${label}</button>`;
     }).join("");
     const uCount = undatedEligible().length;
     // Undated filter always offered next to type filters (mirrors timeline-left control)
@@ -3181,13 +3223,13 @@
     const mc = memoryCountsForKey(mem, k, grain);
     const s = {
       emails: slot.threads || [],
-      texts: [],
-      cals: [],
+      texts: slot.sms || [],
+      cals: slot.cals || [],
       emailN: messageN,
-      textN: 0,
-      calN: 0,
+      textN: (slot.sms || []).length,
+      calN: (slot.cals || []).length,
       emailThreads: threadN,
-      textConvos: 0,
+      textConvos: new Set((slot.sms || []).map(convoKey)).size,
       attachN: 0,
       photoN: mc.photos,
       videoN: mc.videos,
@@ -3198,63 +3240,98 @@
     if (mc.videos) bits.push(mc.videos + " video" + (mc.videos === 1 ? "" : "s"));
     if (mc.stories) bits.push(mc.stories + " stor" + (mc.stories === 1 ? "y" : "ies"));
     if (threadN) bits.push(threadN + " email thread" + (threadN === 1 ? "" : "s"));
+    if (s.textN) bits.push(s.textN + " text" + (s.textN === 1 ? "" : "s"));
     return {
       id: "daycard:" + k,
       type: "daycard",
       title: grain === "month" ? "Memories" : "Communications",
       date: k,
       undated: false,
-      _dayItems: (slot.threads || []).concat(mem),
+      _dayItems: (slot.threads || []).concat(slot.sms || []).concat(mem),
       _daySummary: s,
       _grain: grain,
       _bucketKey: k,
       _threadN: threadN,
       _openLabel: "Open →",
-      _personThumb: photoThumbForBucket(k),
+      _personThumb: personAnchorPortrait(),
       preview: bits.join(" · "),
     };
   }
 
-  function mergePreparedGallery(items, pc, commsFilterOn) {
+  function personAnchorPortrait() {
+    const id = String(((state.domain && state.domain.person_ids) || [])[0] || "").trim();
+    if (id) return "/people/" + encodeURIComponent(id) + "/portrait";
+    return (window.MB_PERSON_SURFACE && window.MB_PERSON_SURFACE.portraitUrl) || "";
+  }
+
+  function mergePreparedGallery(items, pc) {
+    const d = state.domain || {};
+    const filterEmail = d.typeFilter === "email";
+    const wantEmail = !filterEmail || Boolean(d.includeEmail);
+    const wantSms = !filterEmail || Boolean(d.includeTexts);
     const grain = (pc && pc.grain) || "year";
-    const buckets = (pc && pc.buckets) || [];
+    const buckets = wantEmail ? (pc && pc.buckets) || [] : [];
     const mem = memoryLikeItems(items);
+    const smsItems = wantSms ? items.filter(isSmsTextItem) : [];
     const byKey = {};
+    const ensure = (k) => {
+      byKey[k] = byKey[k] || { mem: [], thread_n: 0, message_n: 0, threads: [], sms: [], cals: [] };
+      return byKey[k];
+    };
+    const keyOf = (it) => {
+      const raw = String(it.date || "");
+      return grain === "month" ? raw.slice(0, 7) : raw.slice(0, 4);
+    };
     mem.forEach((it) => {
       if (isUndated(it) || !String(it.date || "")) return;
-      const d = String(it.date);
-      const k = grain === "month" ? d.slice(0, 7) : d.slice(0, 4);
+      const k = keyOf(it);
       if (grain === "month" && !/^\d{4}-\d{2}$/.test(k)) return;
       if (grain === "year" && !/^\d{4}$/.test(k)) return;
-      (byKey[k] = byKey[k] || { mem: [], thread_n: 0, message_n: 0, threads: [] });
-      byKey[k].mem.push(it);
+      ensure(k).mem.push(it);
+    });
+    smsItems.forEach((it) => {
+      if (isUndated(it) || !String(it.date || "")) return;
+      const k = keyOf(it);
+      if (grain === "month" && !/^\d{4}-\d{2}$/.test(k)) return;
+      if (grain === "year" && !/^\d{4}$/.test(k)) return;
+      ensure(k).sms.push(it);
     });
     buckets.forEach((b) => {
       const k = String(b.key || "");
       if (!k) return;
-      (byKey[k] = byKey[k] || { mem: [], thread_n: 0, message_n: 0, threads: [] });
-      byKey[k].thread_n = Number(b.thread_n || 0);
-      byKey[k].message_n = Number(b.message_n || 0);
+      const slot = ensure(k);
+      slot.thread_n = Number(b.thread_n || 0);
+      slot.message_n = Number(b.message_n || 0);
     });
     const keys = Object.keys(byKey).filter((k) => {
       const slot = byKey[k];
-      return (slot.mem && slot.mem.length) || Number(slot.thread_n || 0) > 0;
+      return (
+        (slot.mem && slot.mem.length) ||
+        Number(slot.thread_n || 0) > 0 ||
+        (slot.sms && slot.sms.length)
+      );
     });
     const sort = (state.gallery && state.gallery.sort) || "newest";
     keys.sort((a, b) => (sort === "oldest" ? a.localeCompare(b) : b.localeCompare(a)));
     const cards = keys.map((k) => makeBucketCard(k, byKey[k], grain));
-    if (commsFilterOn) return cards.filter((c) => Number(c._threadN || 0) > 0);
-    if (grain === "month") {
-      const comms = cards.filter((c) => Number(c._threadN || 0) > 0);
-      const mixed = comms.concat(mem);
-      mixed.sort((a, b) => {
-        const da = String(a.date || "");
-        const db = String(b.date || "");
-        return sort === "oldest" ? da.localeCompare(db) : db.localeCompare(da);
+    if (filterEmail) {
+      return cards.filter((c) => {
+        const s = c._daySummary || {};
+        if (wantEmail && Number(c._threadN || 0) > 0) return true;
+        if (wantSms && Number(s.textN || 0) > 0) return true;
+        return false;
       });
-      return mixed;
     }
-    return insertCombinedIntoGallery(cards.filter((c) => Number(c._threadN || 0) > 0), items);
+    if (grain === "month") {
+      return cards;
+    }
+    return insertCombinedIntoGallery(
+      cards.filter((c) => {
+        const s = c._daySummary || {};
+        return Number(c._threadN || 0) > 0 || Number(s.textN || 0) > 0;
+      }),
+      items
+    );
   }
 
   function galleryCardsFromVisible(items) {
@@ -3263,7 +3340,7 @@
     const commsOn = Boolean(d.includeTexts || d.includeEmail || d.typeFilter === "email");
     const calOn = Boolean(d.includeCalendar || d.typeFilter === "calendar");
     if (pc && (Array.isArray(pc.buckets) || pc.grain)) {
-      return mergePreparedGallery(items, pc, commsOn && d.typeFilter === "email");
+      return mergePreparedGallery(items, pc);
     }
     const mix = memoryLikeItems(items).length > 0 && commsCalItems(items).length > 0;
     const commsOnly =
@@ -3376,7 +3453,12 @@
     const next = document.getElementById("mb-day-next");
     const count = document.getElementById("mb-day-count");
     const back = document.getElementById("mb-day-detail-back");
-    if (count) count.textContent = has && n ? i + 1 + " of " + n : n ? n + " groups" : "—";
+    const total =
+      dayStack.tab === "email"
+        ? Number((dayStack.card && dayStack.card._threadN) || n)
+        : n;
+    if (count)
+      count.textContent = has && n ? i + 1 + " of " + total : n ? n + " groups" : "—";
     if (prev) prev.disabled = !has || i <= 0;
     if (next) next.disabled = !has || i >= n - 1;
     if (back) back.hidden = !has;
@@ -3405,11 +3487,10 @@
         }
         const extra = Array.isArray(data.items) ? data.items : [];
         card._fetchedThreads = (cursor && card._fetchedThreads) ? card._fetchedThreads.concat(extra) : extra;
-        if (card._fetchedThreads.length > 80 && !cursor) {
-          card._fetchedThreads = card._fetchedThreads.slice(0, 80);
-        }
         card._threadCursor = data.next_cursor || null;
         card._threadHasMore = Boolean(data.has_more);
+        const scoped = Number(data.scoped_thread_total || card._threadN || 0);
+        if (scoped) card._threadN = scoped;
         const s = card._daySummary || {};
         s.emails = card._fetchedThreads;
         s.emailThreads = Number(card._threadN || s.emailThreads || card._fetchedThreads.length);
@@ -3540,7 +3621,12 @@
     const list = document.getElementById("mb-day-list");
     dayStack.rows = rows;
     document.getElementById("mb-day-showing").textContent =
-      "Showing " + rows.length + " of " + rows.length;
+      "Showing " +
+      rows.length +
+      " of " +
+      (dayStack.tab === "email"
+        ? Number(card._threadN || rows.length)
+        : rows.length);
     list.innerHTML = rows
       .map((row, i) => {
         const it = row.items[0];
@@ -3790,7 +3876,7 @@
             );
           if (!bits.length) bits.push(`<span class="mb-day-e">No matching groups</span>`);
           const face = it._personThumb
-            ? `<img class="mb-day-face" src="${escapeAttr(it._personThumb)}" alt="" />`
+            ? `<img class="mb-day-face" src="${escapeAttr(it._personThumb)}" alt="Person portrait for this Ask" />`
             : "";
           return `<div class="mb-card mb-card-day" data-id="${escapeAttr(
             it.id
@@ -6546,6 +6632,44 @@
       .join("; ");
   }
 
+  function preparedAttachHtml(a, m) {
+    const name = escapeHtml(a.filename || "attachment");
+    const action = String(a.gallery_action || "record_only");
+    const available = Boolean(a.available);
+    const label = escapeHtml(
+      a.state_label ||
+        (available
+          ? action === "record_only"
+            ? "Attachment metadata only — this file type is not viewable here."
+            : "Preview unavailable."
+          : "Original file unavailable. The record is kept but is not viewable.")
+    );
+    if (!available || action === "record_only" || action === "blocked" || action === "unsafe") {
+      return `<li><strong>${name}</strong> — ${label}</li>`;
+    }
+    const parent = encodeURIComponent(m.evidence_id || a.parent_evidence_id || "");
+    const idx = a.attachment_ordinal == null ? 0 : Number(a.attachment_ordinal);
+    const href = parent
+      ? "/explore/api/email-attachment/" + parent + "?index=" + idx
+      : "#";
+    if (action === "view_image") {
+      return (
+        `<li><strong>${name}</strong> — ${label}` +
+        `<div class="mb-ev-attach-preview"><img class="mb-prepared-att" src="${href}" alt="${name}" /></div></li>`
+      );
+    }
+    const btn =
+      action === "open_pdf"
+        ? "Open PDF"
+        : action === "open_document"
+          ? "Open document"
+          : "Open attachment";
+    return (
+      `<li><a class="mb-viewer-footbtn" href="${href}" target="_blank" rel="noopener">${btn}: ${name}</a>` +
+      `<p class="mb-ev-meta">${label}</p></li>`
+    );
+  }
+
   function preparedThreadHtml(data) {
     const msgs = (data && data.messages) || [];
     const blocks = msgs
@@ -6553,40 +6677,24 @@
         const warns = (m.warnings || [])
           .map((w) => `<p class="mb-ev-meta">${escapeHtml(String(w))}</p>`)
           .join("");
-        const atts = (m.attachments || [])
-          .map((a) => {
-            const action = String(a.gallery_action || "record_only");
-            const name = escapeHtml(a.filename || "attachment");
-            if (action === "record_only" || !a.available) {
-              return `<li>${name} — unavailable or record-only</li>`;
-            }
-            const parent = encodeURIComponent(m.evidence_id || a.parent_evidence_id || "");
-            const idx = a.attachment_ordinal == null ? 0 : Number(a.attachment_ordinal);
-            const href = parent
-              ? "/explore/api/email-attachment/" + parent + "?index=" + idx
-              : "#";
-            if (action === "view_image") {
-              return `<li>${name}<div class="mb-ev-attach-preview"><img class="mb-prepared-att" src="${href}" alt="${name}" /></div></li>`;
-            }
-            const label =
-              action === "open_pdf"
-                ? "Open PDF"
-                : action === "open_document"
-                  ? "Open document"
-                  : "Open";
-            return `<li><a class="mb-viewer-footbtn" href="${href}" target="_blank" rel="noopener">${label}: ${name}</a></li>`;
-          })
-          .join("");
+        const atts = (m.attachments || []).map((a) => preparedAttachHtml(a, m)).join("");
         const attBlock = atts ? `<ul class="mb-ev-attach">${atts}</ul>` : "";
         const orig = m.evidence_id
-          ? `<p class="mb-ev-meta"><a href="/explore/api/email/${encodeURIComponent(m.evidence_id)}" target="_blank" rel="noopener">Immutable original</a></p>`
+          ? `<p class="mb-ev-meta"><a href="/explore/api/email/${encodeURIComponent(m.evidence_id)}" target="_blank" rel="noopener">Open the immutable original email</a></p>`
           : "";
+        const empty = Boolean(m.empty_prepared_text) || !String(m.cleaned_authored_text || "").trim();
+        const body = empty
+          ? `<p class="mb-ev-meta">${escapeHtml(
+              m.empty_body_notice ||
+                "This message has no prepared text. Open the immutable original to read it."
+            )}</p>`
+          : `<pre class="mb-prepared-body">${escapeHtml(m.cleaned_authored_text || "")}</pre>`;
         return `<section class="mb-prepared-msg">
           <p class="mb-ev-meta">From: ${escapeHtml(partyLine(m.from))}</p>
           <p class="mb-ev-meta">To: ${escapeHtml(partyLine(m.to))}</p>
           <p class="mb-ev-meta">Cc: ${escapeHtml(partyLine(m.cc))}</p>
           <p class="mb-ev-meta">${escapeHtml(fmtCardDate(m.sent_at))} · ${escapeHtml(m.subject || "")}</p>
-          <pre class="mb-prepared-body">${escapeHtml(m.cleaned_authored_text || "")}</pre>
+          ${body}
           ${warns}${attBlock}${orig}
         </section>`;
       })
@@ -6615,7 +6723,7 @@
               const box = img.parentElement;
               if (!box) return;
               box.innerHTML =
-                "<p>This attachment is listed, but the file could not be opened.</p>";
+                "<p>Preview unavailable. The original file could not be opened.</p>";
             });
           });
         })

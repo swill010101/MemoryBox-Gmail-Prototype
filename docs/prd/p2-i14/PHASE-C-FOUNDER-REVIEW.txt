@@ -1,23 +1,27 @@
-MemoryBox Phase C — founder visual review (date-bucket Gallery)
+MemoryBox Phase C — founder visual review (in review, not accepted)
 Flag: MEMORYBOX_I14_GALLERY_COMMS=1
 Rollback: set MEMORYBOX_I14_GALLERY_COMMS=0 in config\memorybox_app.env, then startmb.cmd -Restart. Do not change prepared data.
 
 Open Explore: http://127.0.0.1:8790/explore/ui
-Hard-refresh so explore.js?v=i14-c3 loads.
+Hard-refresh so explore.js?v=i14-c4 loads.
 
-[ ] Ask "Show me Sue Will in 2017"
-    Photos/videos first. Mixed Gallery stays on All (Communications pill is not auto-selected).
-    Result dates stay in 2017. No 2016/2018 comms. No undated Stories.
-    Month cards that have Sue email show the full month thread count (never "0 email threads" when threads exist).
-    Expand a month: actual threads; open a thread for chronology / From-To-Cc / attachments / original. Close restores Ask, month, All, scroll.
-[ ] Ask "Show me Sue Will" (no year)
-    Year cards use full-year conversation counts, not an 80-thread mailbox.
-[ ] Repeat unbounded and 2017 Asks for Peggy and Tom.
-[ ] Click Communications only when you want that filter; background load must not have selected it.
-[ ] Start a new Ask quickly: prior conversations and counts disappear.
-[ ] Normal Gallery has no year-chip bar, no "Load older email", no "80 of N reachable" copy.
-    Diagnostic only: /explore/ui?mb_comms_diag=1
-[ ] Historian Capture email still healthy; historian_capture_email still Active.
+Curator form (zeros omitted): “I found 246 photos, 8 videos, 328 text messages, and 10 email threads involving Sue Will during 2017.”
 
-Do not stamp threads accepted. Do not start I11A. Do not add SMS/calendar.
+[ ] Show me Sue Will in 2017
+    SMS present (authoritative retrieve: 328). Email month cards scoped (10 threads, not all-years).
+    Communications + Email off: email cards/counts gone; texts remain.
+    Communications + Email on / SMS on: pills, Curator, cards, expanded cards, modal totals agree.
+    Modal “1 of N” is navigation in that month’s scoped threads, not an 80-row mailbox total.
+[ ] Show me Sue Will (unbounded)
+[ ] Show me Tom Will — SMS from existing retrieve path (authoritative 3717).
+[ ] Show me Tom Will in 2024 — year-scoped email counts, not all-years 1328.
+[ ] Show me Peggy
+[ ] Filter: All; Communications; Communications with Email off; SMS/text only; Email only.
+[ ] Communication cards use the queried Person portrait, not another participant.
+[ ] Failed attachments explain why (preview unavailable / unsupported / original unavailable / metadata only / unsafe). JPG/PNG preview; PDF opens as PDF.
+[ ] T-39987 John reply: prepared cleaned text is empty (quote cleanup). UI says open immutable original. Do not activate a new generation without authorization.
+[ ] Diagnostic bar only at /explore/ui?mb_comms_diag=1
+[ ] Historian Capture email still healthy.
+
+Do not stamp threads accepted. Do not start I11A. Do not add a normalized SMS store.
 Phase C remains in review — not accepted.

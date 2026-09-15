@@ -15,8 +15,8 @@ git rev-parse HEAD
 .\startmb.cmd -Restart -SkipChrome
 ```
 
-Confirm `/health` ok, pending empty, ledger 001–038. Confirm `GET /explore/api/prepared-comms?person_id=...&token=x` returns JSON with `"buckets"` (not 404).
+Hard-refresh so `explore.js?v=i14-c4` loads.
 
-Review path: `/explore/ui` — start with **Show me Sue Will in 2017**. Checklist: `Desktop\PHASE-C-FOUNDER-REVIEW.txt` or `docs/prd/p2-i14/PHASE-C-FOUNDER-REVIEW.txt`.
+Review path: `/explore/ui` — start with **Show me Sue Will in 2017**. Checklist: `docs/prd/p2-i14/PHASE-C-FOUNDER-REVIEW.txt`. Count correction: `docs/prd/p2-i14/PHASE-C-COUNT-CORRECTION.md`.
 
 Rollback: unset the flag and recycle serve. Do not alter prepared data.

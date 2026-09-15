@@ -322,10 +322,25 @@ class LoadThread(unittest.TestCase):
         self.assertTrue(atts[0]["available"])
         self.assertFalse(atts[1]["available"])
         self.assertEqual(atts[1]["gallery_action"], "record_only")
+        self.assertIn("not viewable", atts[1]["state_label"])
+        self.assertIn("Image preview", atts[0]["state_label"])
+        self.assertFalse(out["messages"][0]["empty_prepared_text"])
 
 
 class ExploreFind(unittest.TestCase):
+    def setUp(self) -> None:
+        self._sms_patch = patch(
+            "memorybox.ask.retrieve.search_sms_messages", return_value=[]
+        )
+        self._cal_patch = patch(
+            "memorybox.ask.retrieve.search_calendar_events", return_value=[]
+        )
+        self._sms_patch.start()
+        self._cal_patch.start()
+
     def tearDown(self) -> None:
+        self._sms_patch.stop()
+        self._cal_patch.stop()
         os.environ.pop("MEMORYBOX_I14_GALLERY_COMMS", None)
         pc._tokens.clear()
 
@@ -478,6 +493,57 @@ class ExploreFind(unittest.TestCase):
         self.assertFalse(payload["explore_state"]["gallery_show_email"])
         self.assertTrue(payload["explore_state"]["prepared_comms_pending"])
         self.assertIn("2017", payload.get("title") or payload.get("ask_text") or "")
+
+    def test_dated_person_ask_hydrates_sms_from_existing_path(self) -> None:
+        os.environ["MEMORYBOX_I14_GALLERY_COMMS"] = "1"
+        from memorybox.ask.retrieve import EvidenceHit
+
+        hit = EvidenceHit(
+            evidence_id="sms-2017-1",
+            evidence_kind="sms",
+            summary="hello",
+            score=1.0,
+            excerpt="hello",
+            source="sms_export",
+            sent_at="2017-06-02",
+            channel="sms",
+            people=["Sue Will"],
+            match_total=328,
+        )
+        orch = types.SimpleNamespace(
+            ask=lambda *a, **k: {
+                "plan": {
+                    "person_ids": ["11111111-1111-1111-1111-111111111111"],
+                    "person_names": ["Sue Will"],
+                    "output_mode": "show",
+                    "time_start": "2017-01-01",
+                    "time_end": "2017-12-31",
+                },
+                "photo_hits": [
+                    {
+                        "external_id": "photo-2017",
+                        "people": ["Sue"],
+                        "taken_at": "2017-04-02",
+                    }
+                ],
+                "video_hits": [],
+                "evidence_hits": [],
+                "provider_status": {},
+            }
+        )
+        self._sms_patch.stop()
+        with patch("memorybox.ask.retrieve.search_sms_messages", return_value=[hit]):
+            payload = build_explore_find(
+                ask_text="Show me Sue Will in 2017", session_id="s", orchestrator=orch
+            )
+        self.assertEqual(payload["explore_state"]["sms_available"], 328)
+        self.assertEqual(payload["explore_state"]["sms_match_total"], 328)
+        sms = [i for i in payload["items"] if i.get("type") == "sms"]
+        self.assertEqual(len(sms), 1)
+        self.assertFalse(sms[0].get("gallery_default_hidden"))
+        self.assertIn("328 text message", payload["summary"])
+        self.assertNotIn("retrieval", payload["summary"].lower())
+        self.assertNotIn("80 of", payload["summary"])
 
 
 if __name__ == "__main__":

@@ -15,7 +15,7 @@ Communications join the Gallery’s date-scoped aggregation. The 80-row bound is
 3. Person-only Ask → year cards whose counts are the full qualifying year, not an 80-row page.
 4. Background buckets update existing Gallery cards; they must not select the Communications pill.
 5. Year-chip bar, thread counters, and “Load older email” are diagnostic-only (`?mb_comms_diag=1`).
-6. Curator language is natural (photos, videos, Stories, conversations) with no paging/retrieval jargon.
+6. Curator language is natural complete scoped counts (photos, videos, text messages, Stories, Artifacts, calendar, email threads). Zeros omitted. No paging/retrieval jargon.
 7. Opened threads keep chronology, parties, warnings, attachments, original-on-demand, Save as Story. Close restores Ask, bucket, filter, and scroll.
 8. A new Ask cancels prior tokens and clears prior aggregation.
 

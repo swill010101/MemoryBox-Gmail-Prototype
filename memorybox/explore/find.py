@@ -493,7 +493,7 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
                 and summary
                 and people_title
                 and summary.lower() != people_title.lower()
-                and summary.lower() != (people[0] or "").lower()
+                and summary.lower() != (people[0] if people else "").lower()
             ):
                 body = summary
             title = (people_title or summary or "Text")[:80]
@@ -525,7 +525,7 @@ def items_from_ask_result(result: dict[str, Any]) -> list[dict[str, Any]]:
             item["title"] = title
         item["from"] = (
             e.get("from_header")
-            or people[0]
+            or (people[0] if people else "")
             or e.get("thread_id")
             or "Message"
         )
@@ -853,12 +853,6 @@ def _attach_hidden_sms(
         for i in sms_already:
             i["gallery_default_hidden"] = False
         return items, len(sms_already), 0
-    if not show_sms:
-        # Q3: do not hydrate 80k SMS rows on a broad person Ask (FlightSim 30s+).
-        for i in sms_already:
-            i["gallery_default_hidden"] = True
-        return items, len(sms_already), len(sms_already)
-
     plan = result.get("plan") or {}
     people = list(plan.get("person_names") or [])
     pids = list(plan.get("person_ids") or [])
@@ -910,7 +904,7 @@ def _attach_hidden_sms(
             temporal_windows=tw,
             notes=("gallery_sms_eligible",),
         )
-        cap = _VISIBLE_SMS_GALLERY_CAP if show_sms else _HIDDEN_SMS_CARD_SAMPLE
+        cap = _VISIBLE_SMS_GALLERY_CAP
         hits = search_sms_messages(sms_plan, limit=cap)
         if hits:
             match_total = int(getattr(hits[0], "match_total", None) or len(hits))
@@ -924,7 +918,7 @@ def _attach_hidden_sms(
             eid = str(it.get("evidence_id") or "")
             if eid and eid in existing_ids:
                 continue
-            it["gallery_default_hidden"] = True
+            it["gallery_default_hidden"] = False
             extra.append(it)
             if eid:
                 existing_ids.add(eid)
@@ -932,10 +926,6 @@ def _attach_hidden_sms(
         extra = []
 
     out = list(items) + extra
-    if not show_sms:
-        for i in out:
-            if _is_sms_type(i.get("type")):
-                i["gallery_default_hidden"] = True
     sms_n = sum(1 for i in out if _is_sms_type(i.get("type")))
     hidden_n = sum(
         1
@@ -1253,6 +1243,22 @@ def build_explore_find(
     if not tell_mode:
         # A new show/mixed Ask replaces curator; do not keep prior tell prose.
         answer_for_curator = None
+        from memorybox.explore.gallery_scope import ask_calendar_year, curator_gallery_sentence
+
+        who = person_names_early[0] if person_names_early else "this person"
+        year = ask_calendar_year(plan.get("time_start"), plan.get("time_end"))
+        summary = curator_gallery_sentence(
+            person_label=who,
+            year=year,
+            photo_n=sum(1 for i in visible_items if i.get("type") == "photo"),
+            video_n=sum(1 for i in visible_items if i.get("type") == "video"),
+            sms_n=int(sms_available or 0),
+            thread_n=0,
+            story_n=sum(1 for i in visible_items if i.get("type") == "story"),
+            artifact_n=sum(1 for i in visible_items if i.get("type") == "artifact"),
+            calendar_n=int(calendar_available or 0),
+            loading_comms=bool(use_prepared),
+        )
     if (
         show_email
         and not show_sms
@@ -1263,16 +1269,6 @@ def build_explore_find(
         summary = (
             (summary or "").rstrip()
             + " 0 emails matched this person (Person id, confirmed address, or full display name)."
-        ).strip()
-    if sms_hidden and not show_sms and "are in the archive" not in (summary or ""):
-        plan_mode = str((result.get("plan") or {}).get("output_mode") or "show")
-        if plan_mode != "tell":
-            summary = (
-                (summary or "").rstrip()
-                + (
-                    f" {sms_available} text message(s) are in the archive "
-                    "(hidden in Gallery — say Add texts to show them)."
-                )
             ).strip()
     chips = chips_from_ask_result(result)
     # Prefer plan temporal chip over item-derived year range when present
@@ -1295,23 +1291,8 @@ def build_explore_find(
             sms_match_total = max(sms_match_total, int(e.get("match_total") or 0))
         if e.get("truncated"):
             sms_truncated = True
-    if sms_truncated and sms_match_total and not tell_mode:
-        summary = (
-            (summary or "").rstrip()
-            + (
-                f" Showing {counts.get('sms', 0) or sms_available} of "
-                f"{sms_match_total} matching texts (every year kept on the Timeline)."
-            )
-        ).strip()
-    if email_match_total > (counts.get("email") or 0) and not tell_mode:
-        shown = counts.get("email") or 0
-        summary = (
-            (summary or "").rstrip()
-            + (
-                f" Showing {shown} of {email_match_total} emails involving this person "
-                "(year-fair sample; use Email/Text to focus on mail)."
-            )
-        ).strip()
+    sms_match_total = max(int(sms_match_total or 0), int(sms_available or 0))
+    counts["sms_match_total"] = sms_match_total
     counts["email_available"] = email_available
     counts["calendar_available"] = calendar_available
 
@@ -1386,7 +1367,7 @@ def build_explore_find(
             ),
             "sms_available": sms_available,
             "sms_hidden": sms_hidden,
-            "sms_match_total": sms_match_total,
+            "sms_match_total": sms_match_total or sms_available,
             "sms_truncated": sms_truncated,
             "email_available": email_available,
             "email_match_total": email_match_total,

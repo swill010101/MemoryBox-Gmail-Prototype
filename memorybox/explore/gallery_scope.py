@@ -79,41 +79,87 @@ def curator_gallery_sentence(
     year: int | None,
     photo_n: int = 0,
     video_n: int = 0,
-    story_n: int = 0,
+    sms_n: int = 0,
     thread_n: int = 0,
+    story_n: int = 0,
+    artifact_n: int = 0,
+    calendar_n: int = 0,
     loading_comms: bool = False,
+    loading_sms: bool = False,
 ) -> str:
     who = (person_label or "this person").strip() or "this person"
     when = f" during {year}" if year else ""
-    kinds: list[str] = []
+    parts: list[str] = []
     if photo_n:
-        kinds.append("photos")
+        parts.append(f"{photo_n} photo{'s' if photo_n != 1 else ''}")
     if video_n:
-        kinds.append("videos")
+        parts.append(f"{video_n} video{'s' if video_n != 1 else ''}")
+    if sms_n:
+        parts.append(f"{sms_n} text message{'s' if sms_n != 1 else ''}")
     if story_n:
-        kinds.append("Stories")
+        parts.append(f"{story_n} Stor{'y' if story_n == 1 else 'ies'}")
+    if artifact_n:
+        parts.append(f"{artifact_n} Artifact{'s' if artifact_n != 1 else ''}")
+    if calendar_n:
+        parts.append(f"{calendar_n} calendar event{'s' if calendar_n != 1 else ''}")
     if thread_n:
-        kinds.append("conversations")
-    if not kinds:
-        if loading_comms:
-            return (
-                f"MemoryBox is gathering conversations involving {who}{when}. "
-                "Photos and videos already in Gallery stay visible."
-            )
+        parts.append(f"{thread_n} email thread{'s' if thread_n != 1 else ''}")
+    if not parts:
+        if loading_comms or loading_sms:
+            return f"I am gathering conversations involving {who}{when}."
         if year:
-            return f"MemoryBox did not find dated memories involving {who}{when}."
-        return f"MemoryBox is ready to show memories involving {who}."
-    if len(kinds) == 1:
-        found = kinds[0]
-    elif len(kinds) == 2:
-        found = f"{kinds[0]} and {kinds[1]}"
+            return f"I did not find dated memories involving {who}{when}."
+        return f"I did not find memories involving {who}."
+    if len(parts) == 1:
+        found = parts[0]
+    elif len(parts) == 2:
+        found = f"{parts[0]} and {parts[1]}"
     else:
-        found = ", ".join(kinds[:-1]) + f", and {kinds[-1]}"
+        found = ", ".join(parts[:-1]) + f", and {parts[-1]}"
     extra = ""
-    if loading_comms and "conversations" not in kinds:
-        extra = " Conversations are still gathering."
-    return f"MemoryBox found {found} involving {who}{when}.{extra}"
+    if loading_comms and thread_n == 0:
+        extra = " Email threads are still gathering."
+    if loading_sms and sms_n == 0:
+        extra += " Text messages are still gathering."
+    return f"I found {found} involving {who}{when}.{extra}"
 
 
 def curator_language_ok(text: str) -> bool:
-    return not bool(PAGING_LANGUAGE.search(text or ""))
+    return not bool(PAGING_LANGUAGE.search(str(text or "")))
+
+
+def empty_prepared_body_notice() -> str:
+    return (
+        "This message has no prepared text. Open the immutable original to read it."
+    )
+
+
+def attachment_state_copy(
+    *,
+    action: str | None,
+    available: bool,
+    mime: str = "",
+    filename: str = "",
+) -> str:
+    act = str(action or "").strip().lower()
+    if not available:
+        return "Original file unavailable. The record is kept but is not viewable."
+    if act in {"blocked", "unsafe"}:
+        return "Blocked as unsafe."
+    if act == "record_only":
+        return "Attachment metadata only — this file type is not viewable here."
+    if act == "view_image":
+        return "Image preview"
+    if act == "open_pdf":
+        return "Open PDF (this opens the attached file, not the email thread)"
+    if act == "open_document":
+        return "Open document (this opens the attached file, not the email thread)"
+    blob = f"{filename} {mime}".lower()
+    if any(x in blob for x in ("jpeg", "jpg", "png", "gif", "webp", "image/")):
+        return "Preview unavailable."
+    return "Preview unavailable."
+
+
+def ask_calendar_year(time_start: Any = None, time_end: Any = None) -> int | None:
+    scope = comms_ask_scope(time_start, time_end)
+    return scope.calendar_year
