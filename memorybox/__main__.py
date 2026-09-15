@@ -1013,6 +1013,10 @@ def main(argv: list[str] | None = None) -> int:
         "i14-prepared-activate",
         help="Guarded household-email generation activation (requires confirm flags; publishes)",
     )
+    p_i14_empty = sub.add_parser(
+        "i14-empty-body-audit",
+        help="Read-only empty prepared-body classification (FlightSim requires allow flags)",
+    )
     sub.add_parser(
         "i14-gallery-timings",
         help="Read-only Phase C prepared-comms timings (FlightSim requires allow flags)",
@@ -2034,6 +2038,11 @@ def main(argv: list[str] | None = None) -> int:
         from memorybox.ops.i14_gallery_timings import main as gallery_timings_main
 
         return gallery_timings_main([])
+
+    if args.cmd == "i14-empty-body-audit":
+        from memorybox.ops.i14_empty_body import main as empty_body_main
+
+        return empty_body_main([])
 
     if args.cmd == "serve":
         import uvicorn

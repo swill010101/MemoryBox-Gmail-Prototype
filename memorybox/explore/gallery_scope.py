@@ -129,9 +129,7 @@ def curator_language_ok(text: str) -> bool:
 
 
 def empty_prepared_body_notice() -> str:
-    return (
-        "This message has no prepared text. Open the immutable original to read it."
-    )
+    return "Prepared text unavailable—open original."
 
 
 def attachment_state_copy(

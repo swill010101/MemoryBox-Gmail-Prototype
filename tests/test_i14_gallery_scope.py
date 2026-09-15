@@ -60,7 +60,8 @@ class Scope(unittest.TestCase):
             empty_prepared_body_notice,
         )
 
-        self.assertIn("immutable original", empty_prepared_body_notice())
+        self.assertIn("unavailable", empty_prepared_body_notice())
+        self.assertIn("original", empty_prepared_body_notice().lower())
         self.assertIn(
             "not viewable",
             attachment_state_copy(action="view_image", available=False),

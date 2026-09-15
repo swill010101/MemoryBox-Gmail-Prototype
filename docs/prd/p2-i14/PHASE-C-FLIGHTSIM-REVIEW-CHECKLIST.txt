@@ -1,0 +1,37 @@
+# Phase C FlightSim review checklist (in review, not accepted)
+
+Deployed checkout on `\\flightsim\FlightSim User\MemoryBox` was fast-forwarded to `07e576b` then to the empty-body follow-up SHA after push. **Serve recycle through `C:\MemoryBox\.venv` is required** (`.\startmb.cmd -Restart -SkipChrome`). Desktop cannot WinRM/PsExec recycle.
+
+Hard-refresh `explore.js?v=i14-c5`. Diagnostic bar only at `/explore/ui?mb_comms_diag=1`.
+
+## Sue Will in 2017
+
+- [ ] Curator: 246 photos, 8 videos, 328 text messages, 10 email threads (zeros omitted)
+- [ ] No undated; nothing outside 2017
+- [ ] Month cards match full month counts; expand shows that month only
+- [ ] Communications pill not auto-selected
+- [ ] Email off: email cards and counts gone; SMS 328 remains
+- [ ] Curator, pills, cards, expanded cards, modal agree
+- [ ] “1 of N” is navigation in that month’s scoped threads
+
+## Tom Will
+
+- [ ] SMS present; authoritative **3717**
+- [ ] Mixed Gallery intact
+- [ ] Cards use Tom’s Person portrait
+
+## Tom Will in 2024
+
+- [ ] Email threads exactly **1296** (not 1328)
+- [ ] Curator, Communications pill, month cards, modal all **1296**
+- [ ] “1 of N” navigates the opened bucket; Show more if the 80-row page continues; bucket total stays 1296
+
+## Attachments / originals
+
+- [ ] JPG/PNG preview
+- [ ] Unsupported / missing / metadata-only / unsafe explained in plain language
+- [ ] “Open the immutable original email” opens the original
+- [ ] PDF/document actions open the attached file
+- [ ] No blank control
+
+Do not stamp Phase C accepted. Do not migrate or activate prepared data.

@@ -6686,7 +6686,7 @@
         const body = empty
           ? `<p class="mb-ev-meta">${escapeHtml(
               m.empty_body_notice ||
-                "This message has no prepared text. Open the immutable original to read it."
+                "Prepared text unavailable—open original."
             )}</p>`
           : `<pre class="mb-prepared-body">${escapeHtml(m.cleaned_authored_text || "")}</pre>`;
         return `<section class="mb-prepared-msg">
