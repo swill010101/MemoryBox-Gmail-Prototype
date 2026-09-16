@@ -99,19 +99,19 @@ def curator_gallery_sentence(
     when = f" during {year}" if year else ""
     parts: list[str] = []
     if photo_n:
-        parts.append(f"{photo_n} photo{'s' if photo_n != 1 else ''}")
+        parts.append(f"{_fmt_n(photo_n)} photo{'s' if photo_n != 1 else ''}")
     if video_n:
-        parts.append(f"{video_n} video{'s' if video_n != 1 else ''}")
-    if sms_n:
-        parts.append(f"{sms_n} text message{'s' if sms_n != 1 else ''}")
-    if story_n:
-        parts.append(f"{story_n} Stor{'y' if story_n == 1 else 'ies'}")
-    if artifact_n:
-        parts.append(f"{artifact_n} Artifact{'s' if artifact_n != 1 else ''}")
-    if calendar_n:
-        parts.append(f"{calendar_n} calendar event{'s' if calendar_n != 1 else ''}")
+        parts.append(f"{_fmt_n(video_n)} video{'s' if video_n != 1 else ''}")
     if thread_n:
-        parts.append(f"{thread_n} email thread{'s' if thread_n != 1 else ''}")
+        parts.append(f"{_fmt_n(thread_n)} email thread{'s' if thread_n != 1 else ''}")
+    if sms_n:
+        parts.append(f"{_fmt_n(sms_n)} text message{'s' if sms_n != 1 else ''}")
+    if story_n:
+        parts.append(f"{_fmt_n(story_n)} Stor{'y' if story_n == 1 else 'ies'}")
+    if artifact_n:
+        parts.append(f"{_fmt_n(artifact_n)} Artifact{'s' if artifact_n != 1 else ''}")
+    if calendar_n:
+        parts.append(f"{_fmt_n(calendar_n)} calendar event{'s' if calendar_n != 1 else ''}")
     if not parts:
         if loading_comms or loading_sms:
             return f"I am gathering conversations involving {who}{when}."
@@ -126,9 +126,9 @@ def curator_gallery_sentence(
         found = ", ".join(parts[:-1]) + f", and {parts[-1]}"
     extra = ""
     if loading_comms and thread_n == 0:
-        extra = " Email threads are still gathering."
+        extra = " Email threads loading…"
     if loading_sms and sms_n == 0:
-        extra += " Text messages are still gathering."
+        extra += " Text messages loading…"
     return f"I found {found} involving {who}{when}.{extra}"
 
 
@@ -180,7 +180,9 @@ def scoped_counts(
     story_n: int = 0,
     artifact_n: int = 0,
     calendar_n: int = 0,
-) -> dict[str, int]:
+    email_loading: bool = False,
+    sms_loading: bool = False,
+) -> dict[str, Any]:
     """One count object for Curator, pills, cards, buckets, and modal totals."""
     photos = max(0, int(photo_n or 0))
     videos = max(0, int(video_n or 0))
@@ -189,6 +191,7 @@ def scoped_counts(
     stories = max(0, int(story_n or 0))
     artifacts = max(0, int(artifact_n or 0))
     calendar = max(0, int(calendar_n or 0))
+    counts_final = (not email_loading) and (not sms_loading)
     return {
         "photos": photos,
         "videos": videos,
@@ -198,4 +201,120 @@ def scoped_counts(
         "artifacts": artifacts,
         "calendar": calendar,
         "communications": sms + threads,
+        "email_loading": bool(email_loading),
+        "sms_loading": bool(sms_loading),
+        "counts_final": bool(counts_final),
+    }
+
+
+def _fmt_n(n: int) -> str:
+    return f"{int(n):,}"
+
+
+def communications_parent_label(
+    *,
+    email_threads: int = 0,
+    sms: int = 0,
+    email_loading: bool = False,
+    sms_loading: bool = False,
+) -> str:
+    """Never present a partial Communications total as final."""
+    threads = max(0, int(email_threads or 0))
+    texts = max(0, int(sms or 0))
+    if email_loading and sms_loading:
+        return "Communications · loading…"
+    if sms_loading and not email_loading:
+        if threads:
+            return f"Communications · {_fmt_n(threads)} email · Text loading…"
+        return "Communications · Text loading…"
+    if email_loading and not sms_loading:
+        if texts:
+            return f"Communications · {_fmt_n(texts)} text · Email loading…"
+        return "Communications · Email loading…"
+    total = threads + texts
+    if total:
+        return f"Communications · {_fmt_n(total)}"
+    return "Communications"
+
+
+def email_pill_label(*, email_threads: int = 0, email_loading: bool = False) -> str:
+    if email_loading:
+        return "Email · loading…"
+    n = max(0, int(email_threads or 0))
+    return f"Email · {_fmt_n(n)}" if n else "Email"
+
+
+def text_pill_label(*, sms: int = 0, sms_loading: bool = False) -> str:
+    if sms_loading:
+        return "Text · loading…"
+    n = max(0, int(sms or 0))
+    return f"Text · {_fmt_n(n)}" if n else "Text"
+
+
+def comms_filter_may_refetch_sms(
+    *,
+    mixed_gallery: bool,
+    sms_pending: bool,
+    sms_cached: bool,
+) -> bool:
+    """Filter changes must not start a duplicate 10,000-row SMS retrieve."""
+    if mixed_gallery:
+        return False
+    if sms_pending or sms_cached:
+        return False
+    return True
+
+
+def visual_count_equation(
+    *,
+    immich_assets: int,
+    immich_photos: int = 0,
+    immich_videos: int = 0,
+    mb_photos: int = 0,
+    mb_videos: int = 0,
+    duplicates_suppressed: int = 0,
+    archived_trashed_deleted_unavailable: int = 0,
+    unsupported: int = 0,
+    person_mapping_diff: int = 0,
+    face_confidence_exclusions: int = 0,
+    date_filter_exclusions: int = 0,
+    mb_native_non_immich: int = 0,
+    pagination_or_window: int = 0,
+) -> dict[str, Any]:
+    """Immich person assets minus accounted gaps equals expected MB visuals."""
+    immich_n = max(0, int(immich_assets or 0))
+    split = max(0, int(immich_photos or 0)) + max(0, int(immich_videos or 0))
+    accounted = (
+        max(0, int(duplicates_suppressed or 0))
+        + max(0, int(archived_trashed_deleted_unavailable or 0))
+        + max(0, int(unsupported or 0))
+        + max(0, int(person_mapping_diff or 0))
+        + max(0, int(face_confidence_exclusions or 0))
+        + max(0, int(date_filter_exclusions or 0))
+        + max(0, int(pagination_or_window or 0))
+    )
+    expected_mb = immich_n - accounted + max(0, int(mb_native_non_immich or 0))
+    observed_mb = max(0, int(mb_photos or 0)) + max(0, int(mb_videos or 0))
+    unexplained = observed_mb - expected_mb
+    return {
+        "immich_assets": immich_n,
+        "immich_photos": max(0, int(immich_photos or 0)),
+        "immich_videos": max(0, int(immich_videos or 0)),
+        "immich_photo_video_split": split,
+        "mb_photos": max(0, int(mb_photos or 0)),
+        "mb_videos": max(0, int(mb_videos or 0)),
+        "mb_visual": observed_mb,
+        "duplicates_suppressed": max(0, int(duplicates_suppressed or 0)),
+        "archived_trashed_deleted_unavailable": max(
+            0, int(archived_trashed_deleted_unavailable or 0)
+        ),
+        "unsupported": max(0, int(unsupported or 0)),
+        "person_mapping_diff": max(0, int(person_mapping_diff or 0)),
+        "face_confidence_exclusions": max(0, int(face_confidence_exclusions or 0)),
+        "date_filter_exclusions": max(0, int(date_filter_exclusions or 0)),
+        "mb_native_non_immich": max(0, int(mb_native_non_immich or 0)),
+        "pagination_or_window": max(0, int(pagination_or_window or 0)),
+        "expected_mb_visual": expected_mb,
+        "unexplained": unexplained,
+        "ok": unexplained == 0,
     }

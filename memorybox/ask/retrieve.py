@@ -2388,7 +2388,7 @@ def merge_evidence_hits(*groups: list[EvidenceHit], limit: int = 20) -> list[Evi
 
 @_timed_provider("photos_ms")
 def search_photos(
-    plan: QueryPlan, photo: PhotoProvider, *, limit: int = 5000
+    plan: QueryPlan, photo: PhotoProvider, *, limit: int = 25000
 ) -> tuple[list[PhotoHit], dict[str, Any]]:
     """Search photos via PhotoProvider with I6/I7 identity authority rules.
 

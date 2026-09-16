@@ -1025,6 +1025,10 @@ def main(argv: list[str] | None = None) -> int:
         "i14-gallery-timings",
         help="Read-only Phase C prepared-comms timings (FlightSim requires allow flags)",
     )
+    sub.add_parser(
+        "i14-immich-reconcile",
+        help="Read-only Immich vs MemoryBox visual counts (FlightSim allow flag)",
+    )
 
     sub.add_parser(
         "i14-html-recovery-census",
@@ -2047,6 +2051,11 @@ def main(argv: list[str] | None = None) -> int:
         from memorybox.ops.i14_gallery_timings import main as gallery_timings_main
 
         return gallery_timings_main([])
+
+    if args.cmd == "i14-immich-reconcile":
+        from memorybox.ops.i14_immich_reconcile import main as immich_reconcile_main
+
+        return immich_reconcile_main([])
 
     if args.cmd == "i14-empty-body-audit":
         from memorybox.ops.i14_empty_body import main as empty_body_main

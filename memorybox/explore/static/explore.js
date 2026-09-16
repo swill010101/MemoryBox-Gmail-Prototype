@@ -22,7 +22,9 @@
     { id: "memory", label: "Memory" },
     { id: "photo", label: "Photos" },
     { id: "video", label: "Video" },
-    { id: "email", label: "Communications" }, // I7 Email/Text
+    { id: "email", label: "Communications" },
+    { id: "mail", label: "Email" },
+    { id: "sms", label: "Text" }, // I7 Email/Text
     { id: "calendar", label: "Calendar" },
     { id: "artifact", label: "Artifacts" },
     { id: "story", label: "Stories" },
@@ -418,6 +420,11 @@
       return false;
     }
     if (isSmsTextItem(item)) {
+      if (filter === "sms") {
+        if (attachmentsOnly && !itemAttachCount(item)) return false;
+        return true;
+      }
+      if (filter === "mail") return false;
       if (filter === "email") {
         if (!includeTexts) return false;
         if (attachmentsOnly && !itemAttachCount(item)) return false;
@@ -432,6 +439,11 @@
       return false;
     }
     if (isEmailItem(item)) {
+      if (filter === "mail") {
+        if (attachmentsOnly && !itemAttachCount(item)) return false;
+        return true;
+      }
+      if (filter === "sms") return false;
       if (filter === "email") {
         if (!includeEmail) return false;
         if (attachmentsOnly && !itemAttachCount(item)) return false;
@@ -741,7 +753,19 @@
 
   function setTypeFilter(id) {
     state.domain.typeFilter = id || "all";
-    if (id === "email") {
+    if (id === "mail") {
+      state.domain.memoryPresentation = false;
+      state.domain.includeEmail = true;
+      state.domain.includeTexts = false;
+      state.domain.emailPinned = true;
+      state.domain.textsPinned = false;
+    } else if (id === "sms") {
+      state.domain.memoryPresentation = false;
+      state.domain.includeEmail = false;
+      state.domain.includeTexts = true;
+      state.domain.emailPinned = false;
+      state.domain.textsPinned = true;
+    } else if (id === "email") {
       state.domain.memoryPresentation = false;
       if (state.domain.emailPinned || state.domain.textsPinned) {
         state.domain.includeEmail = Boolean(state.domain.emailPinned);
@@ -982,9 +1006,9 @@
     const shown = parts.length
       ? parts.join(", ")
       : `${archiveN} memor${archiveN === 1 ? "y" : "ies"}`;
-    if (state.domain.preparedComms || state.domain.preparedCommsPending) {
+    if (state.domain.preparedComms || state.domain.preparedCommsPending || state.domain.smsPending) {
       const tf = state.domain.typeFilter || "all";
-      if (tf === "all" || tf === "email" || tf === "calendar") {
+      if (tf === "all" || tf === "email" || tf === "mail" || tf === "sms" || tf === "calendar") {
         state.domain.summary = naturalCommsSummary(state.domain.preparedComms || {});
         return;
       }
@@ -1695,27 +1719,30 @@
     const artifacts = rawItems.filter((i) => String(i.type) === "artifact").length;
     const d = state.domain || {};
     const tf = d.typeFilter || "all";
-    const wantEmail = (tf === "all" || tf === "email") && Boolean(d.includeEmail);
-    const wantSms = (tf === "all" || tf === "email") && Boolean(d.includeTexts);
+    const commsFilter = tf === "all" || tf === "email" || tf === "mail" || tf === "sms";
+    const wantEmail = commsFilter && tf !== "sms" && Boolean(d.includeEmail !== false);
+    const wantSms = commsFilter && tf !== "mail" && Boolean(d.includeTexts !== false);
     const wantCal = tf === "all" || tf === "calendar" || (tf === "email" && Boolean(d.includeCalendar));
-    const sms = wantSms ? Number(d.smsMatchTotal || d.smsAvailable || 0) : 0;
-    const threads = wantEmail ? Number((pc && pc.scopedThreads) || 0) : 0;
+    const sc = d.scopedCounts || {};
+    const sms = wantSms ? Number(sc.sms || d.smsMatchTotal || d.smsAvailable || 0) : 0;
+    const threads = wantEmail ? Number(sc.email_threads || (pc && pc.scopedThreads) || 0) : 0;
     const calendar = wantCal
-      ? Number(d.calendarAvailable || 0)
+      ? Number(d.calendarAvailable || sc.calendar || 0)
       : 0;
     const who = personChipLabel();
     const when = year ? " during " + year : "";
     const parts = [];
     if (photos) parts.push(photos + " photo" + (photos === 1 ? "" : "s"));
     if (videos) parts.push(videos + " video" + (videos === 1 ? "" : "s"));
-    if (sms) parts.push(sms + " text message" + (sms === 1 ? "" : "s"));
+    if (threads) parts.push(threads.toLocaleString() + " email thread" + (threads === 1 ? "" : "s"));
+    if (sms) parts.push(sms.toLocaleString() + " text message" + (sms === 1 ? "" : "s"));
     if (stories) parts.push(stories + " Stor" + (stories === 1 ? "y" : "ies"));
     if (artifacts) parts.push(artifacts + " Artifact" + (artifacts === 1 ? "" : "s"));
     if (calendar) parts.push(calendar + " calendar event" + (calendar === 1 ? "" : "s"));
-    if (threads) parts.push(threads + " email thread" + (threads === 1 ? "" : "s"));
-    const loading = Boolean(d.preparedCommsPending);
+    const emailLoading = Boolean(d.preparedCommsPending || sc.email_loading);
+    const smsLoading = Boolean(d.smsPending || sc.sms_loading);
     if (!parts.length) {
-      if (loading) {
+      if (emailLoading || smsLoading) {
         return "I am gathering conversations involving " + who + when + ".";
       }
       return d._askSummary || "";
@@ -1724,7 +1751,8 @@
     if (parts.length === 2) found = parts[0] + " and " + parts[1];
     else if (parts.length > 2) found = parts.slice(0, -1).join(", ") + ", and " + parts[parts.length - 1];
     let extra = "";
-    if (loading && wantEmail && !threads) extra = " Email threads are still gathering.";
+    if (emailLoading && wantEmail && !threads) extra += " Email threads loading…";
+    if (smsLoading && wantSms && !sms) extra += " Text messages loading…";
     return "I found " + found + " involving " + who + when + "." + extra;
   }
 
@@ -1736,6 +1764,67 @@
   }
 
   let smsAbort = null;
+  let smsHydrateStore = { key: "", promise: null, data: null };
+
+  function smsHydrateKey(hint) {
+    const h = hint || (state && state.domain) || {};
+    const pid = String((h.person_ids || [])[0] || "");
+    const a = String(h.time_start || h.timeStart || "").slice(0, 10);
+    const b = String(h.time_end || h.timeEnd || "").slice(0, 10);
+    return pid + "|" + a + "|" + b;
+  }
+
+  function fmtCount(n) {
+    return Number(n || 0).toLocaleString();
+  }
+
+  function mergeScopedCounts(patch) {
+    if (!state.domain) return {};
+    const cur = Object.assign({}, state.domain.scopedCounts || {}, patch || {});
+    const smsLoading = Boolean(cur.sms_loading);
+    const emailLoading = Boolean(cur.email_loading);
+    cur.communications = Number(cur.sms || 0) + Number(cur.email_threads || 0);
+    cur.counts_final = !smsLoading && !emailLoading;
+    state.domain.scopedCounts = cur;
+    return cur;
+  }
+
+  function renderKeepingGalleryScroll() {
+    const g = document.getElementById("mb-explore-gallery");
+    const top = g ? g.scrollTop : 0;
+    const pids = ((state.domain && state.domain.person_ids) || []).join(",");
+    const t0 = state.domain && state.domain.timeStart;
+    const t1 = state.domain && state.domain.timeEnd;
+    render();
+    if (!state.domain) return;
+    if (((state.domain.person_ids || []).join(",") !== pids) || state.domain.timeStart !== t0 || state.domain.timeEnd !== t1) {
+      return;
+    }
+    if (g) g.scrollTop = top;
+  }
+
+  function setHydrateStatus() {
+    const el = document.getElementById("mb-hydrate-status");
+    if (!el || !state.domain) return;
+    const sc = state.domain.scopedCounts || {};
+    const bits = [];
+    if (sc.email_loading) bits.push("Email threads loading…");
+    else if (Number(sc.email_threads || 0)) bits.push(fmtCount(sc.email_threads) + " email threads");
+    if (sc.sms_loading) bits.push("Text messages loading…");
+    else if (Number(sc.sms || 0)) bits.push(fmtCount(sc.sms) + " text messages");
+    if (!sc.sms_loading && !sc.email_loading && Number(sc.communications || 0)) {
+      bits.push("Communications " + fmtCount(sc.communications));
+    }
+    const waitingFilter = Boolean(state.domain.smsFilterWaiting) && Boolean(state.domain.smsPending);
+    if (waitingFilter && bits.indexOf("Text messages loading…") < 0) bits.push("Text messages loading…");
+    if (!bits.length) {
+      el.hidden = true;
+      el.textContent = "";
+      return;
+    }
+    el.hidden = false;
+    el.textContent = bits.join(" · ");
+  }
 
   function abortPreparedFetch() {
     if (preparedAbort) {
@@ -1743,10 +1832,6 @@
       preparedAbort = null;
     }
     preparedCommsToken = "";
-    if (smsAbort) {
-      smsAbort.abort();
-      smsAbort = null;
-    }
   }
 
   function mintAskSession() {
@@ -1809,11 +1894,9 @@
       excluded: data.excluded || {},
       pageSize: Number(data.page_size || 80),
     };
-    state.domain.scopedCounts = Object.assign({}, state.domain.scopedCounts || {}, {
+    state.domain.scopedCounts = mergeScopedCounts({
       email_threads: Number(data.scoped_thread_total || 0),
-      communications:
-        Number(data.scoped_thread_total || 0) +
-        Number(state.domain.smsMatchTotal || state.domain.smsAvailable || 0),
+      email_loading: false,
     });
     const match = state.domain.preparedComms.match;
     if (match === "no_prepared_participant") {
@@ -1821,12 +1904,10 @@
         (state.domain._askSummary || "") +
         " Conversations are not linked for this person yet. Photos and video are unchanged."
       ).trim();
-    } else if (match === "linked_but_filtered") {
-      state.domain.summary = naturalCommsSummary(state.domain.preparedComms);
     } else {
       state.domain.summary = naturalCommsSummary(state.domain.preparedComms);
     }
-    render();
+    renderKeepingGalleryScroll();
   }
 
   function fetchPreparedBuckets() {
@@ -1876,51 +1957,87 @@
     }
   }
 
+  function applySmsHydrateData(data, meta) {
+    if (!data || data.cancelled || (data.token && data.token !== preparedCommsToken)) return;
+    if (!state.domain) return;
+    const t0 = Number((state.domain.pipelineMs && state.domain.pipelineMs.sms_hydrate_started_ms) || 0);
+    const now = typeof performance !== "undefined" ? performance.now() : 0;
+    state.domain.smsAvailable = Number(data.sms_available || 0);
+    state.domain.smsMatchTotal = Number(data.sms_match_total || data.sms_available || 0);
+    state.domain.smsHidden = Number(data.sms_hidden || 0);
+    state.domain.smsPending = false;
+    state.domain.smsFilterWaiting = false;
+    mergeScopedCounts({
+      sms: Number(data.sms_match_total || data.sms_available || 0),
+      sms_loading: false,
+    });
+    const extra = Array.isArray(data.items) ? data.items : [];
+    if (extra.length) {
+      const have = new Set(rawItems.map((it) => String(it.id || it.evidence_id || "")));
+      extra.forEach((it) => {
+        const k = String(it.id || it.evidence_id || "");
+        if (k && have.has(k)) return;
+        rawItems.push(it);
+      });
+    }
+    const pipe = Object.assign({}, state.domain.pipelineMs || {});
+    pipe.sms_query_ms = Number(data.query_ms || 0);
+    pipe.from_cache = Boolean(data.from_cache);
+    if (t0) pipe.sms_cards_rendered_ms = Math.round(now - t0);
+    pipe.counts_final_ms = Math.round(now - t0);
+    state.domain.pipelineMs = pipe;
+    renderKeepingGalleryScroll();
+  }
+
   function fetchSmsHydrate(hint) {
     const personId = String((hint.person_ids || [])[0] || "");
     const token = String(hint.prepared_comms_token || preparedCommsToken || "");
     if (!personId || !token) return;
-    if (smsAbort) smsAbort.abort();
+    const key = smsHydrateKey(hint);
+    state.domain.pipelineMs = Object.assign({}, state.domain.pipelineMs || {}, {
+      sms_hydrate_started_ms: typeof performance !== "undefined" ? performance.now() : 0,
+    });
+    if (smsHydrateStore.data && smsHydrateStore.key === key) {
+      const cached = Object.assign({}, smsHydrateStore.data, { token: token, from_cache: true, query_ms: 0 });
+      applySmsHydrateData(cached);
+      return;
+    }
+    if (smsHydrateStore.promise && smsHydrateStore.key === key) {
+      smsHydrateStore.promise.then((data) => {
+        if (data) applySmsHydrateData(Object.assign({}, data, { token: token }));
+      });
+      return;
+    }
+    if (smsAbort && smsHydrateStore.key && smsHydrateStore.key !== key) {
+      smsAbort.abort();
+      smsAbort = null;
+      smsHydrateStore = { key: "", promise: null, data: null };
+    }
     smsAbort = typeof AbortController !== "undefined" ? new AbortController() : null;
     const qs = new URLSearchParams({
       person_id: personId,
       token: token,
       ask_text: String((state.domain && state.domain.askText) || ""),
+      person_name: personChipLabel(),
     });
     if (hint.time_start) qs.set("date_from", String(hint.time_start).slice(0, 10));
     if (hint.time_end) qs.set("date_to", String(hint.time_end).slice(0, 10));
     const opts = { cache: "no-store" };
     if (smsAbort) opts.signal = smsAbort.signal;
-    fetch("/explore/api/sms-hydrate?" + qs.toString(), opts)
+    const p = fetch("/explore/api/sms-hydrate?" + qs.toString(), opts)
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
-        if (!data || data.cancelled || (data.token && data.token !== preparedCommsToken)) return;
-        if (!state.domain) return;
-        state.domain.smsAvailable = Number(data.sms_available || 0);
-        state.domain.smsMatchTotal = Number(data.sms_match_total || data.sms_available || 0);
-        state.domain.smsHidden = Number(data.sms_hidden || 0);
-        state.domain.scopedCounts = Object.assign({}, state.domain.scopedCounts || {}, {
-          sms: Number(data.sms_match_total || data.sms_available || 0),
-          communications:
-            Number((state.domain.preparedComms && state.domain.preparedComms.scopedThreads) || 0) +
-            Number(data.sms_match_total || data.sms_available || 0),
-        });
-        const extra = Array.isArray(data.items) ? data.items : [];
-        if (extra.length) {
-          const have = new Set(rawItems.map((it) => String(it.id || it.evidence_id || "")));
-          extra.forEach((it) => {
-            const k = String(it.id || it.evidence_id || "");
-            if (k && have.has(k)) return;
-            rawItems.push(it);
-          });
+        if (data && !data.cancelled) {
+          smsHydrateStore.data = data;
+          smsHydrateStore.key = key;
         }
-        renderFilters();
-        refreshCuratorFromVisible();
-        render();
-      })
-      .catch((err) => {
-        if (err && err.name === "AbortError") return;
+        return data;
       });
+    smsHydrateStore.key = key;
+    smsHydrateStore.promise = p;
+    p.then((data) => applySmsHydrateData(data)).catch((err) => {
+      if (err && err.name === "AbortError") return;
+    });
   }
 
   function renderCommsPager() {
@@ -2743,34 +2860,56 @@
   function filterPillCount(id) {
     const d = state.domain || {};
     const pc = d.preparedComms || {};
+    const sc = d.scopedCounts || {};
     const nOf = (t) => rawItems.filter((i) => String(i.type) === t).length;
     if (id === "photo") return nOf("photo") || null;
     if (id === "video") return nOf("video") || null;
     if (id === "story") return nOf("story") || null;
     if (id === "artifact") return nOf("artifact") || null;
-    if (id === "calendar") return Number(d.calendarAvailable || 0) || null;
-    if (id === "email") {
-      const sc = d.scopedCounts || {};
-      const tf = d.typeFilter || "all";
-      const threads =
-        tf === "all" || (tf === "email" && d.includeEmail !== false)
-          ? Number((pc.scopedThreads != null ? pc.scopedThreads : sc.email_threads) || 0)
-          : 0;
-      const sms =
-        tf === "all" || (tf === "email" && d.includeTexts !== false)
-          ? Number(d.smsMatchTotal || d.smsAvailable || sc.sms || 0)
-          : 0;
-      return threads + sms || null;
-    }
+    if (id === "calendar") return Number(d.calendarAvailable || sc.calendar || 0) || null;
     return null;
+  }
+
+  function filterPillLabel(f) {
+    const d = state.domain || {};
+    const sc = d.scopedCounts || {};
+    const pc = d.preparedComms || {};
+    const threads = Number(pc.scopedThreads != null ? pc.scopedThreads : sc.email_threads || 0);
+    const sms = Number(d.smsMatchTotal || d.smsAvailable || sc.sms || 0);
+    const emailLoading = Boolean(d.preparedCommsPending || sc.email_loading);
+    const smsLoading = Boolean(d.smsPending || sc.sms_loading);
+    if (f.id === "email") {
+      if (emailLoading && smsLoading) return "Communications · loading…";
+      if (smsLoading && !emailLoading) {
+        return threads
+          ? "Communications · " + threads.toLocaleString() + " email · Text loading…"
+          : "Communications · Text loading…";
+      }
+      if (emailLoading && !smsLoading) {
+        return sms
+          ? "Communications · " + sms.toLocaleString() + " text · Email loading…"
+          : "Communications · Email loading…";
+      }
+      const n = threads + sms;
+      return n ? "Communications · " + n.toLocaleString() : "Communications";
+    }
+    if (f.id === "mail") {
+      if (emailLoading) return "Email · loading…";
+      return threads ? "Email · " + threads.toLocaleString() : "Email";
+    }
+    if (f.id === "sms") {
+      if (smsLoading) return "Text · loading…";
+      return sms ? "Text · " + sms.toLocaleString() : "Text";
+    }
+    const n = filterPillCount(f.id);
+    return n != null ? f.label + " · " + n : f.label;
   }
 
   function renderFilters() {
     const el = document.getElementById("mb-explore-filters");
     el.innerHTML = FILTERS.map((f) => {
       const on = state.domain.typeFilter === f.id;
-      const n = filterPillCount(f.id);
-      const label = n != null ? f.label + " · " + n : f.label;
+      const label = filterPillLabel(f);
       return `<button type="button" data-filter="${f.id}" aria-pressed="${on}">${label}</button>`;
     }).join("");
     const uCount = undatedEligible().length;
@@ -2810,6 +2949,23 @@
       btn.addEventListener("click", () => {
         if (state.domain && state.domain.galleryLocked) return;
         const fid = btn.getAttribute("data-filter");
+        if (fid === "mail" || fid === "sms") {
+          const tClick = typeof performance !== "undefined" ? performance.now() : 0;
+          if (askNeedsPersonOrTime(currentAskText())) {
+            promptNeedPersonOrTime("communications");
+            return;
+          }
+          setTypeFilter(fid);
+          if (fid === "sms" && state.domain.smsPending) {
+            state.domain.smsFilterWaiting = true;
+            state.domain.pipelineMs = Object.assign({}, state.domain.pipelineMs || {}, {
+              filter_click_ms: tClick,
+              filter_loading_visible_ms: 0,
+            });
+          }
+          render();
+          return;
+        }
         if (fid === "email") {
           if (askNeedsPersonOrTime(currentAskText())) {
             promptNeedPersonOrTime("communications");
@@ -3393,8 +3549,10 @@
   function mergePreparedGallery(items, pc) {
     const d = state.domain || {};
     const filterEmail = d.typeFilter === "email";
-    const wantEmail = Boolean(d.includeEmail) && (d.typeFilter === "all" || filterEmail);
-    const wantSms = Boolean(d.includeTexts) && (d.typeFilter === "all" || filterEmail);
+    const filterMail = d.typeFilter === "mail";
+    const filterSms = d.typeFilter === "sms";
+    const wantEmail = Boolean(d.includeEmail) && (d.typeFilter === "all" || filterEmail || filterMail);
+    const wantSms = Boolean(d.includeTexts) && (d.typeFilter === "all" || filterEmail || filterSms);
     const grain = (pc && pc.grain) || "year";
     const buckets = wantEmail ? (pc && pc.buckets) || [] : [];
     const mem = memoryLikeItems(items);
@@ -3440,7 +3598,7 @@
     const sort = (state.gallery && state.gallery.sort) || "newest";
     keys.sort((a, b) => (sort === "oldest" ? a.localeCompare(b) : b.localeCompare(a)));
     const cards = keys.map((k) => makeBucketCard(k, byKey[k], grain));
-    if (filterEmail) {
+    if (filterEmail || filterMail || filterSms) {
       return cards.filter((c) => {
         const s = c._daySummary || {};
         if (wantEmail && Number(c._threadN || 0) > 0) return true;
@@ -3463,7 +3621,7 @@
   function galleryCardsFromVisible(items) {
     const d = state.domain || {};
     const pc = d.preparedComms;
-    const commsOn = Boolean(d.includeTexts || d.includeEmail || d.typeFilter === "email");
+    const commsOn = Boolean(d.includeTexts || d.includeEmail || d.typeFilter === "email" || d.typeFilter === "mail" || d.typeFilter === "sms");
     const calOn = Boolean(d.includeCalendar || d.typeFilter === "calendar");
     if (pc && (Array.isArray(pc.buckets) || pc.grain)) {
       return mergePreparedGallery(items, pc);
@@ -3916,8 +4074,26 @@
             (Number(state.domain.preparedComms.scopedThreads || 0) > 0 ||
               ((state.domain.preparedComms.buckets || []).length > 0))
         );
-        const needTexts = wantText && !haveVisibleTexts;
-        const needMail = wantEmail && !haveVisibleMail && !havePrepared;
+        const mixed = Boolean(state.domain.galleryMixedComms);
+        const needTexts = wantText && !haveVisibleTexts && !mixed && !state.domain.smsPending && !smsHydrateStore.data;
+        const needMail = wantEmail && !haveVisibleMail && !havePrepared && !mixed;
+        if (mixed || state.domain.smsPending || smsHydrateStore.data || smsHydrateStore.promise) {
+          const tClick = typeof performance !== "undefined" ? performance.now() : 0;
+          if (wantText && state.domain.smsPending) {
+            state.domain.smsFilterWaiting = true;
+            state.domain.pipelineMs = Object.assign({}, state.domain.pipelineMs || {}, {
+              filter_click_ms: tClick,
+              filter_loading_visible_ms: 0,
+            });
+          }
+          if (wantEmail || wantText) {
+            state.domain.typeFilter = wantText && !wantEmail ? "sms" : wantEmail && !wantText ? "mail" : "email";
+            state.domain.memoryPresentation = false;
+            syncTimelineToEligibleDatedExtent();
+          }
+          render();
+          return;
+        }
         if (needMail || needTexts) {
           if (wantEmail && wantText) presentWithoutRewritingAsk("communications");
           else if (wantEmail) presentWithoutRewritingAsk("email");
@@ -4416,6 +4592,7 @@
     renderCommsPager();
     renderMap();
     renderTimeline();
+    setHydrateStatus();
   }
 
   // ——— Shared Evidence Viewer + quick preview (MBUX §22.4–22.6) ———

@@ -1488,7 +1488,7 @@ class AskOrchestrator:
             # parallel calls RST person-library search (0 photos / 1 video).
             if plan.want_still or plan.want_photo:
                 _stage("Collecting photos")
-                photo_limit = 0 if R._bounded_period_tell(plan) else 5000
+                photo_limit = 0 if R._bounded_period_tell(plan) else 25000
                 photos, photo_status = R.search_photos(plan, self.photo, limit=photo_limit)
             spoken_videos: list[R.VideoHit] = []
             if getattr(plan, "want_spoken", False):
@@ -1610,7 +1610,7 @@ class AskOrchestrator:
                 if discovered.needs_refetch and discovered.resolved and not discovered.ambiguous:
                     _stage("Retrieving full trip span")
                     if plan.want_still or plan.want_photo:
-                        photo_limit = 0 if R._bounded_period_tell(plan) else 5000
+                        photo_limit = 0 if R._bounded_period_tell(plan) else 25000
                         photos, photo_status = R.search_photos(
                             plan, self.photo, limit=photo_limit
                         )

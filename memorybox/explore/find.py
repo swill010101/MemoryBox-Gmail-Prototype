@@ -5,7 +5,9 @@ Does not hard-code people or events into product logic.
 """
 from __future__ import annotations
 
+import copy
 import re
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -29,6 +31,8 @@ _CAL_ASK_RE = re.compile(
 # Explicit text ask / Add texts: year-fair slice up to this cap (90k is too many cards).
 _HIDDEN_SMS_CARD_SAMPLE = 800
 _VISIBLE_SMS_GALLERY_CAP = 10000
+_SMS_HYDRATE_LOCK = threading.Lock()
+_SMS_HYDRATE_CACHE: dict[tuple[str, str, str], dict[str, Any]] = {}
 _TELL_GALLERY_ITEM_CAP = 200
 _VISIBLE_EMAIL_GALLERY_CAP = 800
 _VISIBLE_CALENDAR_GALLERY_CAP = 800
@@ -1099,6 +1103,17 @@ def _attach_calendar(
     return out, sum(1 for i in out if _is_calendar_type(i.get("type")))
 
 
+def sms_hydrate_cache_key(
+    person_id: str, date_from: str | None = None, date_to: str | None = None
+) -> tuple[str, str, str]:
+    return (str(person_id or ""), str(date_from or "")[:10], str(date_to or "")[:10])
+
+
+def clear_sms_hydrate_cache() -> None:
+    with _SMS_HYDRATE_LOCK:
+        _SMS_HYDRATE_CACHE.clear()
+
+
 def hydrate_sms_payload(
     *,
     person_id: str,
@@ -1111,7 +1126,25 @@ def hydrate_sms_payload(
     from memorybox.explore.prepared_comms import token_live
 
     if token and not token_live(token):
-        return {"ok": True, "cancelled": True, "token": token, "items": [], "sms_available": 0}
+        return {
+            "ok": True,
+            "cancelled": True,
+            "token": token,
+            "items": [],
+            "sms_available": 0,
+            "from_cache": False,
+            "query_ms": 0,
+        }
+    key = sms_hydrate_cache_key(person_id, date_from, date_to)
+    with _SMS_HYDRATE_LOCK:
+        cached = _SMS_HYDRATE_CACHE.get(key)
+    if cached:
+        out = copy.deepcopy(cached)
+        out["token"] = token
+        out["from_cache"] = True
+        out["query_ms"] = 0
+        return out
+    t0 = time.perf_counter()
     plan = {
         "person_ids": [person_id] if person_id else [],
         "person_names": [person_name] if person_name else [],
@@ -1129,15 +1162,20 @@ def hydrate_sms_payload(
         mixed_gallery=True,
     )
     visible = [i for i in items if not i.get("gallery_default_hidden")]
-    return {
+    payload = {
         "ok": True,
         "cancelled": False,
-        "token": token,
         "items": visible,
         "sms_available": int(sms_available or 0),
         "sms_hidden": int(sms_hidden or 0),
         "sms_match_total": int(sms_available or 0),
+        "from_cache": False,
+        "query_ms": int((time.perf_counter() - t0) * 1000),
     }
+    with _SMS_HYDRATE_LOCK:
+        _SMS_HYDRATE_CACHE[key] = copy.deepcopy(payload)
+    payload["token"] = token
+    return payload
 
 
 def build_explore_find(
@@ -1259,7 +1297,7 @@ def build_explore_find(
     sms_pending = False
     t_sms0 = time.perf_counter()
     if not tell_mode or show_sms or show_email or show_calendar:
-        if use_prepared and not show_sms:
+        if use_prepared:
             sms_pending = True
         else:
             items, sms_available, sms_hidden = _attach_hidden_sms(
@@ -1328,6 +1366,8 @@ def build_explore_find(
             story_n=sum(1 for i in visible_items if i.get("type") == "story"),
             artifact_n=sum(1 for i in visible_items if i.get("type") == "artifact"),
             calendar_n=int(calendar_available or 0),
+            email_loading=bool(use_prepared),
+            sms_loading=bool(sms_pending),
         )
         summary = curator_gallery_sentence(
             person_label=who,
@@ -1456,6 +1496,8 @@ def build_explore_find(
                 story_n=sum(1 for i in visible_items if i.get("type") == "story"),
                 artifact_n=sum(1 for i in visible_items if i.get("type") == "artifact"),
                 calendar_n=int(calendar_available or 0),
+                email_loading=bool(use_prepared),
+                sms_loading=bool(sms_pending),
             )
             if not tell_mode
             else {},

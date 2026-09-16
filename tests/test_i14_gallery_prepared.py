@@ -544,7 +544,7 @@ class ExploreFind(unittest.TestCase):
         self.assertEqual(payload["explore_state"]["sms_match_total"], 0)
         sms = [i for i in payload["items"] if i.get("type") == "sms"]
         self.assertEqual(sms, [])
-        self.assertIn("gathering", payload["summary"].lower())
+        self.assertIn("loading", payload["summary"].lower())
         self.assertNotIn("retrieval", payload["summary"].lower())
         self.assertNotIn("80 of", payload["summary"])
 
