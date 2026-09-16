@@ -2,7 +2,8 @@
 
 **Status:** Founder authorized apply 040 and load one unpublished v3 generation. **Not authorized to activate or publish.** Do not start I11A.  
 **Date:** 2026-09-16  
-**SHA at authorization:** `feade9f` pre-load gate; load SHA follows this file.
+**SHA at authorization:** `960e0ca`  
+**Load result:** unpublished v3 `ok=true`; v1 remains active; v2 remains unpublished validated; not activated.
 
 ## Confirm strings
 
