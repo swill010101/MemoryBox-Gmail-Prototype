@@ -26,6 +26,24 @@ class EmptyBody(unittest.TestCase):
         self.assertEqual(c["category"], "quoted_history_only")
         self.assertEqual(c["disposition"], "correct_empty")
 
+    def test_stored_short_authored_is_not_unavailable(self) -> None:
+        c = classify_empty_prepared(
+            body_text="Thanks\n\nOn Thu wrote:\n> prior",
+            stored_cleaned="Thanks",
+            from_person="Sue",
+        )
+        self.assertEqual(c["disposition"], "authored_prepared")
+
+    def test_stored_ed_signoff_is_not_voice_or_unavailable(self) -> None:
+        c = classify_empty_prepared(
+            body_text="Ed,",
+            stored_cleaned="Ed,",
+            from_person="Tom",
+        )
+        self.assertEqual(c["kind"], "signature_closing")
+        self.assertNotEqual(c["disposition"], "prepared_text_unavailable")
+        self.assertNotEqual(c["disposition"], "authored_prepared")
+
     def test_cleanup_removed_meaningful_before_quote(self) -> None:
         raw = (
             "I am so sorry to hear this news about Peggy.\n\n"

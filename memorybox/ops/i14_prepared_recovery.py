@@ -10,6 +10,7 @@ from typing import Any
 from memorybox.ops.i14_dsn_guard import ProductionDSNError, refuse_live_dsn
 from memorybox.ops.i14_peggy_preview import _compact_thread_messages
 from memorybox.ops.i14_prepared_loader import _schema_message_fields
+from memorybox.ops.i14_prepared_display import classify_stored_prepared, is_displayable
 from memorybox.ops.i14_prepared_text import (
     HOTMAIL_DATE_FROM_TO_SUBJECT,
     select_authored_source,
@@ -52,19 +53,29 @@ def disposition_for(
     quote_history_removed: bool,
     method: str,
 ) -> str:
-    if source_is_meaningful(cleaned):
+    from memorybox.ops.i14_prepared_text import prepare_message_text
+
+    if is_displayable(classify_stored_prepared(cleaned)):
         return "authored_prepared"
-    if has_attachments and not source_is_meaningful(source_text):
-        return "attachment_only"
-    if source_is_meaningful(source_text) and not source_is_meaningful(cleaned):
+    prepared_source = str(prepare_message_text(source_text or "").authored or "")
+    source_displayable = is_displayable(classify_stored_prepared(prepared_source))
+    if source_displayable and not is_displayable(classify_stored_prepared(cleaned)):
         method_l = str(method or "")
         if quote_history_removed or "hotmail" in method_l:
             return "cleanup_removed_meaningful"
         return "prepared_text_unavailable"
+    if str(cleaned or "").strip() and not is_displayable(classify_stored_prepared(cleaned)):
+        return "correctly_empty"
+    if has_attachments and not str(source_text or "").strip():
+        return "attachment_only"
     if quote_history_removed or str(method or "").startswith("explicit_forward"):
         return "correctly_empty"
     if not (source_text or "").strip():
         return "correctly_empty"
+    if not source_displayable:
+        return "correctly_empty"
+    if has_attachments:
+        return "attachment_only"
     return "prepared_text_unavailable"
 
 
@@ -243,7 +254,7 @@ def run_census(conn: Any) -> dict[str, Any]:
             )
             stored_empty = not str(rec.get("cleaned_authored_text") or "").strip()
             cleaned = str(fields.get("cleaned") or row.get("cleaned_body") or "")
-            authored_ok = source_is_meaningful(cleaned)
+            authored_ok = is_displayable(classify_stored_prepared(cleaned))
             if stored_empty and authored_ok:
                 if src_kind == "html":
                     recovered_html += 1
@@ -258,8 +269,8 @@ def run_census(conn: Any) -> dict[str, Any]:
                 quote_history_removed=bool(row.get("quoted_removed")),
                 method=str(row.get("clean_method") or ""),
             )
-            if d == "prepared_text_unavailable" and source_is_meaningful(
-                str(row.get("raw_body") or "")
+            if d == "prepared_text_unavailable" and is_displayable(
+                classify_stored_prepared(str(row.get("raw_body") or ""))
             ):
                 unavailable_from_meaningful_source += 1
             disp[d] = disp.get(d, 0) + 1

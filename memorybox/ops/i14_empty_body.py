@@ -10,6 +10,13 @@ from typing import Any
 
 from memorybox.explore.gallery_scope import empty_prepared_body_notice
 from memorybox.ops.i14_dsn_guard import ProductionDSNError, refuse_live_dsn
+from memorybox.ops.i14_prepared_display import (
+    KIND_BLANK,
+    KIND_DISPLAYABLE_AUTHORED,
+    classify_stored_prepared,
+    empty_category_for_kind,
+    is_displayable,
+)
 from memorybox.ops.i14_prepared_text import (
     TRACKING_HINT,
     _cut_reply_history,
@@ -19,6 +26,7 @@ from memorybox.ops.i14_prepared_text import (
 )
 
 CATEGORIES = (
+    "authored_prepared",
     "original_genuinely_empty",
     "attachment_only",
     "quoted_history_only",
@@ -55,14 +63,27 @@ def classify_empty_prepared(
     commercial_class: str = "",
     subject: str = "",
     forward_status: str = "",
+    stored_cleaned: str | None = None,
+    from_person: str = "",
 ) -> dict[str, str]:
+    if stored_cleaned is not None:
+        stored_kind = classify_stored_prepared(stored_cleaned, from_person=from_person)
+        if is_displayable(stored_kind):
+            return {
+                "category": "authored_prepared",
+                "disposition": "authored_prepared",
+                "kind": stored_kind,
+            }
+        if str(stored_cleaned or "").strip() and not is_displayable(stored_kind):
+            cat, disp = empty_category_for_kind(stored_kind)
+            return {"category": cat, "disposition": disp, "kind": stored_kind}
+
     orig = str(body_text or "").strip()
     html_text = html_to_text(body_html)
     orig_m = meaningful(orig)
-    html_m = meaningful(html_text)
     commercial = str(commercial_class or "")
 
-    if not orig_m and not html_m:
+    if not orig and not html_text.strip():
         if has_attachments:
             return {
                 "category": "attachment_only",
@@ -73,9 +94,12 @@ def classify_empty_prepared(
             "disposition": "correct_empty",
         }
 
-    if html_only or (html_m and not orig_m):
+    if html_only or (html_text.strip() and not orig):
         html_prep = prepare_message_text(html_text, subject=subject)
-        if meaningful(html_prep.authored):
+        html_kind = classify_stored_prepared(
+            str(html_prep.authored or ""), from_person=from_person
+        )
+        if is_displayable(html_kind):
             return {
                 "category": "html_only_or_alt_part",
                 "disposition": "defect",
@@ -85,38 +109,46 @@ def classify_empty_prepared(
                 "category": "quoted_history_only",
                 "disposition": "correct_empty",
             }
+        if html_kind not in {KIND_DISPLAYABLE_AUTHORED, KIND_BLANK}:
+            cat, disp = empty_category_for_kind(html_kind)
+            return {"category": cat, "disposition": disp, "kind": html_kind}
         return {
             "category": "html_only_or_alt_part",
             "disposition": "safe_nondisplayable",
         }
 
-    source = orig if orig_m else html_text
+    source = orig if orig else html_text
     prepared = prepare_message_text(source, subject=subject)
     authored = str(prepared.authored or "").strip()
-    if meaningful(authored):
+    authored_kind = classify_stored_prepared(authored, from_person=from_person)
+    if is_displayable(authored_kind):
         return {
             "category": "cleanup_removed_meaningful",
             "disposition": "prepared_text_unavailable",
+            "kind": authored_kind,
         }
+    if authored and not is_displayable(authored_kind):
+        cat, disp = empty_category_for_kind(authored_kind)
+        return {"category": cat, "disposition": disp, "kind": authored_kind}
 
     if "\ufffd" in orig or re.search(r"(?i)^=\?utf-8\?", orig[:120]):
-        if not meaningful(authored):
-            return {
-                "category": "encoding_or_parser_failure",
-                "disposition": "safe_nondisplayable",
-            }
+        return {
+            "category": "encoding_or_parser_failure",
+            "disposition": "safe_nondisplayable",
+        }
 
     if str(forward_status or "").startswith("relay") or (
-        prepared.method.startswith("explicit_forward") and not meaningful(authored)
+        prepared.method.startswith("explicit_forward") and not is_displayable(authored_kind)
     ):
         return {
             "category": "forward_history_only",
             "disposition": "correct_empty",
         }
 
-    if prepared.quote_history_removed and not meaningful(authored):
+    if prepared.quote_history_removed and not is_displayable(authored_kind):
         before, _, _ = _cut_reply_history(source)
-        if meaningful(before):
+        before_kind = classify_stored_prepared(before, from_person=from_person)
+        if is_displayable(before_kind):
             return {
                 "category": "cleanup_removed_meaningful",
                 "disposition": "prepared_text_unavailable",
@@ -132,13 +164,13 @@ def classify_empty_prepared(
             "disposition": "correct_empty",
         }
 
-    if prepared.urls_stripped and orig_m and not meaningful(authored):
+    if prepared.urls_stripped and orig_m and not is_displayable(authored_kind):
         return {
             "category": "commercial_or_automated_shell",
             "disposition": "correct_empty",
         }
 
-    if orig_m and not meaningful(authored):
+    if orig_m and not is_displayable(authored_kind):
         return {
             "category": "cleanup_removed_meaningful",
             "disposition": "prepared_text_unavailable",
@@ -167,6 +199,8 @@ def notice_for(category: str, *, has_attachments: bool = False) -> str:
         return "This message is forwarded or quoted history only. There is no new authored text."
     if category == "commercial_or_automated_shell":
         return "This message has no family authored text."
+    if category == "authored_prepared":
+        return ""
     if category == "cleanup_removed_meaningful":
         return (
             "Prepared text is unavailable. Open the immutable original. "
@@ -232,6 +266,7 @@ def run_audit(conn: Any) -> dict[str, Any]:
             commercial_class=str(rec["commercial_class"] or ""),
             subject=str(rec["subject"] or ""),
             forward_status=str(rec["forward_status"] or ""),
+            stored_cleaned="",
         )
         cat = cls["category"]
         b = buckets[cat]

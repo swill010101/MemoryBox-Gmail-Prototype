@@ -322,7 +322,7 @@ def _ledger(conn: Any) -> Any:
 
 def count_loaded_dispositions(conn: Any, gid: Any) -> dict[str, int]:
     from memorybox.ops.i14_empty_body import classify_empty_prepared
-    from memorybox.ops.i14_prepared_text import source_is_meaningful
+    from memorybox.ops.i14_prepared_display import is_displayable, classify_stored_prepared
 
     rows = conn.execute(
         """
@@ -347,6 +347,7 @@ def count_loaded_dispositions(conn: Any, gid: Any) -> dict[str, int]:
         "cleanup_removed_meaningful": 0,
         "unexplained": 0,
         "blank_voice": 0,
+        "unavailable_and_voice": 0,
     }
     correct_empty_cats = {
         "original_genuinely_empty",
@@ -354,12 +355,16 @@ def count_loaded_dispositions(conn: Any, gid: Any) -> dict[str, int]:
         "forward_history_only",
         "commercial_or_automated_shell",
         "other_known",
+        "encoding_or_parser_failure",
     }
+    unavailable_cats = {"cleanup_removed_meaningful", "html_only_or_alt_part"}
     for rec in rows:
         cleaned = str(rec.get("cleaned_authored_text") or "")
-        if rec.get("voice_corpus") and not cleaned.strip():
+        voice = bool(rec.get("voice_corpus"))
+        if voice and not cleaned.strip():
             out["blank_voice"] += 1
-        if source_is_meaningful(cleaned):
+        kind = classify_stored_prepared(cleaned)
+        if is_displayable(kind):
             out["authored_prepared"] += 1
             continue
         payload = rec.get("payload_json") or {}
@@ -378,9 +383,17 @@ def count_loaded_dispositions(conn: Any, gid: Any) -> dict[str, int]:
             commercial_class=str(rec.get("commercial_class") or ""),
             subject=str(rec.get("subject") or ""),
             forward_status=str(rec.get("forward_status") or ""),
+            stored_cleaned=cleaned,
         )
         cat = str(cls.get("category") or "")
-        if cat == "attachment_only":
+        disp = str(cls.get("disposition") or "")
+        if voice and (
+            disp == "prepared_text_unavailable" or cat in unavailable_cats
+        ):
+            out["unavailable_and_voice"] += 1
+        if cat == "authored_prepared":
+            out["authored_prepared"] += 1
+        elif cat == "attachment_only":
             out["attachment_only"] += 1
         elif cat == "cleanup_removed_meaningful":
             out["cleanup_removed_meaningful"] += 1

@@ -26,6 +26,13 @@ from tests.test_p2_i14_lineage_pg import SQL_001, SQL_035, _DisposablePg, _apply
 SQL_037 = Path(__file__).resolve().parents[1] / "memorybox" / "migrations" / "037_p2_i14_prepared_evidence_ref_scale.sql"
 SQL_038 = Path(__file__).resolve().parents[1] / "memorybox" / "migrations" / "038_p2_i14_voice_without_recipient_identity.sql"
 SQL_039 = Path(__file__).resolve().parents[1] / "memorybox" / "migrations" / "039_p2_i14_voice_requires_prepared_text.sql"
+SQL_040_PROPOSED = (
+    Path(__file__).resolve().parents[1]
+    / "docs"
+    / "prd"
+    / "p2-i14"
+    / "040_p2_i14_voice_requires_displayable_authored.PROPOSED.sql"
+)
 
 RFC_SQL = """
 CREATE TABLE IF NOT EXISTS communication_rfc_ids (
@@ -868,6 +875,127 @@ class PreparedLoaderPg(_DisposablePg):
                 (gid,),
             ).fetchone()["n"]
             self.assertEqual(n, 1)
+
+    def test_founder_short_text_load_and_proposed_040(self) -> None:
+        self._require_dsn()
+        from memorybox.ops.i14_prepared_load_prod import count_loaded_dispositions
+
+        with psycopg.connect(self.dsn, row_factory=dict_row, connect_timeout=5) as conn:
+            self._wipe(conn)
+            src = self._source(conn)
+            ledger, _, other = self._ledger(conn)
+            add_confirmed_address(
+                ledger, address="sue@example.test", person_id=str(other), label="Sue Will"
+            )
+            cases = (
+                ("<thanks@example.test>", "Thanks", "sue@example.test", "Thanks"),
+                ("<why@example.test>", "??????", "sue@example.test", "??????"),
+                ("<ok@example.test>", "Ok", "sue@example.test", "Ok"),
+                ("<emoji@example.test>", "👍🎉🙌🏖", "sue@example.test", "👍🎉🙌🏖"),
+                ("<ed@example.test>", "Ed,", "tom@example.test", ""),
+                (
+                    "<frag@example.test>",
+                    "A a ml\n\n________________________________",
+                    "tom@example.test",
+                    "",
+                ),
+                ("<line@example.test>", "________________________________", "tom@example.test", ""),
+            )
+            for i, (rfc, body, frm, _want) in enumerate(cases):
+                payload = _payload(
+                    rfc=rfc,
+                    body_text=body,
+                    from_addr=frm,
+                    to_addr="peggy@example.test",
+                    sent_at=f"2018-03-15T17:16:{i:02d}+00:00",
+                    content_hash=_hash(rfc + body),
+                )
+                payload["from_parsed"] = [
+                    {
+                        "address": frm,
+                        "normalized": frm,
+                        "display_name": "Sue" if frm.startswith("sue") else "Tom",
+                    }
+                ]
+                self._evidence(conn, src, payload, summary=rfc)
+            conn.commit()
+            loaded = run_load(conn, read_source_messages(conn, [src]), ledger, dsn=self.dsn)
+            self.assertTrue(loaded["ok"])
+            gid = loaded["generation_id"]
+            stored = list(
+                conn.execute(
+                    """
+                    SELECT cleaned_authored_text, voice_corpus
+                      FROM comms_prepared_messages
+                     ORDER BY sent_at
+                    """
+                ).fetchall()
+            )
+            self.assertEqual(stored[0]["cleaned_authored_text"], "Thanks")
+            self.assertTrue(stored[0]["voice_corpus"])
+            self.assertEqual(stored[1]["cleaned_authored_text"], "??????")
+            self.assertTrue(stored[1]["voice_corpus"])
+            self.assertEqual(stored[2]["cleaned_authored_text"], "Ok")
+            self.assertTrue(stored[2]["voice_corpus"])
+            self.assertEqual(stored[3]["cleaned_authored_text"], "👍🎉🙌🏖")
+            self.assertTrue(stored[3]["voice_corpus"])
+            self.assertFalse(str(stored[4]["cleaned_authored_text"] or "").strip())
+            self.assertFalse(stored[4]["voice_corpus"])
+            self.assertFalse(str(stored[5]["cleaned_authored_text"] or "").strip())
+            self.assertFalse(stored[5]["voice_corpus"])
+            self.assertFalse(str(stored[6]["cleaned_authored_text"] or "").strip())
+            self.assertFalse(stored[6]["voice_corpus"])
+            counts = count_loaded_dispositions(conn, gid)
+            self.assertEqual(counts["blank_voice"], 0)
+            self.assertEqual(counts["unavailable_and_voice"], 0)
+            self.assertEqual(counts["authored_prepared"], 4)
+            conn.execute(
+                """
+                UPDATE comms_prepared_messages
+                   SET cleaned_authored_text = 'Ed,',
+                       voice_corpus = TRUE,
+                       quote_quality = 'clean',
+                       authorship = 'authenticated_focal'
+                 WHERE id = (
+                     SELECT id FROM comms_prepared_messages
+                      WHERE generation_id = %s
+                        AND length(btrim(coalesce(cleaned_authored_text, ''))) = 0
+                      ORDER BY sent_at
+                      LIMIT 1
+                 )
+                """,
+                (gid,),
+            )
+            conn.commit()
+            try:
+                conn.execute("SELECT comms_prepared_assert_generation_ready(%s)", (gid,))
+            except psycopg.Error:
+                conn.rollback()
+                self.fail("039 must still allow nonblank junk voice; 040 is the stronger gate")
+            conn.execute(SQL_040_PROPOSED.read_text(encoding="utf-8"))
+            conn.commit()
+            try:
+                conn.execute("SELECT comms_prepared_assert_generation_ready(%s)", (gid,))
+                self.fail("expected voice_requires_displayable_authored_prepared_text")
+            except psycopg.Error as exc:
+                self.assertIn("voice_requires_displayable_authored_prepared_text", str(exc))
+            conn.rollback()
+            conn.execute(
+                """
+                UPDATE comms_prepared_messages
+                   SET cleaned_authored_text = '??????',
+                       voice_corpus = TRUE,
+                       quote_quality = 'clean',
+                       authorship = 'authenticated_focal'
+                 WHERE generation_id = %s
+                """,
+                (gid,),
+            )
+            conn.commit()
+            conn.execute("SELECT comms_prepared_assert_generation_ready(%s)", (gid,))
+            conn.execute(SQL_039.read_text(encoding="utf-8"))
+            conn.commit()
+
 
 
 if __name__ == "__main__":

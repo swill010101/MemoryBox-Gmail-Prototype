@@ -35,7 +35,7 @@ from memorybox.ops.i14_thread_review import (
     parse_sent_at,
 )
 
-ALGO_VERSION = "i14-prepared-email-v2"
+ALGO_VERSION = "i14-prepared-email-v3"
 MISSING_TS = datetime(1970, 1, 1, tzinfo=timezone.utc)
 HTTP_SUBSTRING = re.compile(r"(?i)https?://\S*")
 
@@ -269,10 +269,12 @@ def _schema_message_fields(msg: dict[str, Any]) -> dict[str, Any]:
     quote = _quote_quality(msg)
     commercial = COMMERCIAL_MAP.get(str(msg.get("commercial_class") or "not_commercial"), "not_commercial")
     direction = DIR_MAP.get(str(msg.get("direction") or ""), "unresolved")
-    # Household authored voice is authenticated From + clean quote + nonblank
-    # prepared text. Blank cleaned rows must not enter the voice corpus.
+    # Household authored voice is authenticated From + clean quote + displayable
+    # stored cleaned text. Displayability and voice are separate; junk is blanked
+    # after the voice decision so it cannot remain both empty and voice.
     fwd_status, fwd_omitted, fwd_block = _forward_fields(msg)
     sent = parse_sent_at(str(msg.get("timestamp") or msg.get("sent_at") or "")) or MISSING_TS
+    from memorybox.ops.i14_prepared_display import display_and_voice_for_stored
     from memorybox.ops.i14_prepared_text import sanitize_prepared
 
     cleaned, url_a = sanitize_prepared(str(msg.get("cleaned_body") or ""))
@@ -282,7 +284,19 @@ def _schema_message_fields(msg: dict[str, Any]) -> dict[str, Any]:
     if fwd_status == "none":
         fwd2 = ""
         fwd_omitted = ""
-    voice = from_auth and quote == "clean" and bool(cleaned2.strip())
+    from_label = ""
+    for party in msg.get("from_parties") or []:
+        parts = str(party.get("label") or "").split()
+        from_label = parts[0] if parts else ""
+        break
+    decision = display_and_voice_for_stored(
+        cleaned2,
+        from_authenticated=from_auth,
+        quote_quality=quote,
+        from_person=from_label,
+    )
+    voice = bool(decision["voice_corpus"])
+    cleaned2 = str(decision["stored_cleaned"] or "")
     urls = bool(msg.get("urls_stripped")) or url_a or url_f or cleaned2 != cleaned or fwd2 != fwd_block
     return {
         "authorship": authorship,
