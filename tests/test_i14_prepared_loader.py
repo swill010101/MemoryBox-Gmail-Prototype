@@ -26,13 +26,13 @@ from tests.test_p2_i14_lineage_pg import SQL_001, SQL_035, _DisposablePg, _apply
 SQL_037 = Path(__file__).resolve().parents[1] / "memorybox" / "migrations" / "037_p2_i14_prepared_evidence_ref_scale.sql"
 SQL_038 = Path(__file__).resolve().parents[1] / "memorybox" / "migrations" / "038_p2_i14_voice_without_recipient_identity.sql"
 SQL_039 = Path(__file__).resolve().parents[1] / "memorybox" / "migrations" / "039_p2_i14_voice_requires_prepared_text.sql"
-SQL_040_PROPOSED = (
+SQL_040 = (
     Path(__file__).resolve().parents[1]
-    / "docs"
-    / "prd"
-    / "p2-i14"
-    / "040_p2_i14_voice_requires_displayable_authored.PROPOSED.sql"
+    / "memorybox"
+    / "migrations"
+    / "040_p2_i14_voice_requires_displayable_authored.sql"
 )
+SQL_040_PROPOSED = SQL_040
 
 RFC_SQL = """
 CREATE TABLE IF NOT EXISTS communication_rfc_ids (
@@ -1335,6 +1335,96 @@ class PreparedLoaderPg(_DisposablePg):
                 (v3,),
             ).fetchone()
             self.assertFalse(v3_state["is_active"])
+
+    def test_unpublished_v3_does_not_mutate_v1_or_v2_on_disposable_postgres(self) -> None:
+        self._require_dsn()
+        with psycopg.connect(self.dsn, row_factory=dict_row, connect_timeout=5) as conn:
+            self._wipe(conn)
+            src = self._source(conn)
+            ledger, focal, _ = self._ledger(conn)
+            v1 = self._activatable_generation(
+                conn,
+                src=src,
+                person_id=focal,
+                algo="i14-prepared-email-v1",
+                rfc="<keep-v1@example.test>",
+                cleaned="Thanks",
+                voice=True,
+                disposition=None,
+                display_id="T-8001",
+            )
+            conn.execute("SELECT comms_prepared_activate_generation(%s)", (v1,))
+            conn.commit()
+            v2 = self._activatable_generation(
+                conn,
+                src=src,
+                person_id=focal,
+                algo="i14-prepared-email-v2",
+                rfc="<keep-v2@example.test>",
+                cleaned="Thanks",
+                voice=True,
+                disposition=None,
+                display_id="T-8002",
+            )
+            v2_before = conn.execute(
+                """
+                SELECT status, published, is_active, checksum,
+                       (SELECT COUNT(*)::int FROM comms_prepared_messages
+                         WHERE generation_id = %s) AS n
+                  FROM comms_prepared_generations WHERE id = %s
+                """,
+                (v2, v2),
+            ).fetchone()
+            src3 = self._source(conn, uri="synthetic:mbox-v3")
+            payload = _payload(
+                rfc="<v3-keep@example.test>",
+                body_text="Thanks",
+                content_hash=_hash("v3-keep"),
+            )
+            self._evidence(conn, src3, payload, summary="v3")
+            conn.commit()
+            loaded = run_load(conn, read_source_messages(conn, [src3]), ledger, dsn=self.dsn)
+            self.assertTrue(loaded["ok"])
+            v3 = loaded["generation_id"]
+            self.assertEqual(loaded["algo_version"], "i14-prepared-email-v3")
+            self.assertNotEqual(v3, v1)
+            self.assertNotEqual(v3, v2)
+            active = conn.execute(
+                "SELECT id, algo_version FROM comms_prepared_generations WHERE is_active"
+            ).fetchone()
+            self.assertEqual(active["id"], v1)
+            self.assertEqual(active["algo_version"], "i14-prepared-email-v1")
+            v2_after = conn.execute(
+                """
+                SELECT status, published, is_active, checksum,
+                       (SELECT COUNT(*)::int FROM comms_prepared_messages
+                         WHERE generation_id = %s) AS n
+                  FROM comms_prepared_generations WHERE id = %s
+                """,
+                (v2, v2),
+            ).fetchone()
+            self.assertEqual(v2_after["status"], v2_before["status"])
+            self.assertEqual(v2_after["published"], v2_before["published"])
+            self.assertEqual(v2_after["is_active"], v2_before["is_active"])
+            self.assertEqual(v2_after["checksum"], v2_before["checksum"])
+            self.assertEqual(v2_after["n"], v2_before["n"])
+            v3_row = conn.execute(
+                """
+                SELECT status, published, is_active, algo_version, prepared_text_disposition
+                  FROM comms_prepared_generations g
+                  JOIN comms_prepared_messages m ON m.generation_id = g.id
+                 WHERE g.id = %s
+                """,
+                (v3,),
+            ).fetchone()
+            self.assertEqual(v3_row["status"], "validated")
+            self.assertFalse(v3_row["published"])
+            self.assertFalse(v3_row["is_active"])
+            self.assertEqual(v3_row["algo_version"], "i14-prepared-email-v3")
+            self.assertEqual(v3_row["prepared_text_disposition"], "authored_displayable")
+            conn.execute("SELECT comms_prepared_assert_generation_ready(%s)", (v1,))
+            conn.execute("SELECT comms_prepared_assert_generation_ready(%s)", (v2,))
+            conn.execute("SELECT comms_prepared_assert_generation_ready(%s)", (v3,))
 
 
 if __name__ == "__main__":

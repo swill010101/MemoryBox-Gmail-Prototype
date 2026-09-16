@@ -1,9 +1,3 @@
--- Canonical SQL now lives at:
---   memorybox/migrations/040_p2_i14_voice_requires_displayable_authored.sql
--- This file remains as the review copy. Do not edit one without the other.
--- Founder authorized unpublished v3 load: apply 040, then load v3 alongside
--- active v1 and unpublished v2. Do not activate or publish.
-
 -- P2-I14 migration 040: nullable prepared_text_disposition and algo_version
 -- branching for comms_prepared_assert_generation_ready.
 -- Does not UPDATE v1/v2 rows. Does not activate or publish.
@@ -17,6 +11,7 @@
 --   i14-prepared-email-v3 → six-way disposition required; voice only when
 --                           authored_displayable + nonblank + clean quote +
 --                           authenticated From. v3 is not weakened.
+-- Do not apply unless pending is exactly this file.
 
 ALTER TABLE comms_prepared_messages
     ADD COLUMN IF NOT EXISTS prepared_text_disposition TEXT;

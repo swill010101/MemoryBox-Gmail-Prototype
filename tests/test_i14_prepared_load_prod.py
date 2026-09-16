@@ -7,6 +7,7 @@ import unittest
 from memorybox.ops.i14_prepared_load_prod import (
     ALONGSIDE_CONFIRM,
     CONFIRM,
+    V3_ALONGSIDE_CONFIRM,
     LoadProdError,
     MAX_PACKET_THREADS,
     _require_flags,
@@ -25,6 +26,8 @@ class Flags(unittest.TestCase):
     def test_accepts_exact_confirm(self) -> None:
         os.environ["MEMORYBOX_I14_LOAD_ALLOW_FLIGHTSIM"] = "1"
         os.environ["MEMORYBOX_I14_LOAD_ALLOW_MEMORYBOX_DB"] = "1"
+        os.environ.pop("MEMORYBOX_I14_LOAD_ALONGSIDE_ACTIVE", None)
+        os.environ.pop("MEMORYBOX_I14_LOAD_KEEP_UNPUBLISHED_V2", None)
         os.environ["MEMORYBOX_I14_LOAD_CONFIRM"] = CONFIRM
         _require_flags()
 
@@ -32,6 +35,7 @@ class Flags(unittest.TestCase):
         os.environ["MEMORYBOX_I14_LOAD_ALLOW_FLIGHTSIM"] = "1"
         os.environ["MEMORYBOX_I14_LOAD_ALLOW_MEMORYBOX_DB"] = "1"
         os.environ["MEMORYBOX_I14_LOAD_ALONGSIDE_ACTIVE"] = "1"
+        os.environ.pop("MEMORYBOX_I14_LOAD_KEEP_UNPUBLISHED_V2", None)
         os.environ["MEMORYBOX_I14_LOAD_CONFIRM"] = ALONGSIDE_CONFIRM
         _require_flags(alongside=True)
 
@@ -40,6 +44,25 @@ class Flags(unittest.TestCase):
         os.environ["MEMORYBOX_I14_LOAD_ALLOW_MEMORYBOX_DB"] = "1"
         os.environ["MEMORYBOX_I14_LOAD_ALONGSIDE_ACTIVE"] = "1"
         os.environ["MEMORYBOX_I14_LOAD_CONFIRM"] = CONFIRM
+        os.environ.pop("MEMORYBOX_I14_LOAD_KEEP_UNPUBLISHED_V2", None)
+        with self.assertRaises(LoadProdError) as ctx:
+            _require_flags(alongside=True)
+        self.assertEqual(str(ctx.exception), "load_confirm_mismatch")
+
+    def test_accepts_v3_alongside_v1_v2_confirm(self) -> None:
+        os.environ["MEMORYBOX_I14_LOAD_ALLOW_FLIGHTSIM"] = "1"
+        os.environ["MEMORYBOX_I14_LOAD_ALLOW_MEMORYBOX_DB"] = "1"
+        os.environ["MEMORYBOX_I14_LOAD_ALONGSIDE_ACTIVE"] = "1"
+        os.environ["MEMORYBOX_I14_LOAD_KEEP_UNPUBLISHED_V2"] = "1"
+        os.environ["MEMORYBOX_I14_LOAD_CONFIRM"] = V3_ALONGSIDE_CONFIRM
+        _require_flags(alongside=True)
+
+    def test_v3_alongside_refuses_v2_confirm(self) -> None:
+        os.environ["MEMORYBOX_I14_LOAD_ALLOW_FLIGHTSIM"] = "1"
+        os.environ["MEMORYBOX_I14_LOAD_ALLOW_MEMORYBOX_DB"] = "1"
+        os.environ["MEMORYBOX_I14_LOAD_ALONGSIDE_ACTIVE"] = "1"
+        os.environ["MEMORYBOX_I14_LOAD_KEEP_UNPUBLISHED_V2"] = "1"
+        os.environ["MEMORYBOX_I14_LOAD_CONFIRM"] = ALONGSIDE_CONFIRM
         with self.assertRaises(LoadProdError) as ctx:
             _require_flags(alongside=True)
         self.assertEqual(str(ctx.exception), "load_confirm_mismatch")

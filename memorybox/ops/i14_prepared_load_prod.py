@@ -30,9 +30,13 @@ from memorybox.ops.i14_thread_review import (
 
 CONFIRM = "household-email-unpublished-v1"
 ALONGSIDE_CONFIRM = "household-email-unpublished-v2-alongside-active"
+V3_ALONGSIDE_CONFIRM = "household-email-unpublished-v3-alongside-v1-v2"
 REPLACE_CONFIRM = "replace-unpublished-voice-038-v1"
-REQUIRED_LEDGER = 39
-LEDGER_LAST = "039_p2_i14_voice_requires_prepared_text.sql"
+REQUIRED_LEDGER = 40
+LEDGER_LAST = "040_p2_i14_voice_requires_displayable_authored.sql"
+V1_ALGO = "i14-prepared-email-v1"
+V2_ALGO = "i14-prepared-email-v2"
+V3_ALGO = "i14-prepared-email-v3"
 JOHN_EVIDENCE_ID = "5941e1bb-5354-4bba-9bac-fb1f0a9fd963"
 ARCHIVE_BASELINE = {
     "evidence": 188656,
@@ -83,16 +87,30 @@ def _env_on(name: str) -> bool:
     return os.environ.get(name, "").strip() == "1"
 
 
+def _keep_unpublished_v2() -> bool:
+    return _env_on("MEMORYBOX_I14_LOAD_KEEP_UNPUBLISHED_V2")
+
+
 def _require_flags(*, alongside: bool = False) -> None:
     if not _env_on("MEMORYBOX_I14_LOAD_ALLOW_FLIGHTSIM"):
         raise LoadProdError("load_flightsim_not_allowed")
     if not _env_on("MEMORYBOX_I14_LOAD_ALLOW_MEMORYBOX_DB"):
         raise LoadProdError("load_memorybox_db_not_allowed")
-    want = ALONGSIDE_CONFIRM if alongside else CONFIRM
+    keep_v2 = _keep_unpublished_v2()
+    if keep_v2 and not alongside:
+        raise LoadProdError("keep_v2_requires_alongside_active")
+    if keep_v2:
+        want = V3_ALONGSIDE_CONFIRM
+    elif alongside:
+        want = ALONGSIDE_CONFIRM
+    else:
+        want = CONFIRM
     if os.environ.get("MEMORYBOX_I14_LOAD_CONFIRM", "").strip() != want:
         raise LoadProdError("load_confirm_mismatch")
     if alongside and not _env_on("MEMORYBOX_I14_LOAD_ALONGSIDE_ACTIVE"):
         raise LoadProdError("alongside_active_not_allowed")
+    if keep_v2 and not _env_on("MEMORYBOX_I14_LOAD_KEEP_UNPUBLISHED_V2"):
+        raise LoadProdError("keep_unpublished_v2_not_allowed")
 
 
 def _empty_counts(conn: Any) -> dict[str, int]:
@@ -196,8 +214,6 @@ def _assert_alongside_active(conn: Any) -> dict[str, Any]:
         for g in gens
         if str(g["status"]) == "validated" and not g["published"] and not g["is_active"]
     ]
-    if validated_unpub:
-        raise LoadProdError("unpublished_already_present")
     building = [g for g in gens if str(g["status"]) == "building"]
     if building:
         raise LoadProdError("building_generation_present")
@@ -239,11 +255,66 @@ def _assert_alongside_active(conn: Any) -> dict[str, Any]:
     diffs = _agree(child, ACTIVE_CHILD_COUNTS)
     if diffs:
         raise LoadProdError("active_child_counts_mismatch:" + ",".join(diffs))
-    return {
+    if str(active[0].get("algo_version") or "") != V1_ALGO:
+        raise LoadProdError("alongside_active_algo_unexpected")
+    out = {
         "active_generation_id": str(gid),
         "active_algo_version": str(active[0].get("algo_version") or ""),
         "active_child_counts": child,
         "active_generation_untouched": True,
+    }
+    keep_v2 = _keep_unpublished_v2()
+    if keep_v2:
+        if len(validated_unpub) != 1:
+            raise LoadProdError("keep_v2_requires_one_unpublished")
+        v2 = validated_unpub[0]
+        if str(v2.get("algo_version") or "") != V2_ALGO:
+            raise LoadProdError("keep_v2_algo_unexpected")
+        v2_id = v2["id"]
+        v2_child = _child_counts(conn, v2_id)
+        out["unpublished_v2_generation_id"] = str(v2_id)
+        out["unpublished_v2_algo_version"] = V2_ALGO
+        out["unpublished_v2_child_counts"] = v2_child
+        out["unpublished_v2_untouched"] = True
+    elif validated_unpub:
+        raise LoadProdError("unpublished_already_present")
+    return out
+
+
+def _child_counts(conn: Any, gid: Any) -> dict[str, int]:
+    return {
+        "threads": int(
+            conn.execute(
+                "SELECT COUNT(*) AS n FROM comms_prepared_threads WHERE generation_id = %s",
+                (gid,),
+            ).fetchone()["n"]
+        ),
+        "messages": int(
+            conn.execute(
+                "SELECT COUNT(*) AS n FROM comms_prepared_messages WHERE generation_id = %s",
+                (gid,),
+            ).fetchone()["n"]
+        ),
+        "participants": int(
+            conn.execute(
+                """
+                SELECT COUNT(*) AS n FROM comms_prepared_participants p
+                  JOIN comms_prepared_messages m ON m.id = p.message_id
+                 WHERE m.generation_id = %s
+                """,
+                (gid,),
+            ).fetchone()["n"]
+        ),
+        "attachments": int(
+            conn.execute(
+                """
+                SELECT COUNT(*) AS n FROM comms_prepared_attachments a
+                  JOIN comms_prepared_messages m ON m.id = a.message_id
+                 WHERE m.generation_id = %s
+                """,
+                (gid,),
+            ).fetchone()["n"]
+        ),
     }
 
 
@@ -1009,11 +1080,12 @@ def run_production_load(conn: Any, dsn: str, *, deadline_s: int) -> dict[str, An
     if pending_files:
         raise LoadProdError("pending_not_empty")
     if len(applied) != REQUIRED_LEDGER:
-        raise LoadProdError("ledger_not_001_039")
+        raise LoadProdError("ledger_not_001_040")
     last = applied[-1]["filename"] if applied else ""
     if last != LEDGER_LAST:
-        raise LoadProdError("ledger_last_not_039")
+        raise LoadProdError("ledger_last_not_040")
     alongside = _env_on("MEMORYBOX_I14_LOAD_ALONGSIDE_ACTIVE")
+    keep_v2 = _keep_unpublished_v2()
     kept_active = None
     rejected = None
     if alongside:
@@ -1077,6 +1149,34 @@ def run_production_load(conn: Any, dsn: str, *, deadline_s: int) -> dict[str, An
         ).fetchone()["n"]
         if int(after_active) != ACTIVE_CHILD_COUNTS["messages"]:
             raise LoadProdError("active_messages_changed")
+        if keep_v2:
+            v2_id = kept_active["unpublished_v2_generation_id"]
+            v2_now = conn.execute(
+                """
+                SELECT id, status, published, is_active, algo_version, checksum
+                  FROM comms_prepared_generations WHERE id = %s
+                """,
+                (v2_id,),
+            ).fetchone()
+            if not v2_now:
+                raise LoadProdError("unpublished_v2_missing")
+            if (
+                str(v2_now["status"]) != "validated"
+                or v2_now["published"]
+                or v2_now["is_active"]
+                or str(v2_now["algo_version"] or "") != V2_ALGO
+            ):
+                raise LoadProdError("unpublished_v2_changed")
+            v2_child_now = _child_counts(conn, v2_id)
+            v2_diffs = _agree(v2_child_now, kept_active["unpublished_v2_child_counts"])
+            if v2_diffs:
+                raise LoadProdError("unpublished_v2_child_counts_mismatch:" + ",".join(v2_diffs))
+            if validation["eligible_unpublished_generations"] != 2:
+                raise LoadProdError("unpublished_generation_count_unexpected")
+            if str(gid) == str(v2_id):
+                raise LoadProdError("new_generation_reused_v2")
+            if str(result.get("algo_version") or "") != V3_ALGO:
+                raise LoadProdError("v3_algo_mismatch")
     elif validation["published_generations"] != 0 or validation["active_generations"] != 0:
         raise LoadProdError("generation_not_unpublished")
     if validation["generation_status"] != "validated":
@@ -1116,6 +1216,34 @@ def run_production_load(conn: Any, dsn: str, *, deadline_s: int) -> dict[str, An
         raise LoadProdError("unexplained_not_zero")
     if int(dispositions["blank_voice"]) != 0:
         raise LoadProdError("blank_voice_present")
+    if keep_v2:
+        null_disp = int(
+            conn.execute(
+                """
+                SELECT COUNT(*) AS n FROM comms_prepared_messages
+                 WHERE generation_id = %s
+                   AND (
+                        prepared_text_disposition IS NULL
+                     OR prepared_text_disposition = 'legacy'
+                   )
+                """,
+                (gid,),
+            ).fetchone()["n"]
+        )
+        if null_disp != 0:
+            raise LoadProdError("v3_disposition_incomplete")
+        if int(dispositions.get("forbidden_disposition_and_voice") or 0) != 0:
+            raise LoadProdError("v3_forbidden_voice_disposition")
+        six = (
+            int(dispositions.get("authored_displayable") or 0)
+            + int(dispositions.get("non_substantive") or 0)
+            + int(dispositions.get("correctly_empty") or 0)
+            + int(dispositions.get("attachment_only") or 0)
+            + int(dispositions.get("prepared_text_unavailable") or 0)
+            + int(dispositions.get("uncertain") or 0)
+        )
+        if six != int(validation["prepared"]["messages"]):
+            raise LoadProdError("v3_disposition_incomplete")
     john = prove_john_recovered(conn, gid)
     voice_delta = voice_delta_against_active(conn, gid) if alongside else None
     conn.execute("SELECT comms_prepared_assert_generation_ready(%s)", (gid,))
@@ -1195,6 +1323,7 @@ def run_production_load(conn: Any, dsn: str, *, deadline_s: int) -> dict[str, An
         "john_ordinal": john["ordinal"],
         "voice_delta": voice_delta,
         "alongside_active": alongside,
+        "keep_unpublished_v2": keep_v2,
         "algo_version": result.get("algo_version"),
         "ready_assert_ok": True,
         "completeness": validation["completeness"],
