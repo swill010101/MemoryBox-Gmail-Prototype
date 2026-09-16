@@ -1,37 +1,57 @@
 -- PROPOSED P2-I14 migration 040. Do not copy into memorybox/migrations
 -- and do not apply on FlightSim until founder authorizes a v3 load.
--- Adds one stored prepared-text disposition. Replaces
--- comms_prepared_assert_generation_ready so activation checks that column
--- rather than re-implementing the Python classifier as SQL regexes.
--- Does not UPDATE v1/v2 rows. Does not activate or publish.
--- Existing voice rows stay valid because this does not add a table CHECK
--- tying voice_corpus to disposition (v1/v2 have no stored disposition).
+-- Adds nullable prepared_text_disposition. Does not UPDATE v1/v2 rows.
+-- Does not activate or publish.
+--
+-- Pre-v3 rows stay NULL (not 'uncertain'). Optional token 'legacy' is
+-- allowed if a later authorized backfill marks them without inventing a
+-- six-way class. v3 loads must write one of the six values on every row.
+--
+-- comms_prepared_assert_generation_ready branches on generations.algo_version:
+--   i14-prepared-email-v1 → 036/038 historical (no blank-text, no disposition)
+--   i14-prepared-email-v2 → 039 (blank voice forbidden, no disposition)
+--   i14-prepared-email-v3 → six-way disposition required; voice only when
+--                           authored_displayable + nonblank + clean quote +
+--                           authenticated From. v3 is not weakened.
 
 ALTER TABLE comms_prepared_messages
-    ADD COLUMN IF NOT EXISTS prepared_text_disposition TEXT NOT NULL DEFAULT 'uncertain';
+    ADD COLUMN IF NOT EXISTS prepared_text_disposition TEXT;
 
 ALTER TABLE comms_prepared_messages
     DROP CONSTRAINT IF EXISTS comms_prepared_messages_prepared_text_disposition_ck;
 
 ALTER TABLE comms_prepared_messages
     ADD CONSTRAINT comms_prepared_messages_prepared_text_disposition_ck
-    CHECK (prepared_text_disposition IN (
-        'authored_displayable',
-        'non_substantive',
-        'prepared_text_unavailable',
-        'attachment_only',
-        'correctly_empty',
-        'uncertain'
-    ));
+    CHECK (
+        prepared_text_disposition IS NULL
+        OR prepared_text_disposition IN (
+            'legacy',
+            'authored_displayable',
+            'non_substantive',
+            'prepared_text_unavailable',
+            'attachment_only',
+            'correctly_empty',
+            'uncertain'
+        )
+    );
 
 COMMENT ON COLUMN comms_prepared_messages.prepared_text_disposition IS
-    'Loader-assigned mutually exclusive prepared-text disposition. Gallery and voice consume this value. Activation requires voice_corpus only when authored_displayable.';
+    'Loader-assigned prepared-text disposition. NULL/legacy = pre-v3. v3 requires one of the six values. Voice on v3 requires authored_displayable.';
 
 CREATE OR REPLACE FUNCTION comms_prepared_assert_generation_ready(p_id UUID)
 RETURNS void
 LANGUAGE plpgsql
 AS $$
+DECLARE
+    algo TEXT;
 BEGIN
+    SELECT g.algo_version INTO algo
+      FROM comms_prepared_generations g
+     WHERE g.id = p_id;
+    IF algo IS NULL THEN
+        RAISE EXCEPTION 'generation_not_found';
+    END IF;
+
     IF EXISTS (
         SELECT 1
         FROM comms_prepared_messages m
@@ -84,6 +104,48 @@ BEGIN
     ) THEN
         RAISE EXCEPTION 'voice_requires_authenticated_from_person';
     END IF;
+
+    IF algo = 'i14-prepared-email-v1' THEN
+        RETURN;
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM comms_prepared_messages m
+        WHERE m.generation_id = p_id
+          AND m.voice_corpus
+          AND length(btrim(COALESCE(m.cleaned_authored_text, ''))) = 0
+    ) THEN
+        RAISE EXCEPTION 'voice_requires_nonblank_prepared_text';
+    END IF;
+
+    IF algo = 'i14-prepared-email-v2' THEN
+        RETURN;
+    END IF;
+
+    IF algo IS DISTINCT FROM 'i14-prepared-email-v3' THEN
+        RAISE EXCEPTION 'unsupported_prepared_algo_version';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM comms_prepared_messages m
+        WHERE m.generation_id = p_id
+          AND (
+                m.prepared_text_disposition IS NULL
+             OR m.prepared_text_disposition = 'legacy'
+             OR m.prepared_text_disposition NOT IN (
+                    'authored_displayable',
+                    'non_substantive',
+                    'prepared_text_unavailable',
+                    'attachment_only',
+                    'correctly_empty',
+                    'uncertain'
+                )
+          )
+    ) THEN
+        RAISE EXCEPTION 'v3_requires_prepared_text_disposition';
+    END IF;
     IF EXISTS (
         SELECT 1
         FROM comms_prepared_messages m
@@ -98,33 +160,9 @@ BEGIN
         FROM comms_prepared_messages m
         WHERE m.generation_id = p_id
           AND m.voice_corpus
-          AND length(btrim(COALESCE(m.cleaned_authored_text, ''))) = 0
-    ) THEN
-        RAISE EXCEPTION 'voice_requires_nonblank_prepared_text';
-    END IF;
-    IF EXISTS (
-        SELECT 1
-        FROM comms_prepared_messages m
-        WHERE m.generation_id = p_id
-          AND m.voice_corpus
           AND m.prepared_text_disposition IS DISTINCT FROM 'authored_displayable'
     ) THEN
         RAISE EXCEPTION 'voice_requires_authored_displayable_disposition';
-    END IF;
-    IF EXISTS (
-        SELECT 1
-        FROM comms_prepared_messages m
-        WHERE m.generation_id = p_id
-          AND m.voice_corpus
-          AND m.prepared_text_disposition IN (
-                'non_substantive',
-                'prepared_text_unavailable',
-                'attachment_only',
-                'correctly_empty',
-                'uncertain'
-          )
-    ) THEN
-        RAISE EXCEPTION 'voice_forbidden_on_non_authored_disposition';
     END IF;
 END;
 $$;

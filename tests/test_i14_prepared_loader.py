@@ -1086,6 +1086,256 @@ class PreparedLoaderPg(_DisposablePg):
                 self.assertNotIn("alert", rows[i]["cleaned_authored_text"])
                 self.assertNotIn("http", rows[i]["cleaned_authored_text"].lower())
 
+    def _activatable_generation(
+        self,
+        conn,
+        *,
+        src,
+        person_id,
+        algo: str,
+        rfc: str,
+        cleaned: str,
+        voice: bool,
+        disposition: str | None,
+        display_id: str,
+        quote: str = "clean",
+        authorship: str = "authenticated_focal",
+    ):
+        ev = self._evidence(
+            conn,
+            src,
+            _payload(rfc=rfc, body_text=cleaned or " ", content_hash=_hash(rfc)),
+            summary=rfc,
+        )
+        log = conn.execute(
+            """
+            INSERT INTO comms_logical_sources (logical_key, source_kind, label)
+            VALUES ('household_email', 'email', 'Household email')
+            ON CONFLICT (source_kind, logical_key) DO UPDATE SET label = EXCLUDED.label
+            RETURNING id
+            """
+        ).fetchone()["id"]
+        conn.execute(
+            """
+            INSERT INTO comms_source_memberships (source_id, logical_source_id)
+            VALUES (%s, %s) ON CONFLICT (source_id) DO NOTHING
+            """,
+            (src, log),
+        )
+        extract = conn.execute(
+            """
+            INSERT INTO comms_extract_instances (
+              logical_source_id, source_id, fingerprint, landing_alias, landing_basename,
+              validation_status, ingest_status
+            ) VALUES (%s, %s, %s, 'household_email', 'synthetic.mbox', 'valid', 'ingested')
+            RETURNING id
+            """,
+            (log, src, _hash(algo + rfc)),
+        ).fetchone()["id"]
+        canonical = conn.execute(
+            """
+            INSERT INTO comms_record_identities (
+              logical_source_id, evidence_id, source_kind, first_extract_instance_id
+            ) VALUES (%s, %s, 'email', %s)
+            RETURNING id
+            """,
+            (log, ev, extract),
+        ).fetchone()["id"]
+        gen = conn.execute(
+            """
+            INSERT INTO comms_prepared_generations (
+              algo_version, logical_source_id, status, checksum
+            ) VALUES (%s, %s, 'validated', %s)
+            RETURNING id
+            """,
+            (algo, log, _hash("ck" + rfc + algo)),
+        ).fetchone()["id"]
+        thread_id = conn.execute(
+            """
+            INSERT INTO comms_prepared_threads (
+              generation_id, thread_key, display_id, threading_confidence,
+              identity_confidence, gallery_eligibility, founder_review_state,
+              earliest_at, latest_at, message_count, evidence_count
+            ) VALUES (
+              %s, %s, %s, 'rfc', 'all_authenticated', 'show_by_default', 'unreviewed',
+              '2011-09-29T15:00:00+00:00', '2011-09-29T15:00:00+00:00', 1, 1
+            )
+            RETURNING id
+            """,
+            (gen, "rfc:" + rfc, display_id),
+        ).fetchone()["id"]
+        cols = (
+            "thread_id, generation_id, ordinal, evidence_id, canonical_record_id, "
+            "evidence_ref, sent_at, cleaned_authored_text, authorship, voice_corpus, "
+            "quote_quality, commercial_class, direction"
+        )
+        vals = (
+            "%s, %s, 1, %s, %s, %s, '2011-09-29T15:00:00+00:00', %s, %s, %s, %s, "
+            "'not_commercial', 'unresolved'"
+        )
+        params: list = [
+            thread_id,
+            gen,
+            ev,
+            canonical,
+            display_id + "-M-01",
+            cleaned,
+            authorship,
+            voice,
+            quote,
+        ]
+        if disposition is not None:
+            cols += ", prepared_text_disposition"
+            vals += ", %s"
+            params.append(disposition)
+        mid = conn.execute(
+            f"INSERT INTO comms_prepared_messages ({cols}) VALUES ({vals}) RETURNING id",
+            tuple(params),
+        ).fetchone()["id"]
+        conn.execute(
+            """
+            INSERT INTO comms_prepared_participants (
+              message_id, role, display_name, address_normalized, identity_confidence, person_id
+            ) VALUES (%s, 'from', 'Peggy Example', 'peggy@example.test', 'authenticated_focal', %s)
+            """,
+            (mid, person_id),
+        )
+        conn.commit()
+        return gen
+
+    def test_legacy_v1_v3_activation_rollback_on_disposable_postgres(self) -> None:
+        self._require_dsn()
+        with psycopg.connect(self.dsn, row_factory=dict_row, connect_timeout=5) as conn:
+            self._wipe(conn)
+            src = self._source(conn)
+            _, focal, _ = self._ledger(conn)
+            v1 = self._activatable_generation(
+                conn,
+                src=src,
+                person_id=focal,
+                algo="i14-prepared-email-v1",
+                rfc="<v1-blank@example.test>",
+                cleaned="",
+                voice=True,
+                disposition=None,
+                display_id="T-7001",
+            )
+            disp = conn.execute(
+                "SELECT prepared_text_disposition FROM comms_prepared_messages WHERE generation_id = %s",
+                (v1,),
+            ).fetchone()["prepared_text_disposition"]
+            self.assertIsNone(disp)
+            conn.execute("SELECT comms_prepared_assert_generation_ready(%s)", (v1,))
+            conn.execute("SELECT comms_prepared_activate_generation(%s)", (v1,))
+            conn.commit()
+            active = conn.execute(
+                "SELECT id, algo_version FROM comms_prepared_generations WHERE is_active"
+            ).fetchone()
+            self.assertEqual(active["id"], v1)
+            self.assertEqual(active["algo_version"], "i14-prepared-email-v1")
+
+            v2_blank = self._activatable_generation(
+                conn,
+                src=src,
+                person_id=focal,
+                algo="i14-prepared-email-v2",
+                rfc="<v2-blank@example.test>",
+                cleaned="",
+                voice=True,
+                disposition=None,
+                display_id="T-7002",
+            )
+            try:
+                conn.execute("SELECT comms_prepared_assert_generation_ready(%s)", (v2_blank,))
+                self.fail("v2 must refuse blank voice")
+            except psycopg.Error as exc:
+                self.assertIn("voice_requires_nonblank_prepared_text", str(exc))
+            conn.rollback()
+
+            v3_bad = self._activatable_generation(
+                conn,
+                src=src,
+                person_id=focal,
+                algo="i14-prepared-email-v3",
+                rfc="<v3-null@example.test>",
+                cleaned="Thanks",
+                voice=True,
+                disposition=None,
+                display_id="T-7003",
+            )
+            try:
+                conn.execute("SELECT comms_prepared_assert_generation_ready(%s)", (v3_bad,))
+                self.fail("v3 must require six-way disposition")
+            except psycopg.Error as exc:
+                self.assertIn("v3_requires_prepared_text_disposition", str(exc))
+            conn.rollback()
+
+            v3_junk = self._activatable_generation(
+                conn,
+                src=src,
+                person_id=focal,
+                algo="i14-prepared-email-v3",
+                rfc="<v3-junk@example.test>",
+                cleaned="Ed,",
+                voice=True,
+                disposition="non_substantive",
+                display_id="T-7004",
+            )
+            try:
+                conn.execute("SELECT comms_prepared_assert_generation_ready(%s)", (v3_junk,))
+                self.fail("v3 must refuse non_substantive voice")
+            except psycopg.Error as exc:
+                self.assertIn("voice_requires_authored_displayable_disposition", str(exc))
+            conn.rollback()
+
+            v3 = self._activatable_generation(
+                conn,
+                src=src,
+                person_id=focal,
+                algo="i14-prepared-email-v3",
+                rfc="<v3-ok@example.test>",
+                cleaned="Thanks",
+                voice=True,
+                disposition="authored_displayable",
+                display_id="T-7005",
+            )
+            conn.execute("SELECT comms_prepared_assert_generation_ready(%s)", (v3,))
+            conn.execute("SELECT comms_prepared_activate_generation(%s)", (v3,))
+            conn.commit()
+            active = conn.execute(
+                "SELECT id, algo_version FROM comms_prepared_generations WHERE is_active"
+            ).fetchone()
+            self.assertEqual(active["id"], v3)
+            self.assertEqual(active["algo_version"], "i14-prepared-email-v3")
+            v1_state = conn.execute(
+                "SELECT is_active, status FROM comms_prepared_generations WHERE id = %s",
+                (v1,),
+            ).fetchone()
+            self.assertFalse(v1_state["is_active"])
+            self.assertEqual(v1_state["status"], "superseded")
+
+            conn.execute(
+                """
+                UPDATE comms_prepared_generations
+                SET status = 'validated'
+                WHERE id = %s
+                """,
+                (v1,),
+            )
+            conn.execute("SELECT comms_prepared_assert_generation_ready(%s)", (v1,))
+            conn.execute("SELECT comms_prepared_activate_generation(%s)", (v1,))
+            conn.commit()
+            active = conn.execute(
+                "SELECT id, algo_version FROM comms_prepared_generations WHERE is_active"
+            ).fetchone()
+            self.assertEqual(active["id"], v1)
+            self.assertEqual(active["algo_version"], "i14-prepared-email-v1")
+            v3_state = conn.execute(
+                "SELECT is_active FROM comms_prepared_generations WHERE id = %s",
+                (v3,),
+            ).fetchone()
+            self.assertFalse(v3_state["is_active"])
+
 
 if __name__ == "__main__":
     unittest.main()

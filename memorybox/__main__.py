@@ -1026,6 +1026,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Read-only Phase C prepared-comms timings (FlightSim requires allow flags)",
     )
 
+    sub.add_parser(
+        "i14-html-recovery-census",
+        help="Read-only census of HTML recovery beyond v2 eight-letter preference",
+    )
+
     args = parser.parse_args(argv)
     if args.cmd in {"prove-p2-i1", "prove-p2-i8b", "prove-p2-i9"} or (args.cmd == "recognition-people-apply" and not args.dry_run):
         print(json.dumps({"ok": False, "error": "legacy_unscoped_mutation_disabled_use_i13_offline_tests"}))
@@ -2052,6 +2057,11 @@ def main(argv: list[str] | None = None) -> int:
         from memorybox.ops.i14_prepared_recovery import main as recovery_main
 
         return recovery_main([])
+
+    if args.cmd == "i14-html-recovery-census":
+        from memorybox.ops.i14_html_recovery_census import main as html_census_main
+
+        return html_census_main([])
 
     if args.cmd == "serve":
         import uvicorn
