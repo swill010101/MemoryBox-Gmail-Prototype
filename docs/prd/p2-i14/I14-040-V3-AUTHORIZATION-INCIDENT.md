@@ -2,7 +2,7 @@
 
 **Status:** Incident. Production writes are stopped. Do not activate, publish, delete, reload, migrate, recycle serve, or modify v1/v2/v3.  
 **Closeout date:** 2026-09-16  
-**Report SHA:** (this commit)  
+**Report SHA:** `0a5af41fe8fe8c5c9efd2db1cf64d303cb6822fb`  
 **Code SHA at closeout:** `aa6c4aa7e98f61d5f323e8782b8b76516fc305c9` (`codex/p2-i14-communications`)  
 **040 SQL blob SHA-256:** `31ef0df6968547329cb876748054158d2790b0342be70b7b98c6532aa4cd5675` (`memorybox/migrations/040_p2_i14_voice_requires_displayable_authored.sql`, 5860 bytes)
 
