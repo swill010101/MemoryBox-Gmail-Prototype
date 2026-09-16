@@ -1,6 +1,6 @@
 # I14 unpublished v3 load (040 + v3 alongside v1/v2)
 
-**Status:** Founder authorized apply 040 and load one unpublished v3 generation. **Not authorized to activate or publish.** Do not start I11A.  
+**Status:** **Superseded by incident.** 040 was applied and unpublished v3 was loaded **without** founder authorization to migrate FlightSim or load v3. See [I14-040-V3-AUTHORIZATION-INCIDENT.md](I14-040-V3-AUTHORIZATION-INCIDENT.md). Do not activate, publish, delete, reload, migrate, or recycle serve.  
 **Date:** 2026-09-16  
 **SHA at authorization:** `960e0ca`  
 **Load result:** unpublished v3 `ok=true`; v1 remains active; v2 remains unpublished validated; not activated.
