@@ -21,6 +21,30 @@ KIND_BLANK = "blank"
 
 VOICE_ELIGIBLE_KINDS = frozenset({KIND_DISPLAYABLE_AUTHORED})
 
+DISPOSITION_AUTHORED = "authored_displayable"
+DISPOSITION_NON_SUBSTANTIVE = "non_substantive"
+DISPOSITION_UNAVAILABLE = "prepared_text_unavailable"
+DISPOSITION_ATTACHMENT = "attachment_only"
+DISPOSITION_EMPTY = "correctly_empty"
+DISPOSITION_UNCERTAIN = "uncertain"
+PREPARED_TEXT_DISPOSITIONS = (
+    DISPOSITION_AUTHORED,
+    DISPOSITION_NON_SUBSTANTIVE,
+    DISPOSITION_UNAVAILABLE,
+    DISPOSITION_ATTACHMENT,
+    DISPOSITION_EMPTY,
+    DISPOSITION_UNCERTAIN,
+)
+VOICE_FORBIDDEN_DISPOSITIONS = frozenset(
+    {
+        DISPOSITION_NON_SUBSTANTIVE,
+        DISPOSITION_UNAVAILABLE,
+        DISPOSITION_ATTACHMENT,
+        DISPOSITION_EMPTY,
+        DISPOSITION_UNCERTAIN,
+    }
+)
+
 _BOM = "\ufeff"
 _ZW = "\u200b"
 _MAC = re.compile(r"(?i)\[(?:[0-9a-f]{2}:){5}[0-9a-f]{2}\]")
@@ -78,25 +102,126 @@ def prepared_text_is_displayable(text: str, *, from_person: str = "") -> bool:
     return is_displayable(classify_stored_prepared(text, from_person=from_person))
 
 
+def kind_to_stored_disposition(kind: str) -> str | None:
+    """Map a stored-cleaned kind to a disposition when text is present or omitted junk."""
+    if kind == KIND_DISPLAYABLE_AUTHORED:
+        return DISPOSITION_AUTHORED
+    if kind in {
+        KIND_SIGNATURE_CLOSING,
+        KIND_ENCODING_DEBRIS,
+        KIND_AUTOMATED_FRAGMENT,
+        KIND_UNCERTAIN_FRAGMENT,
+    }:
+        return DISPOSITION_NON_SUBSTANTIVE
+    if kind == KIND_BLANK:
+        return None
+    return DISPOSITION_UNCERTAIN
+
+
+def empty_category_to_disposition(category: str, *, has_attachments: bool = False) -> str:
+    if category == "authored_prepared":
+        return DISPOSITION_AUTHORED
+    if category == "attachment_only":
+        return DISPOSITION_ATTACHMENT
+    if category in {"cleanup_removed_meaningful", "html_only_or_alt_part"}:
+        return DISPOSITION_UNAVAILABLE
+    if category in {
+        "encoding_or_parser_failure",
+        "commercial_or_automated_shell",
+        "other_known",
+    }:
+        return DISPOSITION_NON_SUBSTANTIVE
+    if category in {
+        "original_genuinely_empty",
+        "quoted_history_only",
+        "forward_history_only",
+    }:
+        if has_attachments and category == "original_genuinely_empty":
+            return DISPOSITION_ATTACHMENT
+        return DISPOSITION_EMPTY
+    if category == "unexplained":
+        return DISPOSITION_UNCERTAIN
+    return DISPOSITION_UNCERTAIN
+
+
+def decide_prepared_row(
+    text: str,
+    *,
+    from_authenticated: bool,
+    quote_quality: str,
+    from_person: str = "",
+    has_attachments: bool = False,
+    empty_category: str = "",
+) -> dict[str, Any]:
+    kind = classify_stored_prepared(text, from_person=from_person)
+    mapped = kind_to_stored_disposition(kind)
+    if mapped == DISPOSITION_AUTHORED:
+        voice = bool(
+            from_authenticated and str(quote_quality or "") == "clean"
+        )
+        return {
+            "kind": kind,
+            "displayable": True,
+            "voice_eligible_kind": True,
+            "voice_corpus": voice,
+            "stored_cleaned": text or "",
+            "prepared_text_disposition": DISPOSITION_AUTHORED,
+        }
+    if mapped == DISPOSITION_NON_SUBSTANTIVE:
+        return {
+            "kind": kind,
+            "displayable": False,
+            "voice_eligible_kind": False,
+            "voice_corpus": False,
+            "stored_cleaned": "",
+            "prepared_text_disposition": DISPOSITION_NON_SUBSTANTIVE,
+        }
+    if mapped == DISPOSITION_UNCERTAIN:
+        return {
+            "kind": kind,
+            "displayable": False,
+            "voice_eligible_kind": False,
+            "voice_corpus": False,
+            "stored_cleaned": "",
+            "prepared_text_disposition": DISPOSITION_UNCERTAIN,
+        }
+    disposition = empty_category_to_disposition(
+        empty_category, has_attachments=has_attachments
+    )
+    if has_attachments and disposition == DISPOSITION_EMPTY and not (text or "").strip():
+        disposition = DISPOSITION_ATTACHMENT
+    if not empty_category:
+        if has_attachments:
+            disposition = DISPOSITION_ATTACHMENT
+        else:
+            disposition = DISPOSITION_EMPTY
+    return {
+        "kind": kind,
+        "displayable": False,
+        "voice_eligible_kind": False,
+        "voice_corpus": False,
+        "stored_cleaned": "",
+        "prepared_text_disposition": disposition,
+    }
+
+
 def display_and_voice_for_stored(
     text: str,
     *,
     from_authenticated: bool,
     quote_quality: str,
     from_person: str = "",
+    has_attachments: bool = False,
+    empty_category: str = "",
 ) -> dict[str, Any]:
-    kind = classify_stored_prepared(text, from_person=from_person)
-    displayable = is_displayable(kind)
-    voice = bool(
-        from_authenticated and str(quote_quality or "") == "clean" and displayable
+    return decide_prepared_row(
+        text,
+        from_authenticated=from_authenticated,
+        quote_quality=quote_quality,
+        from_person=from_person,
+        has_attachments=has_attachments,
+        empty_category=empty_category,
     )
-    return {
-        "kind": kind,
-        "displayable": displayable,
-        "voice_eligible_kind": is_voice_eligible_kind(kind),
-        "voice_corpus": voice,
-        "stored_cleaned": (text or "") if displayable else "",
-    }
 
 
 def empty_category_for_kind(kind: str) -> tuple[str, str]:
@@ -146,3 +271,31 @@ V3_SHORT_DISPLAYABLE = 165
 V3_SHORT_OMITTED = 15
 V3_VOICE_IN_180 = 22
 V2_VOICE_IN_180 = 22
+
+
+def html_recovery_beyond_v2_eight_letter(payload: dict) -> bool:
+    """True when v2's 8-letter preference would keep unusable plain and skip HTML authored text."""
+    from memorybox.ops.i14_prepared_text import (
+        html_to_plain,
+        prepare_message_text,
+        select_authored_source,
+        source_is_meaningful,
+    )
+
+    body = str(payload.get("body_text") or payload.get("body") or "")
+    html_raw = str(payload.get("body_html") or "")
+    if not html_raw.strip():
+        return False
+    html_plain = html_to_plain(html_raw)
+    body_after = prepare_message_text(body).authored
+    html_after = prepare_message_text(html_plain).authored
+    v2_prefers_body = source_is_meaningful(body)
+    body_unusable = not prepared_text_is_displayable(body_after)
+    html_usable = prepared_text_is_displayable(html_after)
+    new_src = select_authored_source(payload)
+    return bool(
+        v2_prefers_body
+        and body_unusable
+        and html_usable
+        and new_src.kind in {"html", "alt_part"}
+    )

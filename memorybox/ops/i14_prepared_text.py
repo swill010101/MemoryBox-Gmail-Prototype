@@ -172,17 +172,35 @@ def _alt_parts(payload: dict) -> list[dict]:
 
 
 def select_authored_source(payload: dict | None) -> AuthoredSource:
-    """Prefer meaningful plain body_text. Recover HTML/alt MIME only when plain is empty."""
+    """Prefer substantial plain body_text. Recover HTML/alt when plain is blank or unusable.
+
+    Eight letters is a preference heuristic for choosing among usable sources. It
+    must not block short HTML-only authored recovery when body_text is blank or
+    not displayable after cleanup.
+    """
+    from memorybox.ops.i14_prepared_display import prepared_text_is_displayable
+
     payload = payload if isinstance(payload, dict) else {}
     body = str(payload.get("body_text") or payload.get("body") or "")
-    if source_is_meaningful(body):
+    html_raw = str(payload.get("body_html") or "")
+    html_plain = html_to_plain(html_raw) if html_raw.strip() else ""
+    subject = str(payload.get("subject") or "")
+
+    def _authored_ok(text: str) -> bool:
+        if not str(text or "").strip():
+            return False
+        prepared = prepare_message_text(text, subject=subject).authored
+        return prepared_text_is_displayable(prepared)
+
+    body_ok = _authored_ok(body)
+    if source_is_meaningful(body) and body_ok:
         return AuthoredSource(body, "body_text", _hotmail_glued(body))
 
-    html_raw = str(payload.get("body_html") or "")
-    if html_raw.strip():
-        plain = html_to_plain(html_raw)
-        if source_is_meaningful(plain):
-            return AuthoredSource(plain, "html", _hotmail_glued(plain))
+    if html_plain and _authored_ok(html_plain) and not body_ok:
+        return AuthoredSource(html_plain, "html", _hotmail_glued(html_plain))
+
+    if source_is_meaningful(html_plain):
+        return AuthoredSource(html_plain, "html", _hotmail_glued(html_plain))
 
     for part in _alt_parts(payload):
         mime = str(part.get("mime_type") or part.get("content_type") or part.get("type") or "").lower()
@@ -195,11 +213,13 @@ def select_authored_source(payload: dict | None) -> AuthoredSource:
         else:
             plain = blob
             kind = "alt_part"
-        if source_is_meaningful(plain):
+        if source_is_meaningful(plain) or (not body_ok and _authored_ok(plain)):
             return AuthoredSource(plain, kind, _hotmail_glued(plain))
 
-    if html_raw.strip():
-        return AuthoredSource(html_to_plain(html_raw), "html", False)
+    if body_ok:
+        return AuthoredSource(body, "body_text", _hotmail_glued(body))
+    if html_plain.strip():
+        return AuthoredSource(html_plain, "html", _hotmail_glued(html_plain))
     if body.strip():
         return AuthoredSource(body, "body_text", _hotmail_glued(body))
     return AuthoredSource("", "empty", False)

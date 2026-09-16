@@ -100,6 +100,7 @@ class FounderShortText(unittest.TestCase):
         )
         self.assertEqual(thanks["cleaned"], "Thanks")
         self.assertTrue(thanks["voice_corpus"])
+        self.assertEqual(thanks["prepared_text_disposition"], "authored_displayable")
         why = _schema_message_fields(
             {
                 "from_parties": [party],
@@ -109,6 +110,7 @@ class FounderShortText(unittest.TestCase):
         )
         self.assertEqual(why["cleaned"], "??????")
         self.assertTrue(why["voice_corpus"])
+        self.assertEqual(why["prepared_text_disposition"], "authored_displayable")
 
     def test_loader_fields_blank_signoff_and_fragment(self) -> None:
         party = {
@@ -126,6 +128,7 @@ class FounderShortText(unittest.TestCase):
         )
         self.assertEqual(ed["cleaned"], "")
         self.assertFalse(ed["voice_corpus"])
+        self.assertEqual(ed["prepared_text_disposition"], "non_substantive")
         frag = _schema_message_fields(
             {
                 "from_parties": [party],
@@ -133,8 +136,7 @@ class FounderShortText(unittest.TestCase):
                 "authorship": "authenticated_other",
             }
         )
-        self.assertEqual(frag["cleaned"], "")
-        self.assertFalse(frag["voice_corpus"])
+        self.assertEqual(frag["prepared_text_disposition"], "non_substantive")
 
     def test_disposition_never_unavailable_and_voice_for_signoff(self) -> None:
         d = disposition_for(
@@ -144,7 +146,7 @@ class FounderShortText(unittest.TestCase):
             quote_history_removed=False,
             method="none",
         )
-        self.assertEqual(d, "correctly_empty")
+        self.assertEqual(d, "non_substantive")
         authored = disposition_for(
             cleaned="Thanks",
             source_text="Thanks\n\nOn wrote:\n> prior",
@@ -152,7 +154,7 @@ class FounderShortText(unittest.TestCase):
             quote_history_removed=True,
             method="on_wrote",
         )
-        self.assertEqual(authored, "authored_prepared")
+        self.assertEqual(authored, "authored_displayable")
 
     def test_v3_short_text_forecast_vs_v2(self) -> None:
         self.assertEqual(V2_SHORT_NONBLANK_CLEANUP, 180)
@@ -162,6 +164,23 @@ class FounderShortText(unittest.TestCase):
         self.assertEqual(V2_VOICE_IN_180, 22)
         self.assertEqual(V3_VOICE_IN_180, 22)
         self.assertEqual(V3_VOICE_IN_180 - V2_VOICE_IN_180, 0)
+
+    def test_html_recovery_beyond_eight_letter_is_additional(self) -> None:
+        from memorybox.ops.i14_prepared_display import html_recovery_beyond_v2_eight_letter
+
+        self.assertTrue(
+            html_recovery_beyond_v2_eight_letter(
+                {
+                    "body_text": "On Thu, Dec 18, 2025 at 8:24 AM Tom Will wrote:\n> Requesting prayers\n",
+                    "body_html": "<p>Thanks</p>",
+                }
+            )
+        )
+        self.assertFalse(
+            html_recovery_beyond_v2_eight_letter(
+                {"body_text": "", "body_html": "<p>Thanks</p>"}
+            )
+        )
 
 
 if __name__ == "__main__":

@@ -571,44 +571,64 @@ def load_thread(conn: Any, display_id: str) -> dict[str, Any]:
         if str(msg.get("identity_quality") or "") in {"uncertain", "unverified"}:
             warnings.append("participant_identity_uncertain")
         body = str(msg.get("cleaned_authored_text") or "")
+        stored_disp = str(msg.get("prepared_text_disposition") or "")
         empty = not bool(body.strip())
+        if stored_disp == "authored_displayable":
+            empty = False
+        elif stored_disp:
+            empty = True
         empty_meta = {
             "empty_prepared_text": empty,
             "empty_body_notice": None,
             "empty_body_category": None,
-            "empty_body_disposition": None,
+            "empty_body_disposition": stored_disp or None,
+            "prepared_text_disposition": stored_disp or None,
         }
         if empty:
             from memorybox.ops.i14_empty_body import classify_empty_prepared, notice_for
 
-            payload = {}
-            if msg.get("evidence_id"):
-                erow = conn.execute(
-                    "SELECT payload_json FROM evidence WHERE id = %s",
-                    (msg["evidence_id"],),
-                ).fetchone()
-                raw_p = (erow or {}).get("payload_json") if erow else None
-                if isinstance(raw_p, str):
-                    try:
-                        payload = json.loads(raw_p)
-                    except json.JSONDecodeError:
-                        payload = {}
-                elif isinstance(raw_p, dict):
-                    payload = raw_p
-            cls = classify_empty_prepared(
-                body_text=str((payload or {}).get("body_text") or ""),
-                body_html=str((payload or {}).get("body_html") or ""),
-                html_only=bool((payload or {}).get("html_only")),
-                has_attachments=bool(atts),
-                commercial_class=str(msg.get("commercial_class") or ""),
-                subject=str(msg.get("subject") or ""),
-                forward_status=str(msg.get("forward_status") or ""),
-            )
-            empty_meta["empty_body_category"] = cls["category"]
-            empty_meta["empty_body_disposition"] = cls["disposition"]
-            empty_meta["empty_body_notice"] = notice_for(
-                cls["category"], has_attachments=bool(atts)
-            )
+            if stored_disp:
+                empty_meta["empty_body_category"] = stored_disp
+                empty_meta["empty_body_disposition"] = stored_disp
+                if stored_disp == "attachment_only":
+                    empty_meta["empty_body_notice"] = notice_for(
+                        "attachment_only", has_attachments=bool(atts)
+                    )
+                elif stored_disp == "prepared_text_unavailable":
+                    empty_meta["empty_body_notice"] = notice_for("cleanup_removed_meaningful")
+                elif stored_disp in {"non_substantive", "correctly_empty"}:
+                    empty_meta["empty_body_notice"] = notice_for("original_genuinely_empty")
+                else:
+                    empty_meta["empty_body_notice"] = notice_for("unexplained")
+            else:
+                payload = {}
+                if msg.get("evidence_id"):
+                    erow = conn.execute(
+                        "SELECT payload_json FROM evidence WHERE id = %s",
+                        (msg["evidence_id"],),
+                    ).fetchone()
+                    raw_p = (erow or {}).get("payload_json") if erow else None
+                    if isinstance(raw_p, str):
+                        try:
+                            payload = json.loads(raw_p)
+                        except json.JSONDecodeError:
+                            payload = {}
+                    elif isinstance(raw_p, dict):
+                        payload = raw_p
+                cls = classify_empty_prepared(
+                    body_text=str((payload or {}).get("body_text") or ""),
+                    body_html=str((payload or {}).get("body_html") or ""),
+                    html_only=bool((payload or {}).get("html_only")),
+                    has_attachments=bool(atts),
+                    commercial_class=str(msg.get("commercial_class") or ""),
+                    subject=str(msg.get("subject") or ""),
+                    forward_status=str(msg.get("forward_status") or ""),
+                )
+                empty_meta["empty_body_category"] = cls["category"]
+                empty_meta["empty_body_disposition"] = cls["disposition"]
+                empty_meta["empty_body_notice"] = notice_for(
+                    cls["category"], has_attachments=bool(atts)
+                )
         packed.append(
             {
                 "ordinal": msg["ordinal"],

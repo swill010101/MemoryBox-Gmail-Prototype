@@ -164,6 +164,19 @@ def _checksum(ids: list[Any]) -> str:
     return hashlib.sha256(blob).hexdigest()
 
 
+def _has_prepared_disposition_column(conn: Any) -> bool:
+    row = conn.execute(
+        """
+        SELECT 1 AS ok
+          FROM information_schema.columns
+         WHERE table_schema = 'public'
+           AND table_name = 'comms_prepared_messages'
+           AND column_name = 'prepared_text_disposition'
+        """
+    ).fetchone()
+    return bool(row)
+
+
 def _ensure_logical(conn: Any) -> UUID:
     row = conn.execute(
         """
@@ -274,7 +287,7 @@ def _schema_message_fields(msg: dict[str, Any]) -> dict[str, Any]:
     # after the voice decision so it cannot remain both empty and voice.
     fwd_status, fwd_omitted, fwd_block = _forward_fields(msg)
     sent = parse_sent_at(str(msg.get("timestamp") or msg.get("sent_at") or "")) or MISSING_TS
-    from memorybox.ops.i14_prepared_display import display_and_voice_for_stored
+    from memorybox.ops.i14_prepared_display import decide_prepared_row
     from memorybox.ops.i14_prepared_text import sanitize_prepared
 
     cleaned, url_a = sanitize_prepared(str(msg.get("cleaned_body") or ""))
@@ -289,11 +302,33 @@ def _schema_message_fields(msg: dict[str, Any]) -> dict[str, Any]:
         parts = str(party.get("label") or "").split()
         from_label = parts[0] if parts else ""
         break
-    decision = display_and_voice_for_stored(
+    has_att = bool(msg.get("attachment_meta") or msg.get("attachments"))
+    empty_category = ""
+    kind_now = None
+    from memorybox.ops.i14_prepared_display import classify_stored_prepared, is_displayable
+
+    if not is_displayable(classify_stored_prepared(cleaned2, from_person=from_label)):
+        from memorybox.ops.i14_empty_body import classify_empty_prepared
+
+        payload = msg.get("payload") if isinstance(msg.get("payload"), dict) else {}
+        empty_category = classify_empty_prepared(
+            body_text=str(payload.get("body_text") or payload.get("body") or msg.get("raw_body") or ""),
+            body_html=str(payload.get("body_html") or ""),
+            html_only=bool(payload.get("html_only")),
+            has_attachments=has_att,
+            commercial_class=str(msg.get("commercial_class") or ""),
+            subject=str(msg.get("subject") or ""),
+            forward_status=fwd_status,
+            stored_cleaned=cleaned2,
+            from_person=from_label,
+        ).get("category") or ""
+    decision = decide_prepared_row(
         cleaned2,
         from_authenticated=from_auth,
         quote_quality=quote,
         from_person=from_label,
+        has_attachments=has_att,
+        empty_category=empty_category,
     )
     voice = bool(decision["voice_corpus"])
     cleaned2 = str(decision["stored_cleaned"] or "")
@@ -312,6 +347,7 @@ def _schema_message_fields(msg: dict[str, Any]) -> dict[str, Any]:
         "cleaned": cleaned2,
         "urls_stripped": urls,
         "subject": str(msg.get("subject") or ""),
+        "prepared_text_disposition": decision["prepared_text_disposition"],
     }
 
 
@@ -721,6 +757,7 @@ def load_household_email_generation(
     commercial_counts: dict[str, int] = {}
     unresolved_identities = 0
     quote_flags = 0
+    has_disp_col = _has_prepared_disposition_column(conn)
     for idx, (cluster_key, ordered) in enumerate(thread_items, start=1):
         _deadline_guard(deadline_mono)
         display_id = format_display_id(idx)
@@ -779,40 +816,78 @@ def load_household_email_generation(
                 digest=digest,
             )
             fields = _schema_message_fields(msg)
-            row = conn.execute(
-                """
-                INSERT INTO comms_prepared_messages (
-                  thread_id, generation_id, ordinal, evidence_id, canonical_record_id,
-                  evidence_ref, sent_at, subject, cleaned_authored_text, forward_block,
-                  forward_status, forward_omitted, urls_stripped, quote_quality,
-                  identity_quality, authorship, voice_corpus, commercial_class, direction
-                ) VALUES (
-                  %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
-                )
-                RETURNING id
-                """,
-                (
-                    tid,
-                    gid,
-                    ordinal,
-                    msg["evidence_id"],
-                    canonical_id,
-                    evidence_ref(display_id, ordinal),
-                    fields["sent_at"],
-                    fields["subject"],
-                    fields["cleaned"],
-                    fields["forward_block"],
-                    fields["forward_status"],
-                    fields["forward_omitted"],
-                    fields["urls_stripped"],
-                    fields["quote_quality"],
-                    fields["identity_quality"],
-                    fields["authorship"],
-                    fields["voice_corpus"],
-                    fields["commercial_class"],
-                    fields["direction"],
-                ),
-            ).fetchone()
+            if has_disp_col:
+                row = conn.execute(
+                    """
+                    INSERT INTO comms_prepared_messages (
+                      thread_id, generation_id, ordinal, evidence_id, canonical_record_id,
+                      evidence_ref, sent_at, subject, cleaned_authored_text, forward_block,
+                      forward_status, forward_omitted, urls_stripped, quote_quality,
+                      identity_quality, authorship, voice_corpus, commercial_class, direction,
+                      prepared_text_disposition
+                    ) VALUES (
+                      %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                    )
+                    RETURNING id
+                    """,
+                    (
+                        tid,
+                        gid,
+                        ordinal,
+                        msg["evidence_id"],
+                        canonical_id,
+                        evidence_ref(display_id, ordinal),
+                        fields["sent_at"],
+                        fields["subject"],
+                        fields["cleaned"],
+                        fields["forward_block"],
+                        fields["forward_status"],
+                        fields["forward_omitted"],
+                        fields["urls_stripped"],
+                        fields["quote_quality"],
+                        fields["identity_quality"],
+                        fields["authorship"],
+                        fields["voice_corpus"],
+                        fields["commercial_class"],
+                        fields["direction"],
+                        fields["prepared_text_disposition"],
+                    ),
+                ).fetchone()
+            else:
+                row = conn.execute(
+                    """
+                    INSERT INTO comms_prepared_messages (
+                      thread_id, generation_id, ordinal, evidence_id, canonical_record_id,
+                      evidence_ref, sent_at, subject, cleaned_authored_text, forward_block,
+                      forward_status, forward_omitted, urls_stripped, quote_quality,
+                      identity_quality, authorship, voice_corpus, commercial_class, direction
+                    ) VALUES (
+                      %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                    )
+                    RETURNING id
+                    """,
+                    (
+                        tid,
+                        gid,
+                        ordinal,
+                        msg["evidence_id"],
+                        canonical_id,
+                        evidence_ref(display_id, ordinal),
+                        fields["sent_at"],
+                        fields["subject"],
+                        fields["cleaned"],
+                        fields["forward_block"],
+                        fields["forward_status"],
+                        fields["forward_omitted"],
+                        fields["urls_stripped"],
+                        fields["quote_quality"],
+                        fields["identity_quality"],
+                        fields["authorship"],
+                        fields["voice_corpus"],
+                        fields["commercial_class"],
+                        fields["direction"],
+                    ),
+                ).fetchone()
             mid = row["id"] if isinstance(row, dict) else row[0]
             _insert_participants(conn, mid, msg)
             part_n += 1 + len(msg.get("to_parties") or []) + len(msg.get("cc_parties") or [])

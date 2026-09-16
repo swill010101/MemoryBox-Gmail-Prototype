@@ -77,7 +77,7 @@ class HtmlSourceSelection(unittest.TestCase):
                 quote_history_removed=False,
                 method="plain",
             ),
-            "authored_prepared",
+            "authored_displayable",
         )
         self.assertEqual(
             disposition_for(
@@ -117,8 +117,62 @@ class HtmlSourceSelection(unittest.TestCase):
                 quote_history_removed=True,
                 method="hotmail_date_from_to_subject",
             ),
-            "cleanup_removed_meaningful",
+            "prepared_text_unavailable",
         )
+
+    def test_recovers_short_html_only_authored_replies(self) -> None:
+        cases = (
+            "Thanks",
+            "Yes",
+            "Ok",
+            "Love you",
+            "Call me",
+            "Amen",
+            "??????",
+            "👍🎉🙌🏖",
+            "Tom",
+        )
+        for text in cases:
+            src = select_authored_source(
+                {
+                    "body_text": "",
+                    "body_html": (
+                        f"<html><head><style>p{{color:red}}</style></head>"
+                        f"<body><p>{text}</p><script>alert(1)</script>"
+                        f"<a href='https://tracking.example.test/x'></a></body></html>"
+                    ),
+                }
+            )
+            self.assertEqual(src.kind, "html", text)
+            self.assertIn(text, src.text)
+            self.assertNotIn("<p>", src.text)
+            self.assertNotIn("alert", src.text)
+            self.assertNotIn("https://", src.text)
+            from memorybox.ops.i14_prepared_text import prepare_message_text
+            from memorybox.ops.i14_prepared_display import prepared_text_is_displayable
+
+            authored = prepare_message_text(src.text).authored
+            self.assertTrue(prepared_text_is_displayable(authored), text)
+
+    def test_unusable_plain_does_not_block_short_html(self) -> None:
+        src = select_authored_source(
+            {
+                "body_text": "\ufeff",
+                "body_html": "<p>Thanks</p>",
+            }
+        )
+        self.assertEqual(src.kind, "html")
+        self.assertEqual(src.text.strip(), "Thanks")
+
+    def test_keeps_substantial_plain_over_short_html(self) -> None:
+        src = select_authored_source(
+            {
+                "body_text": "Hello from the household picnic.",
+                "body_html": "<p>Thanks</p>",
+            }
+        )
+        self.assertEqual(src.kind, "body_text")
+        self.assertIn("household picnic", src.text)
 
     def test_voice_drop_reasons_are_mutually_exclusive(self) -> None:
         from memorybox.ops.i14_prepared_recovery import classify_voice_drop

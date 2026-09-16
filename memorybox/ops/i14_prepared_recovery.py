@@ -10,7 +10,17 @@ from typing import Any
 from memorybox.ops.i14_dsn_guard import ProductionDSNError, refuse_live_dsn
 from memorybox.ops.i14_peggy_preview import _compact_thread_messages
 from memorybox.ops.i14_prepared_loader import _schema_message_fields
-from memorybox.ops.i14_prepared_display import classify_stored_prepared, is_displayable
+from memorybox.ops.i14_prepared_display import (
+    DISPOSITION_ATTACHMENT,
+    DISPOSITION_AUTHORED,
+    DISPOSITION_EMPTY,
+    DISPOSITION_NON_SUBSTANTIVE,
+    DISPOSITION_UNAVAILABLE,
+    DISPOSITION_UNCERTAIN,
+    classify_stored_prepared,
+    is_displayable,
+    kind_to_stored_disposition,
+)
 from memorybox.ops.i14_prepared_text import (
     HOTMAIL_DATE_FROM_TO_SUBJECT,
     select_authored_source,
@@ -55,28 +65,26 @@ def disposition_for(
 ) -> str:
     from memorybox.ops.i14_prepared_text import prepare_message_text
 
-    if is_displayable(classify_stored_prepared(cleaned)):
-        return "authored_prepared"
+    mapped = kind_to_stored_disposition(classify_stored_prepared(cleaned))
+    if mapped:
+        return mapped
     prepared_source = str(prepare_message_text(source_text or "").authored or "")
     source_displayable = is_displayable(classify_stored_prepared(prepared_source))
-    if source_displayable and not is_displayable(classify_stored_prepared(cleaned)):
-        method_l = str(method or "")
-        if quote_history_removed or "hotmail" in method_l:
-            return "cleanup_removed_meaningful"
-        return "prepared_text_unavailable"
-    if str(cleaned or "").strip() and not is_displayable(classify_stored_prepared(cleaned)):
-        return "correctly_empty"
+    if source_displayable:
+        return DISPOSITION_UNAVAILABLE
+    source_kind = classify_stored_prepared(source_text or "")
+    source_mapped = kind_to_stored_disposition(source_kind)
+    if source_mapped == DISPOSITION_NON_SUBSTANTIVE:
+        return DISPOSITION_NON_SUBSTANTIVE
     if has_attachments and not str(source_text or "").strip():
-        return "attachment_only"
+        return DISPOSITION_ATTACHMENT
     if quote_history_removed or str(method or "").startswith("explicit_forward"):
-        return "correctly_empty"
+        return DISPOSITION_EMPTY
     if not (source_text or "").strip():
-        return "correctly_empty"
-    if not source_displayable:
-        return "correctly_empty"
+        return DISPOSITION_EMPTY
     if has_attachments:
-        return "attachment_only"
-    return "prepared_text_unavailable"
+        return DISPOSITION_ATTACHMENT
+    return DISPOSITION_UNCERTAIN
 
 
 def classify_voice_drop(

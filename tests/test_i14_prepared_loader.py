@@ -101,6 +101,8 @@ class PreparedLoaderPg(_DisposablePg):
             conn.commit()
             _apply_file(conn, SQL_039)
             conn.commit()
+            _apply_file(conn, SQL_040_PROPOSED)
+            conn.commit()
 
     def _wipe(self, conn) -> None:
         conn.execute(
@@ -875,6 +877,8 @@ class PreparedLoaderPg(_DisposablePg):
                 (gid,),
             ).fetchone()["n"]
             self.assertEqual(n, 1)
+            conn.execute(SQL_040_PROPOSED.read_text(encoding="utf-8"))
+            conn.commit()
 
     def test_founder_short_text_load_and_proposed_040(self) -> None:
         self._require_dsn()
@@ -925,7 +929,7 @@ class PreparedLoaderPg(_DisposablePg):
             stored = list(
                 conn.execute(
                     """
-                    SELECT cleaned_authored_text, voice_corpus
+                    SELECT cleaned_authored_text, voice_corpus, prepared_text_disposition
                       FROM comms_prepared_messages
                      ORDER BY sent_at
                     """
@@ -933,69 +937,154 @@ class PreparedLoaderPg(_DisposablePg):
             )
             self.assertEqual(stored[0]["cleaned_authored_text"], "Thanks")
             self.assertTrue(stored[0]["voice_corpus"])
+            self.assertEqual(stored[0]["prepared_text_disposition"], "authored_displayable")
             self.assertEqual(stored[1]["cleaned_authored_text"], "??????")
             self.assertTrue(stored[1]["voice_corpus"])
+            self.assertEqual(stored[1]["prepared_text_disposition"], "authored_displayable")
             self.assertEqual(stored[2]["cleaned_authored_text"], "Ok")
             self.assertTrue(stored[2]["voice_corpus"])
             self.assertEqual(stored[3]["cleaned_authored_text"], "👍🎉🙌🏖")
             self.assertTrue(stored[3]["voice_corpus"])
-            self.assertFalse(str(stored[4]["cleaned_authored_text"] or "").strip())
+            self.assertEqual(stored[4]["prepared_text_disposition"], "non_substantive")
             self.assertFalse(stored[4]["voice_corpus"])
-            self.assertFalse(str(stored[5]["cleaned_authored_text"] or "").strip())
+            self.assertEqual(stored[5]["prepared_text_disposition"], "non_substantive")
             self.assertFalse(stored[5]["voice_corpus"])
-            self.assertFalse(str(stored[6]["cleaned_authored_text"] or "").strip())
+            self.assertEqual(stored[6]["prepared_text_disposition"], "non_substantive")
             self.assertFalse(stored[6]["voice_corpus"])
+            gallery = conn.execute(
+                """
+                SELECT prepared_text_disposition, COUNT(*)::int AS n
+                  FROM comms_prepared_messages
+                 WHERE generation_id = %s
+                 GROUP BY prepared_text_disposition
+                 ORDER BY prepared_text_disposition
+                """,
+                (gid,),
+            ).fetchall()
+            by_disp = {r["prepared_text_disposition"]: r["n"] for r in gallery}
+            self.assertEqual(by_disp.get("authored_displayable"), 4)
+            self.assertEqual(by_disp.get("non_substantive"), 3)
+            self.assertEqual(
+                int(
+                    conn.execute(
+                        """
+                        SELECT COUNT(*)::int AS n FROM comms_prepared_messages
+                         WHERE generation_id = %s AND voice_corpus
+                           AND prepared_text_disposition <> 'authored_displayable'
+                        """,
+                        (gid,),
+                    ).fetchone()["n"]
+                ),
+                0,
+            )
             counts = count_loaded_dispositions(conn, gid)
             self.assertEqual(counts["blank_voice"], 0)
-            self.assertEqual(counts["unavailable_and_voice"], 0)
-            self.assertEqual(counts["authored_prepared"], 4)
-            conn.execute(
+            self.assertEqual(counts["forbidden_disposition_and_voice"], 0)
+            self.assertEqual(counts["authored_displayable"], 4)
+            self.assertEqual(counts["non_substantive"], 3)
+            before = conn.execute(
                 """
-                UPDATE comms_prepared_messages
-                   SET cleaned_authored_text = 'Ed,',
-                       voice_corpus = TRUE,
-                       quote_quality = 'clean',
-                       authorship = 'authenticated_focal'
-                 WHERE id = (
-                     SELECT id FROM comms_prepared_messages
-                      WHERE generation_id = %s
-                        AND length(btrim(coalesce(cleaned_authored_text, ''))) = 0
-                      ORDER BY sent_at
-                      LIMIT 1
-                 )
-                """,
-                (gid,),
-            )
-            conn.commit()
-            try:
-                conn.execute("SELECT comms_prepared_assert_generation_ready(%s)", (gid,))
-            except psycopg.Error:
-                conn.rollback()
-                self.fail("039 must still allow nonblank junk voice; 040 is the stronger gate")
-            conn.execute(SQL_040_PROPOSED.read_text(encoding="utf-8"))
-            conn.commit()
-            try:
-                conn.execute("SELECT comms_prepared_assert_generation_ready(%s)", (gid,))
-                self.fail("expected voice_requires_displayable_authored_prepared_text")
-            except psycopg.Error as exc:
-                self.assertIn("voice_requires_displayable_authored_prepared_text", str(exc))
-            conn.rollback()
-            conn.execute(
-                """
-                UPDATE comms_prepared_messages
-                   SET cleaned_authored_text = '??????',
-                       voice_corpus = TRUE,
-                       quote_quality = 'clean',
-                       authorship = 'authenticated_focal'
+                SELECT id, cleaned_authored_text, voice_corpus, prepared_text_disposition
+                  FROM comms_prepared_messages
                  WHERE generation_id = %s
+                   AND prepared_text_disposition = 'non_substantive'
+                 ORDER BY sent_at LIMIT 1
                 """,
                 (gid,),
+            ).fetchone()
+            conn.execute(
+                """
+                UPDATE comms_prepared_messages
+                   SET voice_corpus = TRUE,
+                       quote_quality = 'clean',
+                       authorship = 'authenticated_focal',
+                       cleaned_authored_text = 'Ed,'
+                 WHERE id = %s
+                """,
+                (before["id"],),
+            )
+            try:
+                conn.execute("SELECT comms_prepared_assert_generation_ready(%s)", (gid,))
+                self.fail("expected voice_requires_authored_displayable_disposition")
+            except psycopg.Error as exc:
+                self.assertIn("voice_requires_authored_displayable_disposition", str(exc))
+            conn.rollback()
+            after = conn.execute(
+                """
+                SELECT cleaned_authored_text, prepared_text_disposition
+                  FROM comms_prepared_messages WHERE id = %s
+                """,
+                (before["id"],),
+            ).fetchone()
+            self.assertEqual(after["cleaned_authored_text"], before["cleaned_authored_text"])
+            self.assertEqual(after["prepared_text_disposition"], "non_substantive")
+            conn.execute(
+                """
+                UPDATE comms_prepared_messages
+                   SET voice_corpus = FALSE
+                 WHERE id = %s
+                """,
+                (before["id"],),
             )
             conn.commit()
             conn.execute("SELECT comms_prepared_assert_generation_ready(%s)", (gid,))
-            conn.execute(SQL_039.read_text(encoding="utf-8"))
-            conn.commit()
 
+    def test_html_only_short_replies_recover_on_disposable_postgres(self) -> None:
+        self._require_dsn()
+        with psycopg.connect(self.dsn, row_factory=dict_row, connect_timeout=5) as conn:
+            self._wipe(conn)
+            src = self._source(conn)
+            ledger, _, other = self._ledger(conn)
+            add_confirmed_address(
+                ledger, address="sue@example.test", person_id=str(other), label="Sue Will"
+            )
+            html_cases = (
+                ("Thanks", "<thanks-html@example.test>"),
+                ("Yes", "<yes-html@example.test>"),
+                ("Ok", "<ok-html@example.test>"),
+                ("Love you", "<love-html@example.test>"),
+                ("Call me", "<call-html@example.test>"),
+                ("Amen", "<amen-html@example.test>"),
+                ("??????", "<why-html@example.test>"),
+                ("👍🎉🙌🏖", "<emoji-html@example.test>"),
+                ("Tom", "<tom-html@example.test>"),
+            )
+            for i, (text, rfc) in enumerate(html_cases):
+                payload = _payload(
+                    rfc=rfc,
+                    body_text="",
+                    from_addr="sue@example.test",
+                    to_addr="peggy@example.test",
+                    sent_at=f"2019-01-01T12:00:{i:02d}+00:00",
+                    content_hash=_hash(rfc + text),
+                )
+                payload["body_html"] = (
+                    f"<html><head><style>.x{{display:none}}</style></head>"
+                    f"<body><p>{text}</p><script>alert(1)</script>"
+                    f"<a href='https://ads.example.test/u'></a></body></html>"
+                )
+                payload["from_parsed"] = [
+                    {"address": "sue@example.test", "normalized": "sue@example.test", "display_name": "Sue"}
+                ]
+                self._evidence(conn, src, payload, summary=rfc)
+            conn.commit()
+            loaded = run_load(conn, read_source_messages(conn, [src]), ledger, dsn=self.dsn)
+            self.assertTrue(loaded["ok"])
+            rows = conn.execute(
+                """
+                SELECT cleaned_authored_text, voice_corpus, prepared_text_disposition
+                  FROM comms_prepared_messages
+                 ORDER BY sent_at
+                """
+            ).fetchall()
+            self.assertEqual(len(rows), 9)
+            for i, (text, _rfc) in enumerate(html_cases):
+                self.assertEqual(rows[i]["cleaned_authored_text"], text)
+                self.assertEqual(rows[i]["prepared_text_disposition"], "authored_displayable")
+                self.assertTrue(rows[i]["voice_corpus"])
+                self.assertNotIn("<", rows[i]["cleaned_authored_text"])
+                self.assertNotIn("alert", rows[i]["cleaned_authored_text"])
+                self.assertNotIn("http", rows[i]["cleaned_authored_text"].lower())
 
 
 if __name__ == "__main__":

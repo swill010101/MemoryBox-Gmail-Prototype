@@ -322,12 +322,25 @@ def _ledger(conn: Any) -> Any:
 
 def count_loaded_dispositions(conn: Any, gid: Any) -> dict[str, int]:
     from memorybox.ops.i14_empty_body import classify_empty_prepared
-    from memorybox.ops.i14_prepared_display import is_displayable, classify_stored_prepared
+    from memorybox.ops.i14_prepared_display import (
+        DISPOSITION_ATTACHMENT,
+        DISPOSITION_AUTHORED,
+        DISPOSITION_EMPTY,
+        DISPOSITION_NON_SUBSTANTIVE,
+        DISPOSITION_UNAVAILABLE,
+        DISPOSITION_UNCERTAIN,
+        VOICE_FORBIDDEN_DISPOSITIONS,
+        classify_stored_prepared,
+        is_displayable,
+    )
+    from memorybox.ops.i14_prepared_loader import _has_prepared_disposition_column
 
+    has_disp = _has_prepared_disposition_column(conn)
+    disp_col = ", m.prepared_text_disposition" if has_disp else ", NULL AS prepared_text_disposition"
     rows = conn.execute(
-        """
+        f"""
         SELECT m.cleaned_authored_text, m.forward_status, m.commercial_class, m.subject,
-               m.voice_corpus,
+               m.voice_corpus{disp_col},
                (
                  SELECT COUNT(*)::int FROM comms_prepared_attachments a
                   WHERE a.message_id = m.id
@@ -341,13 +354,17 @@ def count_loaded_dispositions(conn: Any, gid: Any) -> dict[str, int]:
     ).fetchall()
     out = {
         "authored_prepared": 0,
+        "authored_displayable": 0,
+        "non_substantive": 0,
         "correctly_empty": 0,
         "attachment_only": 0,
         "prepared_text_unavailable": 0,
         "cleanup_removed_meaningful": 0,
+        "uncertain": 0,
         "unexplained": 0,
         "blank_voice": 0,
         "unavailable_and_voice": 0,
+        "forbidden_disposition_and_voice": 0,
     }
     correct_empty_cats = {
         "original_genuinely_empty",
@@ -361,11 +378,35 @@ def count_loaded_dispositions(conn: Any, gid: Any) -> dict[str, int]:
     for rec in rows:
         cleaned = str(rec.get("cleaned_authored_text") or "")
         voice = bool(rec.get("voice_corpus"))
+        stored_disp = str(rec.get("prepared_text_disposition") or "")
         if voice and not cleaned.strip():
             out["blank_voice"] += 1
+        if voice and stored_disp in VOICE_FORBIDDEN_DISPOSITIONS:
+            out["forbidden_disposition_and_voice"] += 1
+            out["unavailable_and_voice"] += 1
+        if stored_disp == DISPOSITION_AUTHORED:
+            out["authored_displayable"] += 1
+            out["authored_prepared"] += 1
+            continue
+        if stored_disp == DISPOSITION_NON_SUBSTANTIVE:
+            out["non_substantive"] += 1
+            continue
+        if stored_disp == DISPOSITION_ATTACHMENT:
+            out["attachment_only"] += 1
+            continue
+        if stored_disp == DISPOSITION_UNAVAILABLE:
+            out["prepared_text_unavailable"] += 1
+            continue
+        if stored_disp == DISPOSITION_EMPTY:
+            out["correctly_empty"] += 1
+            continue
+        if stored_disp == DISPOSITION_UNCERTAIN:
+            out["uncertain"] += 1
+            continue
         kind = classify_stored_prepared(cleaned)
         if is_displayable(kind):
             out["authored_prepared"] += 1
+            out["authored_displayable"] += 1
             continue
         payload = rec.get("payload_json") or {}
         if isinstance(payload, str):
@@ -393,14 +434,17 @@ def count_loaded_dispositions(conn: Any, gid: Any) -> dict[str, int]:
             out["unavailable_and_voice"] += 1
         if cat == "authored_prepared":
             out["authored_prepared"] += 1
+            out["authored_displayable"] += 1
         elif cat == "attachment_only":
             out["attachment_only"] += 1
         elif cat == "cleanup_removed_meaningful":
             out["cleanup_removed_meaningful"] += 1
+            out["prepared_text_unavailable"] += 1
         elif cat in correct_empty_cats:
             out["correctly_empty"] += 1
         elif cat == "unexplained":
             out["unexplained"] += 1
+            out["uncertain"] += 1
         else:
             out["prepared_text_unavailable"] += 1
     return out

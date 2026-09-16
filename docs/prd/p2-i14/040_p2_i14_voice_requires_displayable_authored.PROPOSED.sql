@@ -1,10 +1,31 @@
 -- PROPOSED P2-I14 migration 040. Do not copy into memorybox/migrations
--- and do not apply on FlightSim until founder authorizes.
--- Function-only replacement of comms_prepared_assert_generation_ready.
--- Does not ALTER tables, UPDATE rows, or add a CHECK.
--- Stronger than 039: voice requires displayable authored prepared text,
--- not merely non-whitespace. Signoffs, debris, device output, and
--- confirmed fragments cannot activate as voice even when nonblank.
+-- and do not apply on FlightSim until founder authorizes a v3 load.
+-- Adds one stored prepared-text disposition. Replaces
+-- comms_prepared_assert_generation_ready so activation checks that column
+-- rather than re-implementing the Python classifier as SQL regexes.
+-- Does not UPDATE v1/v2 rows. Does not activate or publish.
+-- Existing voice rows stay valid because this does not add a table CHECK
+-- tying voice_corpus to disposition (v1/v2 have no stored disposition).
+
+ALTER TABLE comms_prepared_messages
+    ADD COLUMN IF NOT EXISTS prepared_text_disposition TEXT NOT NULL DEFAULT 'uncertain';
+
+ALTER TABLE comms_prepared_messages
+    DROP CONSTRAINT IF EXISTS comms_prepared_messages_prepared_text_disposition_ck;
+
+ALTER TABLE comms_prepared_messages
+    ADD CONSTRAINT comms_prepared_messages_prepared_text_disposition_ck
+    CHECK (prepared_text_disposition IN (
+        'authored_displayable',
+        'non_substantive',
+        'prepared_text_unavailable',
+        'attachment_only',
+        'correctly_empty',
+        'uncertain'
+    ));
+
+COMMENT ON COLUMN comms_prepared_messages.prepared_text_disposition IS
+    'Loader-assigned mutually exclusive prepared-text disposition. Gallery and voice consume this value. Activation requires voice_corpus only when authored_displayable.';
 
 CREATE OR REPLACE FUNCTION comms_prepared_assert_generation_ready(p_id UUID)
 RETURNS void
@@ -68,6 +89,15 @@ BEGIN
         FROM comms_prepared_messages m
         WHERE m.generation_id = p_id
           AND m.voice_corpus
+          AND m.quote_quality IS DISTINCT FROM 'clean'
+    ) THEN
+        RAISE EXCEPTION 'voice_requires_clean_quote_quality';
+    END IF;
+    IF EXISTS (
+        SELECT 1
+        FROM comms_prepared_messages m
+        WHERE m.generation_id = p_id
+          AND m.voice_corpus
           AND length(btrim(COALESCE(m.cleaned_authored_text, ''))) = 0
     ) THEN
         RAISE EXCEPTION 'voice_requires_nonblank_prepared_text';
@@ -77,17 +107,24 @@ BEGIN
         FROM comms_prepared_messages m
         WHERE m.generation_id = p_id
           AND m.voice_corpus
-          AND (
-                btrim(COALESCE(m.cleaned_authored_text, '')) ~ '^[_[:space:]—\-]+$'
-             OR btrim(COALESCE(m.cleaned_authored_text, '')) ~ '^[A-Za-z][A-Za-z''.\-]{0,40},$'
-             OR btrim(COALESCE(m.cleaned_authored_text, '')) ~* '^\+?\s*Link\s*-?\s*$'
-             OR COALESCE(m.cleaned_authored_text, '') ~* '\[([0-9a-f]{2}:){5}[0-9a-f]{2}\]'
-             OR COALESCE(m.cleaned_authored_text, '') ~* '\yKM-[0-9]{3,6}\y'
-             OR btrim(COALESCE(m.cleaned_authored_text, '')) = E'\uFEFF'
-             OR btrim(COALESCE(m.cleaned_authored_text, '')) ~* '^A[[:space:]]+a[[:space:]]+ml'
+          AND m.prepared_text_disposition IS DISTINCT FROM 'authored_displayable'
+    ) THEN
+        RAISE EXCEPTION 'voice_requires_authored_displayable_disposition';
+    END IF;
+    IF EXISTS (
+        SELECT 1
+        FROM comms_prepared_messages m
+        WHERE m.generation_id = p_id
+          AND m.voice_corpus
+          AND m.prepared_text_disposition IN (
+                'non_substantive',
+                'prepared_text_unavailable',
+                'attachment_only',
+                'correctly_empty',
+                'uncertain'
           )
     ) THEN
-        RAISE EXCEPTION 'voice_requires_displayable_authored_prepared_text';
+        RAISE EXCEPTION 'voice_forbidden_on_non_authored_disposition';
     END IF;
 END;
 $$;
