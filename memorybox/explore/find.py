@@ -6,6 +6,7 @@ Does not hard-code people or events into product logic.
 from __future__ import annotations
 
 import re
+import time
 from pathlib import Path
 from typing import Any
 
@@ -1098,6 +1099,47 @@ def _attach_calendar(
     return out, sum(1 for i in out if _is_calendar_type(i.get("type")))
 
 
+def hydrate_sms_payload(
+    *,
+    person_id: str,
+    token: str,
+    ask_text: str,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    person_name: str = "",
+) -> dict[str, Any]:
+    from memorybox.explore.prepared_comms import token_live
+
+    if token and not token_live(token):
+        return {"ok": True, "cancelled": True, "token": token, "items": [], "sms_available": 0}
+    plan = {
+        "person_ids": [person_id] if person_id else [],
+        "person_names": [person_name] if person_name else [],
+        "time_start": date_from,
+        "time_end": date_to,
+        "original_ask": ask_text,
+        "effective_ask": ask_text,
+        "notes": (),
+    }
+    items, sms_available, sms_hidden = _attach_hidden_sms(
+        [],
+        {"plan": plan, "evidence_hits": []},
+        ask_text=ask_text,
+        show_sms=False,
+        mixed_gallery=True,
+    )
+    visible = [i for i in items if not i.get("gallery_default_hidden")]
+    return {
+        "ok": True,
+        "cancelled": False,
+        "token": token,
+        "items": visible,
+        "sms_available": int(sms_available or 0),
+        "sms_hidden": int(sms_hidden or 0),
+        "sms_match_total": int(sms_available or 0),
+    }
+
+
 def build_explore_find(
     *,
     ask_text: str,
@@ -1214,14 +1256,20 @@ def build_explore_find(
     if use_prepared:
         prepared_pending = True
         prepared_token = new_ask_token()
+    sms_pending = False
+    t_sms0 = time.perf_counter()
     if not tell_mode or show_sms or show_email or show_calendar:
-        items, sms_available, sms_hidden = _attach_hidden_sms(
-            items,
-            result,
-            ask_text=text,
-            show_sms=show_sms,
-            mixed_gallery=use_prepared,
-        )
+        if use_prepared and not show_sms:
+            sms_pending = True
+        else:
+            items, sms_available, sms_hidden = _attach_hidden_sms(
+                items,
+                result,
+                ask_text=text,
+                show_sms=show_sms,
+                mixed_gallery=use_prepared,
+            )
+        sms_attach_ms = int((time.perf_counter() - t_sms0) * 1000)
         if use_prepared:
             email_available = 0
             email_match_total = 0
@@ -1232,6 +1280,8 @@ def build_explore_find(
         items, calendar_available = _attach_calendar(
             items, result, ask_text=text, show_calendar=show_calendar
         )
+    else:
+        sms_attach_ms = 0
     plan = result.get("plan") or {}
     from memorybox.explore.gallery_scope import restrict_items_to_ask_dates
 
@@ -1266,21 +1316,31 @@ def build_explore_find(
     if not tell_mode:
         # A new show/mixed Ask replaces curator; do not keep prior tell prose.
         answer_for_curator = None
-        from memorybox.explore.gallery_scope import ask_calendar_year, curator_gallery_sentence
+        from memorybox.explore.gallery_scope import ask_calendar_year, curator_gallery_sentence, scoped_counts
 
         who = person_names_early[0] if person_names_early else "this person"
         year = ask_calendar_year(plan.get("time_start"), plan.get("time_end"))
-        summary = curator_gallery_sentence(
-            person_label=who,
-            year=year,
+        counts_obj = scoped_counts(
             photo_n=sum(1 for i in visible_items if i.get("type") == "photo"),
             video_n=sum(1 for i in visible_items if i.get("type") == "video"),
             sms_n=int(sms_available or 0),
-            thread_n=0,
+            email_threads=0,
             story_n=sum(1 for i in visible_items if i.get("type") == "story"),
             artifact_n=sum(1 for i in visible_items if i.get("type") == "artifact"),
             calendar_n=int(calendar_available or 0),
+        )
+        summary = curator_gallery_sentence(
+            person_label=who,
+            year=year,
+            photo_n=counts_obj["photos"],
+            video_n=counts_obj["videos"],
+            sms_n=counts_obj["sms"],
+            thread_n=counts_obj["email_threads"],
+            story_n=counts_obj["stories"],
+            artifact_n=counts_obj["artifacts"],
+            calendar_n=counts_obj["calendar"],
             loading_comms=bool(use_prepared),
+            loading_sms=bool(sms_pending),
         )
     if (
         show_email
@@ -1294,6 +1354,7 @@ def build_explore_find(
             + " 0 emails matched this person (Person id, confirmed address, or full display name)."
             ).strip()
     chips = chips_from_ask_result(result)
+    from memorybox.explore.gallery_scope import scoped_counts
     # Prefer plan temporal chip over item-derived year range when present
     if not any(c.get("kind") == "time" for c in chips):
         rc = range_chip_for_items(visible_items)
@@ -1385,6 +1446,22 @@ def build_explore_find(
             "prepared_comms_pending": prepared_pending,
             "prepared_comms_token": prepared_token,
             "prepared_comms_unresolved": prepared_unresolved,
+            "sms_pending": bool(sms_pending),
+            "ask_correlation_id": prepared_token or session_id or "",
+            "scoped_counts": scoped_counts(
+                photo_n=sum(1 for i in visible_items if i.get("type") == "photo"),
+                video_n=sum(1 for i in visible_items if i.get("type") == "video"),
+                sms_n=int(sms_available or 0),
+                email_threads=0,
+                story_n=sum(1 for i in visible_items if i.get("type") == "story"),
+                artifact_n=sum(1 for i in visible_items if i.get("type") == "artifact"),
+                calendar_n=int(calendar_available or 0),
+            )
+            if not tell_mode
+            else {},
+            "pipeline_ms": {
+                "sms_attach_ms": int(sms_attach_ms or 0),
+            },
             "prefer_story_filter": bool(
                 plan.get("want_story")
                 and re.search(r"(?i)\bstor(?:y|ies|ied|iest)\b", text or "")

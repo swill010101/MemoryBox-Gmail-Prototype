@@ -3722,7 +3722,18 @@ def search_stories(plan: QueryPlan, *, limit: int = 12) -> list[StoryHit]:
             ).lower()
             match_n = sum(1 for t in tokens if t.lower() in blob)
             linked = sid in about_ids
-            if match_n == 0 and not linked:
+            name_tokens = {
+                t.lower()
+                for n in (getattr(plan, "person_names", ()) or ())
+                for t in re.findall(r"[A-Za-z][A-Za-z']{2,}", str(n or ""))
+            }
+            topic_tokens = [t for t in tokens if t.lower() not in name_tokens]
+            if person_ids:
+                if not linked:
+                    continue
+                if topic_tokens and not any(t.lower() in blob for t in topic_tokens):
+                    continue
+            elif match_n == 0:
                 continue
             narrator = r["narrator_name"] or "owner"
             body = r["body_text"] or r.get("block_text") or ""

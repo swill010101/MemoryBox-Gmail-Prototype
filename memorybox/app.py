@@ -903,6 +903,33 @@ def explore_prepared_comms(
         )
 
 
+        return payload
+
+
+@app.get("/explore/api/sms-hydrate")
+def explore_sms_hydrate(
+    person_id: str = Query(...),
+    token: str = Query(""),
+    ask_text: str = Query(""),
+    date_from: str | None = Query(None),
+    date_to: str | None = Query(None),
+    person_name: str = Query(""),
+) -> dict[str, Any]:
+    from memorybox.explore.find import hydrate_sms_payload
+    from memorybox.explore.prepared_comms import gallery_comms_enabled
+
+    if not gallery_comms_enabled():
+        return {"ok": True, "enabled": False, "items": [], "sms_available": 0}
+    return hydrate_sms_payload(
+        person_id=person_id,
+        token=token,
+        ask_text=ask_text,
+        date_from=date_from,
+        date_to=date_to,
+        person_name=person_name,
+    )
+
+
 @app.get("/explore/api/prepared-thread/{display_id}")
 def explore_prepared_thread(display_id: str) -> dict[str, Any]:
     from memorybox.db import connection

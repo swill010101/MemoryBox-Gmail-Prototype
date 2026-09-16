@@ -42,10 +42,18 @@ def comms_ask_scope(time_start: Any = None, time_end: Any = None) -> CommsAskSco
     return CommsAskScope(None, None, "year", None)
 
 
+SENTINEL_DATE_PREFIX = "1970-01-01"
+
+
+def is_sentinel_date(raw: Any) -> bool:
+    text = str(raw or "").strip()
+    return text.startswith(SENTINEL_DATE_PREFIX)
+
+
 def item_in_ask_window(item: dict[str, Any], scope: CommsAskScope) -> bool:
     if not scope.dated:
         return True
-    if item.get("undated"):
+    if item.get("undated") or is_sentinel_date(item.get("date")):
         return False
     raw = str(item.get("date") or "").strip()
     if not raw:
@@ -161,3 +169,33 @@ def attachment_state_copy(
 def ask_calendar_year(time_start: Any = None, time_end: Any = None) -> int | None:
     scope = comms_ask_scope(time_start, time_end)
     return scope.calendar_year
+
+
+def scoped_counts(
+    *,
+    photo_n: int = 0,
+    video_n: int = 0,
+    sms_n: int = 0,
+    email_threads: int = 0,
+    story_n: int = 0,
+    artifact_n: int = 0,
+    calendar_n: int = 0,
+) -> dict[str, int]:
+    """One count object for Curator, pills, cards, buckets, and modal totals."""
+    photos = max(0, int(photo_n or 0))
+    videos = max(0, int(video_n or 0))
+    sms = max(0, int(sms_n or 0))
+    threads = max(0, int(email_threads or 0))
+    stories = max(0, int(story_n or 0))
+    artifacts = max(0, int(artifact_n or 0))
+    calendar = max(0, int(calendar_n or 0))
+    return {
+        "photos": photos,
+        "videos": videos,
+        "sms": sms,
+        "email_threads": threads,
+        "stories": stories,
+        "artifacts": artifacts,
+        "calendar": calendar,
+        "communications": sms + threads,
+    }

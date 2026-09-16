@@ -539,12 +539,12 @@ class ExploreFind(unittest.TestCase):
         self.assertFalse(payload["explore_state"]["gallery_show_sms"])
         self.assertFalse(payload["explore_state"]["gallery_show_email"])
         self.assertTrue(payload["explore_state"]["gallery_mixed_comms"])
-        self.assertEqual(payload["explore_state"]["sms_available"], 328)
-        self.assertEqual(payload["explore_state"]["sms_match_total"], 328)
+        self.assertTrue(payload["explore_state"]["sms_pending"])
+        self.assertEqual(payload["explore_state"]["sms_available"], 0)
+        self.assertEqual(payload["explore_state"]["sms_match_total"], 0)
         sms = [i for i in payload["items"] if i.get("type") == "sms"]
-        self.assertEqual(len(sms), 1)
-        self.assertFalse(sms[0].get("gallery_default_hidden"))
-        self.assertIn("328 text message", payload["summary"])
+        self.assertEqual(sms, [])
+        self.assertIn("gathering", payload["summary"].lower())
         self.assertNotIn("retrieval", payload["summary"].lower())
         self.assertNotIn("80 of", payload["summary"])
 
@@ -593,15 +593,16 @@ class ExploreFind(unittest.TestCase):
             payload = build_explore_find(
                 ask_text="Show me Sue Will in 2017", session_id="s", orchestrator=orch
             )
-        search.assert_called()
-        self.assertEqual(payload["explore_state"]["sms_match_total"], 328)
+        search.assert_not_called()
+        self.assertTrue(payload["explore_state"]["sms_pending"])
+        self.assertEqual(payload["explore_state"]["sms_match_total"], 0)
         self.assertFalse(payload["explore_state"]["gallery_show_sms"])
-        hidden = [
+        visible_sms = [
             i
             for i in payload["items"]
-            if i.get("type") == "sms" and i.get("gallery_default_hidden")
+            if i.get("type") == "sms" and not i.get("gallery_default_hidden")
         ]
-        self.assertEqual(hidden, [])
+        self.assertEqual(visible_sms, [])
 
 
 if __name__ == "__main__":

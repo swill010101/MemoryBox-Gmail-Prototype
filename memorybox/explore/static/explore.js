@@ -167,7 +167,10 @@
   }
 
   function isUndated(item) {
-    return Boolean(item && (item.undated || !item.date || !Number.isFinite(parseISO(item.date))));
+    if (!item) return true;
+    const raw = String(item.date || "").trim();
+    if (raw.indexOf("1970-01-01") === 0) return true;
+    return Boolean(item.undated || !raw || !Number.isFinite(parseISO(item.date)));
   }
 
   function isDated(item) {
@@ -1621,6 +1624,10 @@
         timeEnd: exploreHint.time_end || plan.time_end || null,
         person_ids: exploreHint.person_ids || [],
         preparedCommsPending: Boolean(exploreHint.prepared_comms_pending),
+        smsPending: Boolean(exploreHint.sms_pending),
+        askCorrelationId: String(exploreHint.ask_correlation_id || ""),
+        scopedCounts: exploreHint.scoped_counts || {},
+        pipelineMs: exploreHint.pipeline_ms || {},
         preparedComms: null,
         temporalWindows: temporalWindows,
         items: [],
@@ -1728,12 +1735,18 @@
     return null;
   }
 
+  let smsAbort = null;
+
   function abortPreparedFetch() {
     if (preparedAbort) {
       preparedAbort.abort();
       preparedAbort = null;
     }
     preparedCommsToken = "";
+    if (smsAbort) {
+      smsAbort.abort();
+      smsAbort = null;
+    }
   }
 
   function mintAskSession() {
@@ -1773,8 +1786,12 @@
     if (!state.domain) return;
     state.domain.preparedCommsPending = false;
     const buckets = Array.isArray(data.buckets) ? data.buckets : [];
+    if (data.year && Number(data.year) === 1970) {
+      /* sentinel year is not a real bucket */
+    }
+    const cleanBuckets = buckets.filter((b) => Number(b.year) !== 1970);
     state.domain.preparedComms = {
-      buckets: buckets,
+      buckets: cleanBuckets,
       grain: data.grain || "year",
       scopedThreads: Number(data.scoped_thread_total || 0),
       scopedMessages: Number(data.scoped_message_total || 0),
@@ -1782,16 +1799,22 @@
       shown: 0,
       hasMore: false,
       nextCursor: null,
-      years: buckets
+      years: cleanBuckets
         .filter((b) => b.year && !b.month)
         .map((b) => ({ year: b.year, n: b.thread_n })),
-      undatedN: 0,
+      undatedN: Number(data.undated_n || 0),
       year: data.scope_year == null ? null : data.scope_year,
       scopeYear: data.scope_year == null ? null : data.scope_year,
       match: (data.person_match && data.person_match.status) || "",
       excluded: data.excluded || {},
       pageSize: Number(data.page_size || 80),
     };
+    state.domain.scopedCounts = Object.assign({}, state.domain.scopedCounts || {}, {
+      email_threads: Number(data.scoped_thread_total || 0),
+      communications:
+        Number(data.scoped_thread_total || 0) +
+        Number(state.domain.smsMatchTotal || state.domain.smsAvailable || 0),
+    });
     const match = state.domain.preparedComms.match;
     if (match === "no_prepared_participant") {
       state.domain.summary = (
@@ -1848,6 +1871,56 @@
       state.domain.summary = naturalCommsSummary({ scopedThreads: 0, scopeYear: null });
     }
     fetchPreparedBuckets();
+    if (hint.sms_pending) {
+      fetchSmsHydrate(hint);
+    }
+  }
+
+  function fetchSmsHydrate(hint) {
+    const personId = String((hint.person_ids || [])[0] || "");
+    const token = String(hint.prepared_comms_token || preparedCommsToken || "");
+    if (!personId || !token) return;
+    if (smsAbort) smsAbort.abort();
+    smsAbort = typeof AbortController !== "undefined" ? new AbortController() : null;
+    const qs = new URLSearchParams({
+      person_id: personId,
+      token: token,
+      ask_text: String((state.domain && state.domain.askText) || ""),
+    });
+    if (hint.time_start) qs.set("date_from", String(hint.time_start).slice(0, 10));
+    if (hint.time_end) qs.set("date_to", String(hint.time_end).slice(0, 10));
+    const opts = { cache: "no-store" };
+    if (smsAbort) opts.signal = smsAbort.signal;
+    fetch("/explore/api/sms-hydrate?" + qs.toString(), opts)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!data || data.cancelled || (data.token && data.token !== preparedCommsToken)) return;
+        if (!state.domain) return;
+        state.domain.smsAvailable = Number(data.sms_available || 0);
+        state.domain.smsMatchTotal = Number(data.sms_match_total || data.sms_available || 0);
+        state.domain.smsHidden = Number(data.sms_hidden || 0);
+        state.domain.scopedCounts = Object.assign({}, state.domain.scopedCounts || {}, {
+          sms: Number(data.sms_match_total || data.sms_available || 0),
+          communications:
+            Number((state.domain.preparedComms && state.domain.preparedComms.scopedThreads) || 0) +
+            Number(data.sms_match_total || data.sms_available || 0),
+        });
+        const extra = Array.isArray(data.items) ? data.items : [];
+        if (extra.length) {
+          const have = new Set(rawItems.map((it) => String(it.id || it.evidence_id || "")));
+          extra.forEach((it) => {
+            const k = String(it.id || it.evidence_id || "");
+            if (k && have.has(k)) return;
+            rawItems.push(it);
+          });
+        }
+        renderFilters();
+        refreshCuratorFromVisible();
+        render();
+      })
+      .catch((err) => {
+        if (err && err.name === "AbortError") return;
+      });
   }
 
   function renderCommsPager() {
@@ -2677,12 +2750,15 @@
     if (id === "artifact") return nOf("artifact") || null;
     if (id === "calendar") return Number(d.calendarAvailable || 0) || null;
     if (id === "email") {
+      const sc = d.scopedCounts || {};
       const tf = d.typeFilter || "all";
       const threads =
-        tf !== "email" || d.includeEmail ? Number(pc.scopedThreads || 0) : 0;
+        tf === "all" || (tf === "email" && d.includeEmail !== false)
+          ? Number((pc.scopedThreads != null ? pc.scopedThreads : sc.email_threads) || 0)
+          : 0;
       const sms =
-        tf !== "email" || d.includeTexts
-          ? Number(d.smsMatchTotal || d.smsAvailable || 0)
+        tf === "all" || (tf === "email" && d.includeTexts !== false)
+          ? Number(d.smsMatchTotal || d.smsAvailable || sc.sms || 0)
           : 0;
       return threads + sms || null;
     }
