@@ -51,7 +51,11 @@ from memorybox.ask.i11a.i11a0_prompt import (
     SYSTEM_PROMPT,
     prompt_sha256,
 )
-from memorybox.ask.narrative import SYSTEM_PROMPT as PRODUCTION_NARRATOR
+
+
+def _production_narrator_source() -> str:
+    """Read the production narrator module as text. Do not import Ask/Postgres."""
+    return (Path(__file__).resolve().parent / "narrative.py").read_text(encoding="utf-8")
 
 
 def _check(name: str, condition: bool, checks: list[str], problems: list[str], detail: Any = None) -> None:
@@ -150,9 +154,18 @@ def _piece(index: int, chars: int, when: str) -> EvidencePiece:
 
 
 def run_prove_i11a0_benchmark() -> dict[str, Any]:
+    import sys
+
     checks: list[str] = []
     problems: list[str] = []
     prompt_hash = prompt_sha256()
+    production_narrator = _production_narrator_source()
+    _check(
+        "offline_harness_does_not_import_postgres",
+        "memorybox.db" not in sys.modules and "psycopg" not in sys.modules,
+        checks,
+        problems,
+    )
     _check("prompt_is_draft", PROMPT_ACCEPTED is False, checks, problems)
     _check("prompt_hash_stable", prompt_hash == prompt_sha256() and len(prompt_hash) == 64, checks, problems)
     _check(
@@ -171,7 +184,7 @@ def run_prove_i11a0_benchmark() -> dict[str, Any]:
     )
     _check(
         "prompt_is_not_production_narrator",
-        "I11A0_BENCHMARK_NARRATION" not in PRODUCTION_NARRATOR and PROMPT_VERSION not in PRODUCTION_NARRATOR,
+        "I11A0_BENCHMARK_NARRATION" not in production_narrator and PROMPT_VERSION not in production_narrator,
         checks,
         problems,
     )

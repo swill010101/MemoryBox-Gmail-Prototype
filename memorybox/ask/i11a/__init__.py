@@ -3,12 +3,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from memorybox.ask.retrieve import visual_library_person_ids
-from memorybox.profile.owner import get_requestor_person_id
-
 
 def resolve_request_context(plan: Any) -> dict[str, Any]:
     """Who is asking vs who/what the Ask is about."""
+    from memorybox.ask.retrieve import visual_library_person_ids
+    from memorybox.profile.owner import get_requestor_person_id
+
     requestor = None
     try:
         requestor = get_requestor_person_id()
