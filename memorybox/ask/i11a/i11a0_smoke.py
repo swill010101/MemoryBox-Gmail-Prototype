@@ -1,6 +1,7 @@
 """Gate 2 smoke runner. One installed-model generate. No pull. No Stage 1."""
 from __future__ import annotations
 
+import hashlib
 import json
 import time
 import urllib.error
@@ -45,6 +46,10 @@ PINNED_C_DIGEST = "08ae7ec1744bd7f451c4a530afb39d2673ad9d07a8369b8a33a3613b41212
 REPO_ROOT = Path(__file__).resolve().parents[3]
 VRAM_RELEASE_SLACK_GB = 2.0
 GEMMA_PACKET_SHA256 = "1c24eb2fa792e553cef299653b6c20e186da9685ea4e7ac78763f3d36df7b690"
+INITIAL_A_EXECUTION_ID = (
+    "c1cd10594705ff1f1ac7f89bd8a4325c9a432017553b179abb5c2a2d7ff51b0f"
+)
+PINNED_A_DIGEST = "19e422b0231392335cfc49cfd172de7034bb1aeabb08aa307cce745c60b272fe"
 
 
 def require_qwen_smoke_configuration(spec: ModelSpec, row: dict[str, Any]) -> dict[str, Any]:
@@ -92,6 +97,57 @@ def require_qwen_smoke_configuration(spec: ModelSpec, row: dict[str, Any]) -> di
     return metadata
 
 
+def refuse_inherited_num_ctx(config_id: str, configured_num_ctx: int | None) -> None:
+    if config_id == "B" and configured_num_ctx is not None:
+        raise I11A0Error(
+            "Configuration B must not reuse Configuration A's calibrated num_ctx; "
+            "plan B from the estimator and this model's recorded prompt_eval_count"
+        )
+
+
+def write_qwen_a_initial_calibration(run_dir: Path) -> dict[str, Any]:
+    """Record A's +87 calibration beside the first run. Do not rewrite run files."""
+    run_dir = Path(run_dir)
+    record = json.loads((run_dir / "run_record.json").read_text(encoding="utf-8"))
+    measurement = record.get("measurement") or {}
+    identity = str(record.get("execution_id") or record.get("identity") or run_dir.name)
+    hashes = {
+        name: hashlib.sha256((run_dir / name).read_bytes()).hexdigest()
+        for name in ("run_record.json", "token_accounting.json", "narration.txt", "raw_api.jsonl")
+        if (run_dir / name).exists()
+    }
+    payload = {
+        "kind": "model_specific_calibration",
+        "config_id": "A",
+        "tag": "qwen3:30b-a3b-instruct-2507-q4_K_M",
+        "legacy_execution_id": identity,
+        "classification": record.get("classification"),
+        "pipeline_execution": "passed",
+        "generation_completion": "passed",
+        "hardware_telemetry_valid": True,
+        "full_safety_margin": "failed",
+        "estimated_prompt_tokens": measurement.get("estimated_prompt_tokens"),
+        "actual_prompt_tokens": measurement.get("actual_prompt_tokens")
+        or measurement.get("prompt_eval_count"),
+        "estimation_error_tokens": measurement.get("estimation_error_tokens")
+        or measurement.get("token_error"),
+        "required_context_tokens": measurement.get("required_context_tokens"),
+        "configured_num_ctx": measurement.get("configured_num_ctx"),
+        "safety_margin_shortfall_tokens": measurement.get("safety_margin_shortfall_tokens"),
+        "calibrated_num_ctx": 6144,
+        "do_not_apply_to_configuration_b": True,
+        "original_files_unmodified": True,
+        "original_artifact_sha256": hashes,
+    }
+    dest = run_dir / "model_specific_calibration.json"
+    dest.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    return payload
+
+
 def _select_installed_smoke_models(config_models: tuple[ModelSpec, ...], inventory: dict[str, Any]) -> list[ModelSpec]:
     by_tag = {row["tag"]: row for row in inventory.get("approved") or []}
     selected: list[ModelSpec] = []
@@ -104,6 +160,12 @@ def _select_installed_smoke_models(config_models: tuple[ModelSpec, ...], invento
         digest = str(row.get("digest") or spec.digest or "")
         if spec.tag == "gemma4:26b" and digest != PINNED_C_DIGEST:
             raise I11A0Error(f"gemma4:26b digest is not the pinned Gate 1 digest: {digest}")
+        if (
+            spec.tag == "qwen3:30b-a3b-instruct-2507-q4_K_M"
+            and len(digest) == 64
+            and digest != PINNED_A_DIGEST
+        ):
+            raise I11A0Error(f"configuration A digest is not the recorded Gate 2 digest: {digest}")
         filled = ModelSpec(
             config_id=spec.config_id,
             tag=spec.tag,
@@ -410,11 +472,7 @@ def _smoke_one_model(
     ollama_base_url: str,
     preflight: dict[str, Any],
 ) -> dict[str, Any]:
-    if chosen.config_id != "C" and config.configured_num_ctx is not None:
-        raise I11A0Error(
-            "Qwen smoke must not reuse a pinned Gemma num_ctx; omit configured_num_ctx "
-            "and plan from the estimator plus this model's recorded prompt_eval_count"
-        )
+    refuse_inherited_num_ctx(chosen.config_id, config.configured_num_ctx)
     metadata = dict(inventory_row.get("metadata") or {})
     if chosen.config_id in {"A", "B"}:
         metadata = require_qwen_smoke_configuration(chosen, inventory_row)
@@ -448,7 +506,11 @@ def _smoke_one_model(
         recorded["last_event"] = events[-1] if events else {}
         return measurement, narration
 
-    one_config = replace(config, models=(chosen,), configured_num_ctx=None if chosen.config_id != "C" else config.configured_num_ctx)
+    one_config = replace(
+        config,
+        models=(chosen,),
+        configured_num_ctx=None if chosen.config_id == "B" else config.configured_num_ctx,
+    )
     try:
         payload = run_authorized_stage(
             config=one_config,

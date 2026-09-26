@@ -1,0 +1,31 @@
+{
+  "stage": "smoke",
+  "inference_authorized": true,
+  "command_kind": "gate2_a_calibrated_rerun",
+  "full_context_ladder_blocked": true,
+  "thinking_mode": "off",
+  "authorize_thinking_comparison": false,
+  "temperature": 0.1,
+  "seed": 42,
+  "reserved_output_tokens": 2500,
+  "safety_margin_tokens": 1500,
+  "configured_num_ctx": 6144,
+  "maximum_vram_gb": 22.5,
+  "timeout_seconds": 1800,
+  "smoke_evidence_tokens": 1000,
+  "prompt_version": "i11a0-narration-v0.2-draft",
+  "prompt_status": "accepted_for_gate2_benchmark_only",
+  "production_prompt_accepted": false,
+  "models": [
+    {
+      "config_id": "A",
+      "tag": "qwen3:30b-a3b-instruct-2507-q4_K_M",
+      "alias": "qwen3:30b",
+      "quantization": "Q4_K_M",
+      "digest": "19e422b0231392335cfc49cfd172de7034bb1aeabb08aa307cce745c60b272fe"
+    }
+  ],
+  "founder_gate3_accepted": false,
+  "founder_gate4_accepted": false,
+  "gate2_note": "One calibrated Configuration A rerun. num_ctx 6144 is A's +87 underestimate calibration (1980+2500+1500=5980, rounded). Do not overwrite c1cd1059. Do not apply this pin to B."
+}

@@ -17,6 +17,8 @@ docs/test-output/i11a0-benchmark/smoke/**
 docs/test-output/i11a0-benchmark/smoke-corrected/**
 docs/test-output/i11a0-benchmark/smoke-flightsim/**
 docs/test-output/i11a0-benchmark/smoke-ab/**
+docs/test-output/i11a0-benchmark/smoke-a-calibrated/**
+docs/test-output/i11a0-benchmark/smoke-b/**
 
 # Archive: track Takeout originals + checksums only (zips via Git LFS).
 # Ignore other archive contents if added later.

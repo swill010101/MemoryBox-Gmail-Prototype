@@ -1029,9 +1029,12 @@ def run_prove_i11a0_benchmark() -> dict[str, Any]:
     _check("cli_refuses_inference_without_smoke_confirm", inference_blocked, checks, problems)
     from memorybox.ask.i11a.i11a0_smoke import (
         PINNED_C_DIGEST,
+        INITIAL_A_EXECUTION_ID,
         _select_installed_smoke_model,
         _select_installed_smoke_models,
         require_qwen_smoke_configuration,
+        refuse_inherited_num_ctx,
+        write_qwen_a_initial_calibration,
     )
     from memorybox.ask.i11a.i11a0_host import (
         REMOTE_FUNCTIONAL_LABEL,
@@ -1149,6 +1152,85 @@ def run_prove_i11a0_benchmark() -> dict[str, Any]:
     except I11A0Error:
         missing_b = True
     _check("gate2_ab_stops_if_b_is_missing", missing_b, checks, problems)
+    a_first = prompt_safety_assessment(
+        actual_prompt_tokens=1980,
+        estimated_prompt_tokens=1893,
+        configured_num_ctx=5893,
+        output_reserve_tokens=2500,
+        required_safety_margin_tokens=1500,
+        pipeline_execution="passed",
+        generation_completion="passed",
+    )
+    _check(
+        "qwen_a_initial_values_fail_safety_margin_by_87",
+        a_first["estimation_error_tokens"] == 87
+        and a_first["required_context_tokens"] == 5980
+        and a_first["safety_margin_shortfall_tokens"] == 87
+        and a_first["overall_classification"] == "successful_pipeline_safety_margin_failed",
+        checks,
+        problems,
+        a_first,
+    )
+    a_cal = prompt_safety_assessment(
+        actual_prompt_tokens=1980,
+        estimated_prompt_tokens=1893,
+        configured_num_ctx=6144,
+        output_reserve_tokens=2500,
+        required_safety_margin_tokens=1500,
+    )
+    _check(
+        "qwen_a_calibrated_num_ctx_6144_passes_the_equation",
+        a_cal["required_context_tokens"] == 5980
+        and a_cal["final_safety_result"] == "passed"
+        and a_cal["overall_classification"] == "successful_stable",
+        checks,
+        problems,
+        a_cal,
+    )
+    b_pin_blocked = False
+    try:
+        refuse_inherited_num_ctx("B", 6144)
+    except I11A0Error as exc:
+        b_pin_blocked = "must not reuse Configuration A's calibrated num_ctx" in str(exc)
+    _check("qwen_b_cannot_inherit_a_calibrated_num_ctx", b_pin_blocked, checks, problems)
+    refuse_inherited_num_ctx("A", 6144)
+    _check("qwen_a_may_use_calibrated_num_ctx_6144", True, checks, problems)
+    with tempfile.TemporaryDirectory() as a_dir:
+        a_path = Path(a_dir) / INITIAL_A_EXECUTION_ID
+        a_path.mkdir()
+        (a_path / "run_record.json").write_text(
+            json.dumps(
+                {
+                    "identity": INITIAL_A_EXECUTION_ID,
+                    "execution_id": INITIAL_A_EXECUTION_ID,
+                    "classification": "successful_pipeline_safety_margin_failed",
+                    "measurement": {
+                        "estimated_prompt_tokens": 1893,
+                        "actual_prompt_tokens": 1980,
+                        "estimation_error_tokens": 87,
+                        "required_context_tokens": 5980,
+                        "configured_num_ctx": 5893,
+                        "safety_margin_shortfall_tokens": 87,
+                    },
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        before = hashlib.sha256((a_path / "run_record.json").read_bytes()).hexdigest()
+        recorded = write_qwen_a_initial_calibration(a_path)
+        after = hashlib.sha256((a_path / "run_record.json").read_bytes()).hexdigest()
+        _check(
+            "qwen_a_initial_run_is_preserved_with_plus_87_calibration",
+            before == after
+            and recorded["estimation_error_tokens"] == 87
+            and recorded["classification"] == "successful_pipeline_safety_margin_failed"
+            and recorded["calibrated_num_ctx"] == 6144
+            and recorded["do_not_apply_to_configuration_b"] is True,
+            checks,
+            problems,
+            recorded,
+        )
     _check("gate2_smoke_is_authorized_flag", GATE2_SMOKE_AUTHORIZED is True, checks, problems)
     rtx_preflight = collect_host_affinity_preflight(
         ollama_base_url="http://127.0.0.1:11434",
