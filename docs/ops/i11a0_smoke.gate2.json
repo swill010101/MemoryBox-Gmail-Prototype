@@ -1,6 +1,9 @@
 {
   "stage": "smoke",
   "inference_authorized": true,
+  "command_kind": "preliminary_gemma_pipeline_check",
+  "gate2_complete": false,
+  "full_context_ladder_blocked": true,
   "thinking_mode": "off",
   "authorize_thinking_comparison": false,
   "temperature": 0.1,
@@ -10,6 +13,10 @@
   "maximum_vram_gb": 22.5,
   "timeout_seconds": 1800,
   "smoke_evidence_tokens": 1000,
+  "token_estimator_id": "utf8_bytes_plus_3_div_4",
+  "token_estimator_formula": "max(1, (len(text.encode('utf-8')) + 3) // 4)",
+  "token_estimator_label": "estimated",
+  "actual_count_source": "recorded_smoke_generation_prompt_eval_count",
   "prompt_version": "i11a0-narration-v0.2-draft",
   "prompt_accepted": false,
   "models": [
@@ -25,5 +32,5 @@
   "founder_gate4_accepted": false,
   "authorize_alternate_quantization": false,
   "alternate_quantization_tag": null,
-  "gate2_note": "One smoke run on the installed Gate 1 configuration C. A and B stay unpulled. Stage 1 remains unauthorized."
+  "gate2_note": "This command is a preliminary Gemma 4 26B pipeline check only. Gate 2 is not complete until A and B are installed, verified, and smoked. The context ladder remains blocked. The cheap estimator only sizes the candidate packet. The only actual prompt-token count is prompt_eval_count from this recorded /api/chat generation."
 }

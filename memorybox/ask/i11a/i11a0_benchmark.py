@@ -27,6 +27,9 @@ from memorybox.ask.i11a.i11a0_prompt import (
 I11A0_VERSION = "0.1-offline"
 INFERENCE_AUTHORIZED = False
 GATE2_SMOKE_AUTHORIZED = True
+TOKEN_ESTIMATOR_ID = "utf8_bytes_plus_3_div_4"
+TOKEN_ESTIMATOR_FORMULA = "max(1, (len(text.encode('utf-8')) + 3) // 4)"
+TOKEN_ESTIMATOR_LABEL = "estimated"
 VRAM_CEILING_GB = 22.5
 OUTPUT_RESERVE_TOKENS = 2500
 SAFETY_MARGIN_TOKENS = 1500
@@ -284,6 +287,9 @@ def default_config_document() -> dict[str, Any]:
         "regression_elapsed_fraction": ELAPSED_REGRESSION_FRACTION,
         "regression_run_count": CONFIRMED_REGRESSION_STOP,
         "smoke_evidence_tokens": 1000,
+        "token_estimator_id": TOKEN_ESTIMATOR_ID,
+        "token_estimator_formula": TOKEN_ESTIMATOR_FORMULA,
+        "token_estimator_label": TOKEN_ESTIMATOR_LABEL,
         "prompt_version": PROMPT_VERSION,
         "prompt_sha256": prompt_sha256(),
         "prompt_accepted": PROMPT_ACCEPTED,
@@ -457,6 +463,20 @@ class Measurement:
     infrastructure_failure: bool = False
     out_of_memory: bool = False
     cancelled: bool = False
+    evidence_bytes: int | None = None
+    evidence_characters: int | None = None
+    estimated_evidence_tokens: int | None = None
+    estimated_prompt_template_tokens: int | None = None
+    estimated_total_prompt_tokens: int | None = None
+    token_estimator_id: str | None = None
+    token_estimator_formula: str | None = None
+    token_count_kind: str | None = None
+    token_error: int | None = None
+    token_error_percent: float | None = None
+    configured_num_ctx: int | None = None
+    output_reserve_tokens: int | None = None
+    safety_margin_tokens: int | None = None
+    final_safety_result: str | None = None
 
 
 def classify_measurement(measurement: Measurement, *, vram_ceiling_gb: float) -> str:
@@ -1336,6 +1356,31 @@ def _persist_run(results_dir: Path, observation: RunObservation) -> None:
         encoding="utf-8",
         newline="\n",
     )
+    accounting = {
+        "evidence_bytes": observation.measurement.evidence_bytes,
+        "evidence_characters": observation.measurement.evidence_characters,
+        "estimated_evidence_tokens": observation.measurement.estimated_evidence_tokens,
+        "estimated_prompt_template_tokens": observation.measurement.estimated_prompt_template_tokens,
+        "estimated_total_prompt_tokens": observation.measurement.estimated_total_prompt_tokens,
+        "estimator_id": observation.measurement.token_estimator_id or TOKEN_ESTIMATOR_ID,
+        "estimator_formula": observation.measurement.token_estimator_formula or TOKEN_ESTIMATOR_FORMULA,
+        "estimator_result_kind": TOKEN_ESTIMATOR_LABEL,
+        "actual_prompt_eval_count": observation.measurement.prompt_eval_count,
+        "actual_count_source": "recorded_generation_prompt_eval_count",
+        "actual_includes_chat_template_and_instructions": True,
+        "token_error": observation.measurement.token_error,
+        "token_error_percent": observation.measurement.token_error_percent,
+        "configured_num_ctx": observation.measurement.configured_num_ctx,
+        "output_reserve_tokens": observation.measurement.output_reserve_tokens,
+        "safety_margin_tokens": observation.measurement.safety_margin_tokens,
+        "final_safety_result": observation.measurement.final_safety_result,
+        "calibration_recorded": observation.measurement.token_error is not None,
+    }
+    (folder / "token_accounting.json").write_text(
+        json.dumps(accounting, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
     (folder / "narration.txt").write_text(observation.narration_text, encoding="utf-8", newline="\n")
 
 
@@ -1407,8 +1452,9 @@ def _execute(
     confirmation: bool,
     pack_target: int,
 ) -> RunObservation:
+    smoke = config.stage == "smoke"
     evidence = source.materialize(model=spec.tag, target_tokens=pack_target, counter=counter)
-    if not evidence.certain:
+    if not smoke and not evidence.certain:
         raise UncertainTokenCount("capacity evidence is not model-token certain")
     user = render_user_message(
         packet_id=f"{spec.config_id}-{requested_tokens}-{warm_or_cold}-{repetition}",
@@ -1444,13 +1490,30 @@ def _execute(
             skipped=True,
         )
     full_prompt = SYSTEM_PROMPT + "\n" + user
-    estimated_full = require_certain(counter.count(full_prompt, model=spec.tag)).tokens
+    if smoke:
+        estimated_evidence = estimate_tokens(evidence.text)
+        estimated_total = estimate_tokens(full_prompt)
+        estimated_template = max(0, estimated_total - estimated_evidence)
+    else:
+        if not evidence.certain:
+            raise UncertainTokenCount("capacity evidence is not model-token certain")
+        estimated_evidence = evidence.estimated_evidence_tokens
+        estimated_total = require_certain(counter.count(full_prompt, model=spec.tag)).tokens
+        estimated_template = max(prompt_tokens, estimated_total - estimated_evidence)
     plan = plan_context(
-        evidence_tokens=evidence.estimated_evidence_tokens,
-        prompt_tokens=max(prompt_tokens, estimated_full - evidence.estimated_evidence_tokens),
+        evidence_tokens=estimated_evidence if smoke else evidence.estimated_evidence_tokens,
+        prompt_tokens=estimated_template,
         reserved_output_tokens=config.reserved_output_tokens,
         safety_margin_tokens=config.safety_margin_tokens,
     )
+    estimated_budget_ok = (
+        estimated_total + config.reserved_output_tokens + config.safety_margin_tokens
+        <= plan.num_ctx
+    )
+    if smoke and not estimated_budget_ok:
+        raise ContextBudgetError(
+            "estimated total prompt tokens + output reserve + safety margin exceed num_ctx"
+        )
     request = RunRequest(
         model_tag=spec.tag,
         digest=spec.digest,
@@ -1472,20 +1535,55 @@ def _execute(
         evidence_ids=evidence.evidence_ids,
     )
     measurement, narration = runner(request)
-    measurement.evidence_tokens = measurement.evidence_tokens or requested_tokens
-    if measurement.estimated_prompt_tokens is None:
-        measurement.estimated_prompt_tokens = estimated_full
-    if measurement.prompt_eval_count is not None:
-        error = measurement.prompt_eval_count - estimated_full
+    measurement.evidence_tokens = measurement.evidence_tokens or estimated_evidence
+    measurement.evidence_bytes = len(evidence.text.encode("utf-8"))
+    measurement.evidence_characters = len(evidence.text)
+    measurement.estimated_evidence_tokens = estimated_evidence
+    measurement.estimated_prompt_template_tokens = estimated_template
+    measurement.estimated_total_prompt_tokens = estimated_total
+    measurement.estimated_prompt_tokens = estimated_total
+    measurement.token_estimator_id = TOKEN_ESTIMATOR_ID
+    measurement.token_estimator_formula = TOKEN_ESTIMATOR_FORMULA
+    measurement.token_count_kind = TOKEN_ESTIMATOR_LABEL
+    measurement.configured_num_ctx = plan.num_ctx
+    measurement.output_reserve_tokens = config.reserved_output_tokens
+    measurement.safety_margin_tokens = config.safety_margin_tokens
+    actual = measurement.prompt_eval_count
+    if actual is not None:
+        error = actual - estimated_total
         calibration.add(spec.tag, error)
-        if measurement.prompt_eval_count > estimated_full + config.safety_margin_tokens:
-            observation = RunObservation(request, measurement, "context_rejected", narration)
+        measurement.token_error = error
+        measurement.token_error_percent = (
+            round((error / estimated_total) * 100.0, 4) if estimated_total else None
+        )
+        actual_budget_ok = (
+            actual + config.reserved_output_tokens + config.safety_margin_tokens
+            <= plan.num_ctx
+        )
+        error_ok = abs(error) <= config.safety_margin_tokens
+        if not actual_budget_ok or not error_ok:
+            measurement.final_safety_result = "failed"
+            observation = RunObservation(
+                request,
+                measurement,
+                "context_rejected" if not actual_budget_ok else "estimation_exceeded",
+                narration,
+            )
             _persist_run(results_dir, observation)
             completed.add(identity)
             return observation
+        measurement.final_safety_result = "passed"
+    elif smoke:
+        measurement.final_safety_result = "failed_missing_prompt_eval_count"
+        observation = RunObservation(request, measurement, "context_rejected", narration)
+        _persist_run(results_dir, observation)
+        completed.add(identity)
+        return observation
     classification = classify_measurement(
         measurement, vram_ceiling_gb=config.maximum_vram_gb
     )
+    if measurement.final_safety_result is None:
+        measurement.final_safety_result = "passed"
     observation = RunObservation(request, measurement, classification, narration)
     _persist_run(results_dir, observation)
     completed.add(identity)
@@ -1526,12 +1624,31 @@ def _run_smoke(
     return {
         "ok": observation.classification in {"successful_stable", "resumed_skip"},
         "stage": "smoke",
-        "stop_reason": "smoke_complete",
+        "stop_reason": "smoke_complete"
+        if observation.classification in {"successful_stable", "resumed_skip"}
+        else observation.classification,
         "runs": 1 if not observation.skipped else 0,
+        "run_id": run_identity(observation.request),
         "runner_invocations_recorded_by_caller": True,
         "classifications": [observation.classification],
         "lifecycle_events": list(lifecycle.events),
         "models_called_by_controller": False,
+        "token_accounting": {
+            "evidence_bytes": observation.measurement.evidence_bytes,
+            "evidence_characters": observation.measurement.evidence_characters,
+            "estimated_evidence_tokens": observation.measurement.estimated_evidence_tokens,
+            "estimated_prompt_template_tokens": observation.measurement.estimated_prompt_template_tokens,
+            "estimated_total_prompt_tokens": observation.measurement.estimated_total_prompt_tokens,
+            "estimator_formula": TOKEN_ESTIMATOR_FORMULA,
+            "estimator_result_kind": TOKEN_ESTIMATOR_LABEL,
+            "actual_prompt_eval_count": observation.measurement.prompt_eval_count,
+            "token_error": observation.measurement.token_error,
+            "token_error_percent": observation.measurement.token_error_percent,
+            "configured_num_ctx": observation.measurement.configured_num_ctx,
+            "output_reserve_tokens": observation.measurement.output_reserve_tokens,
+            "safety_margin_tokens": observation.measurement.safety_margin_tokens,
+            "final_safety_result": observation.measurement.final_safety_result,
+        },
     }
 
 
@@ -1871,6 +1988,9 @@ def build_preflight_package(
         "chunks": chunks,
         "quality_packets": packets,
         "safety_margin_tokens": SAFETY_MARGIN_TOKENS,
+        "token_estimator_id": TOKEN_ESTIMATOR_ID,
+        "token_estimator_formula": TOKEN_ESTIMATOR_FORMULA,
+        "token_estimator_label": TOKEN_ESTIMATOR_LABEL,
         "context_rule": (
             "evidence + prompt/instructions + output reserve + safety margin <= num_ctx"
         ),

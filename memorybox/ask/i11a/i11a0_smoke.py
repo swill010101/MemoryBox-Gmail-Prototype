@@ -12,7 +12,11 @@ from typing import Any
 
 from memorybox.ask.i11a.c1t_benchmark import parse_conversations
 from memorybox.ask.i11a.i11a0_benchmark import (
+    DiagnosticTokenCounter,
     GATE2_SMOKE_AUTHORIZED,
+    TOKEN_ESTIMATOR_FORMULA,
+    TOKEN_ESTIMATOR_ID,
+    TOKEN_ESTIMATOR_LABEL,
     EvidencePiece,
     EvidenceTurn,
     GateNotAuthorized,
@@ -23,104 +27,22 @@ from memorybox.ask.i11a.i11a0_benchmark import (
     ModelSpec,
     RunRequest,
     ScriptedLifecycle,
-    TokenCount,
-    UncertainTokenCount,
     _sha256_text,
     estimate_tokens,
     inventory_installed_models,
     inventory_peggy_chunks,
     load_config,
     run_authorized_stage,
+    run_identity,
 )
 from memorybox.ask.i11a.i11a0_prompt import SYSTEM_PROMPT, render_user_message
 
 PINNED_C_DIGEST = "08ae7ec1744bd7f451c4a530afb39d2673ad9d07a8369b8a33a3613b41212a68"
 
 
-class OllamaTokenCounter:
-    """Model-aware counts. /api/tokenize if present; otherwise prompt_eval_count."""
-
-    def __init__(self, *, base_url: str) -> None:
-        self.base_url = base_url.rstrip("/")
-        self._cache: dict[tuple[str, str], TokenCount] = {}
-
-    def count(self, text: str, *, model: str) -> TokenCount:
-        key = (model, _sha256_text(text))
-        cached = self._cache.get(key)
-        if cached is not None:
-            return cached
-        counted = self._tokenize(text, model=model)
-        if counted is None:
-            counted = self._prompt_eval(text, model=model)
-        if counted is None:
-            raise UncertainTokenCount(
-                "Ollama returned no token count from /api/tokenize or prompt_eval_count"
-            )
-        self._cache[key] = counted
-        return counted
-
-    def _tokenize(self, text: str, *, model: str) -> TokenCount | None:
-        body, status = _post_json(
-            f"{self.base_url}/api/tokenize",
-            {"model": model, "prompt": text},
-            timeout=120,
-        )
-        if status == 404:
-            return None
-        if status != 200 or not isinstance(body, dict):
-            raise UncertainTokenCount(f"tokenize failed HTTP {status}")
-        tokens = body.get("tokens")
-        if not isinstance(tokens, list):
-            raise UncertainTokenCount("tokenize response had no token list")
-        return TokenCount(
-            tokens=len(tokens), method="ollama_tokenize", certain=True, model=model
-        )
-
-    def _prompt_eval(self, text: str, *, model: str) -> TokenCount | None:
-        for num_predict in (0, 1):
-            body, status = _post_json(
-                f"{self.base_url}/api/generate",
-                {
-                    "model": model,
-                    "prompt": text,
-                    "stream": False,
-                    "keep_alive": "10m",
-                    "options": {"num_predict": num_predict, "temperature": 0, "seed": 42},
-                },
-                timeout=1800,
-            )
-            if status != 200 or not isinstance(body, dict):
-                continue
-            n = body.get("prompt_eval_count")
-            if isinstance(n, int) and n > 0:
-                return TokenCount(
-                    tokens=n,
-                    method=f"ollama_prompt_eval_count_num_predict_{num_predict}",
-                    certain=True,
-                    model=model,
-                )
-        return None
-
-
-def _post_json(url: str, payload: dict[str, Any], *, timeout: int) -> tuple[Any, int]:
-    encoded = json.dumps(payload).encode("utf-8")
-    request = urllib.request.Request(
-        url,
-        data=encoded,
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            raw = response.read().decode("utf-8")
-            return json.loads(raw) if raw else {}, int(response.status)
-    except urllib.error.HTTPError as exc:
-        return None, int(exc.code)
-    except urllib.error.URLError:
-        return None, 0
-
-
 class PeggyPacketSource:
+    """Build one candidate packet with the cheap estimator only. No Ollama eval."""
+
     def __init__(self, pieces: list[EvidencePiece]) -> None:
         self.pieces = pieces
 
@@ -136,32 +58,20 @@ class PeggyPacketSource:
             chosen.append(piece)
         if not chosen:
             raise I11A0Error("no conversation fits the smoke target")
-
-        def build(items: list[EvidencePiece]) -> MaterializedEvidence:
-            text = "\n\n".join(item.render() for item in items)
-            ids = tuple(evidence_id for item in items for evidence_id in item.evidence_ids)
-            counted = counter.count(text, model=model)
-            if not counted.certain:
-                raise UncertainTokenCount(counted.method)
-            return MaterializedEvidence(
-                text=text,
-                sha256=_sha256_text(text),
-                estimated_evidence_tokens=counted.tokens,
-                evidence_ids=ids,
-                partial_context=False,
-                partial_boundary_note="none",
-                time_start=min(item.earliest for item in items),
-                time_end=max(item.latest for item in items),
-                certain=True,
-            )
-
-        evidence = build(chosen)
-        while evidence.estimated_evidence_tokens > target_tokens and len(chosen) > 1:
-            chosen = chosen[:-1]
-            evidence = build(chosen)
-        if evidence.estimated_evidence_tokens > target_tokens:
-            raise I11A0Error("packed smoke evidence still exceeds the token target")
-        return evidence
+        text = "\n\n".join(item.render() for item in chosen)
+        ids = tuple(evidence_id for item in chosen for evidence_id in item.evidence_ids)
+        estimated = estimate_tokens(text)
+        return MaterializedEvidence(
+            text=text,
+            sha256=_sha256_text(text),
+            estimated_evidence_tokens=estimated,
+            evidence_ids=ids,
+            partial_context=False,
+            partial_boundary_note="none",
+            time_start=min(item.earliest for item in chosen),
+            time_end=max(item.latest for item in chosen),
+            certain=False,
+        )
 
 
 def _nvidia_used_gb() -> float | None:
@@ -239,6 +149,7 @@ def _chat(request: RunRequest, *, base_url: str, timeout: int) -> tuple[Measurem
         method="POST",
     )
     chunks: list[str] = []
+    events: list[dict[str, Any]] = []
     last: dict[str, Any] = {}
     started = time.monotonic()
     peak = _nvidia_used_gb()
@@ -252,6 +163,7 @@ def _chat(request: RunRequest, *, base_url: str, timeout: int) -> tuple[Measurem
                 if not line:
                     continue
                 event = json.loads(line)
+                events.append(event)
                 last = event
                 message = event.get("message") or {}
                 piece = message.get("content")
@@ -265,7 +177,7 @@ def _chat(request: RunRequest, *, base_url: str, timeout: int) -> tuple[Measurem
             infrastructure_failure=True,
             peak_vram_gb=peak,
         )
-        return measurement, f"HTTP {exc.code}"
+        return measurement, f"HTTP {exc.code}", events
     except (urllib.error.URLError, TimeoutError) as exc:
         measurement = Measurement(
             elapsed_seconds=time.monotonic() - started,
@@ -273,7 +185,7 @@ def _chat(request: RunRequest, *, base_url: str, timeout: int) -> tuple[Measurem
             timed_out=True,
             peak_vram_gb=peak,
         )
-        return measurement, str(exc)
+        return measurement, str(exc), events
     elapsed = time.monotonic() - started
     prompt_n = int(last.get("prompt_eval_count") or 0)
     gen_n = int(last.get("eval_count") or 0)
@@ -298,7 +210,7 @@ def _chat(request: RunRequest, *, base_url: str, timeout: int) -> tuple[Measurem
         prompt_eval_count=prompt_n or None,
         truncated=bool(last.get("done_reason") == "length"),
     )
-    return measurement, "".join(chunks)
+    return measurement, "".join(chunks), events
 
 
 def _pieces_from_review(root: Path) -> list[EvidencePiece]:
@@ -377,7 +289,6 @@ def run_gate2_smoke(
     chosen = _select_installed_smoke_model(config.models, inventory)
     config = replace(config, models=(chosen,))
     pieces = _pieces_from_review(Path(chunks_root))
-    counter = OllamaTokenCounter(base_url=ollama_base_url)
     source = PeggyPacketSource(pieces)
     installed = {
         chosen.tag: {
@@ -386,33 +297,84 @@ def run_gate2_smoke(
             "resident_gb": 12.0,
         }
     }
+    recorded: dict[str, Any] = {"events": [], "unload_recorded": False}
 
     def runner(request: RunRequest) -> tuple[Measurement, str]:
-        return _chat(request, base_url=ollama_base_url, timeout=config.timeout_seconds)
+        measurement, narration, events = _chat(
+            request, base_url=ollama_base_url, timeout=config.timeout_seconds
+        )
+        recorded["events"] = events
+        recorded["request"] = request
+        return measurement, narration
 
     try:
         payload = run_authorized_stage(
             config=config,
             runner=runner,
             lifecycle=ScriptedLifecycle(installed),
-            counter=counter,
+            counter=DiagnosticTokenCounter(),
             source=source,
             results_dir=results_dir,
             prompt_tokens=config.prompt_instruction_tokens or 1,
         )
     finally:
         _unload(ollama_base_url, chosen.tag)
+        recorded["unload_recorded"] = True
+    run_id = str(payload.get("run_id") or "")
+    folder = Path(results_dir) / run_id if run_id else Path(results_dir)
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "raw_api.jsonl").write_text(
+        "".join(json.dumps(event) + "\n" for event in recorded.get("events") or []),
+        encoding="utf-8",
+        newline="\n",
+    )
+    (folder / "telemetry.jsonl").write_text(
+        json.dumps(
+            {
+                "run_id": run_id,
+                "endpoint": "/api/chat",
+                "inference": True,
+                "purpose": "authorized_gate2_smoke_generation",
+                "model": chosen.tag,
+                "digest": chosen.digest,
+                "elapsed_seconds": (payload.get("token_accounting") or {}).get("elapsed_seconds"),
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    approved = {row["config_id"]: row for row in inventory.get("approved") or []}
+    missing = [
+        row["config_id"]
+        for row in inventory.get("approved") or []
+        if row.get("status") != "installed"
+    ]
+    gemma_only = chosen.config_id == "C" and missing
     payload.update(
         {
             "gate": "2",
+            "command_kind": "preliminary_gemma_pipeline_check" if gemma_only else "gate2_smoke",
+            "gate2_complete": False if gemma_only else True,
+            "preliminary_gemma_pipeline_check": bool(gemma_only),
+            "full_context_ladder_blocked": True,
             "model_tag": chosen.tag,
             "model_digest": chosen.digest,
             "models_called": True,
             "pull_executed": False,
             "thinking_mode": "off",
             "prompt_accepted": False,
+            "token_estimator_formula": TOKEN_ESTIMATOR_FORMULA,
+            "token_estimator_id": TOKEN_ESTIMATOR_ID,
+            "token_estimator_label": TOKEN_ESTIMATOR_LABEL,
+            "actual_count_source": "recorded_smoke_generation_prompt_eval_count",
+            "hidden_token_eval_generations": 0,
             "chunks_root": str(chunks_root),
             "results_dir": str(results_dir),
+            "installed_configurations": approved,
+            "missing_configurations": missing,
+            "models_in_this_command": [chosen.tag],
+            "lifecycle_unload_recorded": recorded["unload_recorded"],
         }
     )
     return payload

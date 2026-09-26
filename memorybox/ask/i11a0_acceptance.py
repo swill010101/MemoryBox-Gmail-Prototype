@@ -855,6 +855,8 @@ def run_prove_i11a0_benchmark() -> dict[str, Any]:
         checks,
         problems,
     )
+    from memorybox.ask.i11a.i11a0_benchmark import TOKEN_ESTIMATOR_FORMULA
+
     preflight = build_preflight_package(chunk_roots=[Path(tempfile.gettempdir()) / "i11a0-missing-chunks"], fetcher=_fetcher)
     _check(
         "preflight_package_runs_without_inference",
@@ -862,7 +864,9 @@ def run_prove_i11a0_benchmark() -> dict[str, Any]:
         and preflight["prompt_sha256"] == prompt_hash
         and preflight["models_called"] is False
         and preflight["gate2_smoke_authorized"] is True
-        and preflight["smoke_command_status"] == "gate2_smoke_authorized_confirm_required",
+        and preflight["smoke_command_status"] == "gate2_smoke_authorized_confirm_required"
+        and preflight["token_estimator_formula"] == TOKEN_ESTIMATOR_FORMULA
+        and preflight["token_estimator_label"] == "estimated",
         checks,
         problems,
         preflight["smoke_command_status"],
