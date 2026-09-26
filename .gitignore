@@ -16,6 +16,7 @@ docs/test-output/trusted-email-review/**
 docs/test-output/i11a0-benchmark/smoke/**
 docs/test-output/i11a0-benchmark/smoke-corrected/**
 docs/test-output/i11a0-benchmark/smoke-flightsim/**
+docs/test-output/i11a0-benchmark/smoke-ab/**
 
 # Archive: track Takeout originals + checksums only (zips via Git LFS).
 # Ignore other archive contents if added later.

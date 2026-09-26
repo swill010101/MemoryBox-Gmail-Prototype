@@ -1,0 +1,44 @@
+{
+  "stage": "smoke",
+  "inference_authorized": true,
+  "command_kind": "gate2_ab_smoke",
+  "gate2_complete": false,
+  "full_context_ladder_blocked": true,
+  "thinking_mode": "off",
+  "authorize_thinking_comparison": false,
+  "temperature": 0.1,
+  "seed": 42,
+  "reserved_output_tokens": 2500,
+  "safety_margin_tokens": 1500,
+  "maximum_vram_gb": 22.5,
+  "timeout_seconds": 1800,
+  "smoke_evidence_tokens": 1000,
+  "token_estimator_id": "utf8_bytes_plus_3_div_4",
+  "token_estimator_formula": "max(1, (len(text.encode('utf-8')) + 3) // 4)",
+  "token_estimator_label": "estimated",
+  "actual_count_source": "recorded_smoke_generation_prompt_eval_count",
+  "prompt_version": "i11a0-narration-v0.2-draft",
+  "prompt_status": "accepted_for_gate2_benchmark_only",
+  "production_prompt_accepted": false,
+  "models": [
+    {
+      "config_id": "A",
+      "tag": "qwen3:30b-a3b-instruct-2507-q4_K_M",
+      "alias": "qwen3:30b",
+      "quantization": "Q4_K_M",
+      "digest": ""
+    },
+    {
+      "config_id": "B",
+      "tag": "qwen3:14b-q8_0",
+      "alias": "",
+      "quantization": "Q8_0",
+      "digest": ""
+    }
+  ],
+  "founder_gate3_accepted": false,
+  "founder_gate4_accepted": false,
+  "authorize_alternate_quantization": false,
+  "alternate_quantization_tag": null,
+  "gate2_note": "Gate 2 A and B smokes only. Do not pin Gemma num_ctx. Plan context from the cheap estimator, then judge safety from each model's recorded prompt_eval_count. One generate per model. Unload before the next model. The context ladder remains blocked."
+}

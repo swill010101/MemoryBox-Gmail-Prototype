@@ -1027,7 +1027,12 @@ def run_prove_i11a0_benchmark() -> dict[str, Any]:
     except Exception as exc:
         inference_blocked = "confirm-benchmark" in str(exc)
     _check("cli_refuses_inference_without_smoke_confirm", inference_blocked, checks, problems)
-    from memorybox.ask.i11a.i11a0_smoke import PINNED_C_DIGEST, _select_installed_smoke_model
+    from memorybox.ask.i11a.i11a0_smoke import (
+        PINNED_C_DIGEST,
+        _select_installed_smoke_model,
+        _select_installed_smoke_models,
+        require_qwen_smoke_configuration,
+    )
     from memorybox.ask.i11a.i11a0_host import (
         REMOTE_FUNCTIONAL_LABEL,
         REMOTE_FUNCTIONAL_RUN_ID,
@@ -1040,10 +1045,7 @@ def run_prove_i11a0_benchmark() -> dict[str, Any]:
     )
 
     selected = _select_installed_smoke_model(
-        (
-            ModelSpec("A", "qwen3:30b-a3b-instruct-2507-q4_K_M", "Q4_K_M", "missing"),
-            ModelSpec("C", "gemma4:26b", "Q4_K_M", PINNED_C_DIGEST),
-        ),
+        (ModelSpec("C", "gemma4:26b", "Q4_K_M", PINNED_C_DIGEST),),
         {
             "approved": [
                 {
@@ -1068,6 +1070,85 @@ def run_prove_i11a0_benchmark() -> dict[str, Any]:
         problems,
         selected,
     )
+    a_row = {
+        "status": "installed",
+        "accepted_for_screen": True,
+        "digest": "digest-a",
+        "quantization": "Q4_K_M",
+        "metadata": {"architecture": "qwen3", "parameter_size": "30.5B", "quantization": "Q4_K_M"},
+    }
+    b_row = {
+        "status": "installed",
+        "accepted_for_screen": True,
+        "digest": "digest-b",
+        "quantization": "Q8_0",
+        "metadata": {"architecture": "qwen3", "parameter_size": "14.8B", "quantization": "Q8_0"},
+    }
+    verified_a = require_qwen_smoke_configuration(
+        ModelSpec("A", "qwen3:30b-a3b-instruct-2507-q4_K_M", "Q4_K_M", "digest-a"),
+        a_row,
+    )
+    verified_b = require_qwen_smoke_configuration(
+        ModelSpec("B", "qwen3:14b-q8_0", "Q8_0", "digest-b"),
+        b_row,
+    )
+    _check(
+        "qwen_a_and_b_metadata_must_match_approved_tags",
+        verified_a["verified"] is True and verified_b["verified"] is True,
+        checks,
+        problems,
+        {"A": verified_a, "B": verified_b},
+    )
+    wrong_b = False
+    try:
+        require_qwen_smoke_configuration(
+            ModelSpec("B", "qwen3:14b-q8_0", "Q8_0", "digest-b"),
+            {
+                "quantization": "Q4_K_M",
+                "metadata": {"architecture": "qwen3", "parameter_size": "14.8B"},
+            },
+        )
+    except I11A0Error:
+        wrong_b = True
+    _check("qwen_b_wrong_quantization_is_refused", wrong_b, checks, problems)
+    ab_selected = _select_installed_smoke_models(
+        (
+            ModelSpec("A", "qwen3:30b-a3b-instruct-2507-q4_K_M", "Q4_K_M", "digest-a"),
+            ModelSpec("B", "qwen3:14b-q8_0", "Q8_0", "digest-b"),
+        ),
+        {
+            "approved": [
+                {
+                    "tag": "qwen3:30b-a3b-instruct-2507-q4_K_M",
+                    **a_row,
+                },
+                {
+                    "tag": "qwen3:14b-q8_0",
+                    **b_row,
+                },
+            ]
+        },
+    )
+    _check(
+        "gate2_ab_selects_both_installed_qwen_tags",
+        [row.tag for row in ab_selected]
+        == ["qwen3:30b-a3b-instruct-2507-q4_K_M", "qwen3:14b-q8_0"],
+        checks,
+        problems,
+        ab_selected,
+    )
+    missing_b = False
+    try:
+        _select_installed_smoke_models(
+            (
+                ModelSpec("A", "qwen3:30b-a3b-instruct-2507-q4_K_M", "Q4_K_M", "digest-a"),
+                ModelSpec("B", "qwen3:14b-q8_0", "Q8_0", "digest-b"),
+            ),
+            {"approved": [{"tag": "qwen3:30b-a3b-instruct-2507-q4_K_M", **a_row}]},
+        )
+    except I11A0Error:
+        missing_b = True
+    _check("gate2_ab_stops_if_b_is_missing", missing_b, checks, problems)
     _check("gate2_smoke_is_authorized_flag", GATE2_SMOKE_AUTHORIZED is True, checks, problems)
     rtx_preflight = collect_host_affinity_preflight(
         ollama_base_url="http://127.0.0.1:11434",

@@ -43,6 +43,89 @@ from memorybox.ask.i11a.i11a0_prompt import SYSTEM_PROMPT, prompt_acceptance_fie
 
 PINNED_C_DIGEST = "08ae7ec1744bd7f451c4a530afb39d2673ad9d07a8369b8a33a3613b41212a68"
 REPO_ROOT = Path(__file__).resolve().parents[3]
+VRAM_RELEASE_SLACK_GB = 2.0
+GEMMA_PACKET_SHA256 = "1c24eb2fa792e553cef299653b6c20e186da9685ea4e7ac78763f3d36df7b690"
+
+
+def require_qwen_smoke_configuration(spec: ModelSpec, row: dict[str, Any]) -> dict[str, Any]:
+    """Refuse a Qwen smoke unless the installed metadata matches A or B."""
+    metadata = dict(row.get("metadata") or {})
+    quant = str(row.get("quantization") or metadata.get("quantization") or spec.quantization or "")
+    parameter_size = str(metadata.get("parameter_size") or row.get("parameter_size") or "")
+    architecture = str(metadata.get("architecture") or row.get("architecture") or "")
+    tag = spec.tag
+    if spec.config_id == "A":
+        if tag != "qwen3:30b-a3b-instruct-2507-q4_K_M":
+            raise I11A0Error(f"configuration A tag mismatch: {tag}")
+        if quant != "Q4_K_M":
+            raise I11A0Error(f"configuration A quantization mismatch: {quant}")
+        lowered = f"{tag} {parameter_size} {architecture}".lower()
+        if "a3b" not in lowered or "30" not in lowered:
+            raise I11A0Error(
+                "configuration A is not Qwen3-30B-A3B-Instruct-2507 Q4_K_M: "
+                f"parameter_size={parameter_size} architecture={architecture}"
+            )
+    elif spec.config_id == "B":
+        if tag != "qwen3:14b-q8_0":
+            raise I11A0Error(f"configuration B tag mismatch: {tag}")
+        if quant != "Q8_0":
+            raise I11A0Error(f"configuration B quantization mismatch: {quant}")
+        lowered = f"{tag} {parameter_size} {architecture}".lower()
+        if "14" not in lowered:
+            raise I11A0Error(
+                "configuration B is not Qwen3 14B Q8_0: "
+                f"parameter_size={parameter_size} architecture={architecture}"
+            )
+        if "a3b" in lowered or "moe" in lowered:
+            raise I11A0Error("configuration B must be dense Qwen3 14B, not an MoE substitute")
+    else:
+        raise I11A0Error(f"Qwen smoke verification does not accept {spec.config_id}")
+    metadata.update(
+        {
+            "config_id": spec.config_id,
+            "tag": tag,
+            "digest": spec.digest or row.get("digest"),
+            "quantization": quant,
+            "verified": True,
+        }
+    )
+    return metadata
+
+
+def _select_installed_smoke_models(config_models: tuple[ModelSpec, ...], inventory: dict[str, Any]) -> list[ModelSpec]:
+    by_tag = {row["tag"]: row for row in inventory.get("approved") or []}
+    selected: list[ModelSpec] = []
+    missing: list[str] = []
+    for spec in config_models:
+        row = by_tag.get(spec.tag)
+        if not (row and row.get("status") == "installed" and row.get("accepted_for_screen")):
+            missing.append(spec.tag)
+            continue
+        digest = str(row.get("digest") or spec.digest or "")
+        if spec.tag == "gemma4:26b" and digest != PINNED_C_DIGEST:
+            raise I11A0Error(f"gemma4:26b digest is not the pinned Gate 1 digest: {digest}")
+        filled = ModelSpec(
+            config_id=spec.config_id,
+            tag=spec.tag,
+            quantization=spec.quantization or str(row.get("quantization") or ""),
+            digest=digest,
+            alias=spec.alias,
+        )
+        if filled.config_id in {"A", "B"}:
+            require_qwen_smoke_configuration(filled, row)
+        selected.append(filled)
+    if missing:
+        raise I11A0Error(
+            "Gate 2 smoke needs the configured models installed and accepted. Missing: "
+            + ", ".join(missing)
+        )
+    if not selected:
+        raise I11A0Error("Gate 2 smoke needs an installed approved model")
+    return selected
+
+
+def _select_installed_smoke_model(config_models: tuple[ModelSpec, ...], inventory: dict[str, Any]) -> ModelSpec:
+    return _select_installed_smoke_models(config_models, inventory)[0]
 
 
 class PeggyPacketSource:
@@ -230,25 +313,207 @@ def _pieces_from_review(root: Path) -> list[EvidencePiece]:
     return pieces
 
 
-def _select_installed_smoke_model(config_models: tuple[ModelSpec, ...], inventory: dict[str, Any]) -> ModelSpec:
-    by_tag = {row["tag"]: row for row in inventory.get("approved") or []}
-    for spec in config_models:
-        row = by_tag.get(spec.tag)
-        if row and row.get("status") == "installed" and row.get("accepted_for_screen"):
-            digest = str(row.get("digest") or spec.digest)
-            if spec.tag == "gemma4:26b" and digest != PINNED_C_DIGEST:
-                raise I11A0Error(f"gemma4:26b digest is not the pinned Gate 1 digest: {digest}")
-            return ModelSpec(
-                config_id=spec.config_id,
-                tag=spec.tag,
-                quantization=spec.quantization or str(row.get("quantization") or ""),
-                digest=digest,
-                alias=spec.alias,
-            )
-    raise I11A0Error(
-        "Gate 2 smoke needs an installed approved model. Configuration C is present on FlightSim; "
-        "A and B were missing and were not pulled."
+def _write_smoke_artifacts(
+    *,
+    folder: Path,
+    preflight: dict[str, Any],
+    recorded: dict[str, Any],
+    hardware: dict[str, Any],
+    payload: dict[str, Any],
+    chosen: ModelSpec,
+    metadata: dict[str, Any] | None,
+) -> None:
+    folder.mkdir(parents=True, exist_ok=True)
+    last = recorded.get("last_event") or {}
+    run_id = str(payload.get("run_id") or folder.name)
+    (folder / "host_affinity_preflight.json").write_text(
+        json.dumps(preflight, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+        newline="\n",
     )
+    (folder / "model_metadata.json").write_text(
+        json.dumps(metadata or {}, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    (folder / "raw_api.jsonl").write_text(
+        "".join(json.dumps(event) + "\n" for event in recorded.get("events") or []),
+        encoding="utf-8",
+        newline="\n",
+    )
+    (folder / "hardware_telemetry.json").write_text(
+        json.dumps(hardware, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    (folder / "telemetry.jsonl").write_text(
+        "".join(json.dumps(sample) + "\n" for sample in hardware.get("samples") or [])
+        + json.dumps(
+            {
+                "run_id": run_id,
+                "execution_id": payload.get("execution_id") or run_id,
+                "test_case_id": payload.get("test_case_id"),
+                "endpoint": "/api/chat",
+                "inference": True,
+                "purpose": "authorized_gate2_flightsim_hardware_smoke",
+                "model": chosen.tag,
+                "digest": chosen.digest,
+                "host_affinity": "flightsim_rtx_4090_local",
+                "elapsed_seconds": (payload.get("token_accounting") or {}).get("elapsed_seconds"),
+                "load_duration_ns": last.get("load_duration"),
+                "prompt_eval_duration_ns": last.get("prompt_eval_duration"),
+                "eval_duration_ns": last.get("eval_duration"),
+                "total_duration_ns": last.get("total_duration"),
+                "unload_seconds": recorded.get("unload_seconds"),
+                "vram_peak_gb": hardware.get("vram_peak_gb"),
+                "vram_after_unload_gb": hardware.get("vram_final_gb"),
+                "cpu_offload": hardware.get("cpu_offload"),
+                "exceeds_vram_ceiling": hardware.get("exceeds_vram_ceiling"),
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+
+
+def _smoke_failed(payload: dict[str, Any], hardware: dict[str, Any]) -> str | None:
+    if hardware.get("exceeds_vram_ceiling"):
+        return "vram_ceiling"
+    if hardware.get("cpu_offload"):
+        return "cpu_offload"
+    if payload.get("classification") not in {None, "successful_stable", "resumed_skip"} and payload.get(
+        "stop_reason"
+    ) not in {"smoke_complete"}:
+        return str(payload.get("stop_reason") or payload.get("classification") or "smoke_failed")
+    accounting = payload.get("token_accounting") or {}
+    if accounting.get("final_safety_result") not in {None, "passed"}:
+        return "safety_margin_failed"
+    if payload.get("ok") is False:
+        return str(payload.get("stop_reason") or "smoke_failed")
+    return None
+
+
+def _vram_released(baseline: float | None, final: float | None) -> bool:
+    if baseline is None or final is None:
+        return False
+    return float(final) <= float(baseline) + VRAM_RELEASE_SLACK_GB
+
+
+def _smoke_one_model(
+    *,
+    config,
+    chosen: ModelSpec,
+    inventory_row: dict[str, Any],
+    source: PeggyPacketSource,
+    results: Path,
+    ollama_base_url: str,
+    preflight: dict[str, Any],
+) -> dict[str, Any]:
+    if chosen.config_id != "C" and config.configured_num_ctx is not None:
+        raise I11A0Error(
+            "Qwen smoke must not reuse a pinned Gemma num_ctx; omit configured_num_ctx "
+            "and plan from the estimator plus this model's recorded prompt_eval_count"
+        )
+    metadata = dict(inventory_row.get("metadata") or {})
+    if chosen.config_id in {"A", "B"}:
+        metadata = require_qwen_smoke_configuration(chosen, inventory_row)
+    model_results = results / chosen.config_id
+    model_results.mkdir(parents=True, exist_ok=True)
+    installed = {
+        chosen.tag: {
+            "digest": chosen.digest,
+            "quantization": chosen.quantization,
+            "resident_gb": 12.0,
+        }
+    }
+    sampler = HardwareSampler()
+    sampler.capture("baseline")
+    recorded: dict[str, Any] = {
+        "events": [],
+        "unload_recorded": False,
+        "unload_seconds": None,
+        "hardware": None,
+    }
+
+    def runner(request: RunRequest) -> tuple[Measurement, str]:
+        measurement, narration, events = _chat(
+            request,
+            base_url=ollama_base_url,
+            timeout=config.timeout_seconds,
+            sampler=sampler,
+        )
+        recorded["events"] = events
+        recorded["request"] = request
+        recorded["last_event"] = events[-1] if events else {}
+        return measurement, narration
+
+    one_config = replace(config, models=(chosen,), configured_num_ctx=None if chosen.config_id != "C" else config.configured_num_ctx)
+    try:
+        payload = run_authorized_stage(
+            config=one_config,
+            runner=runner,
+            lifecycle=ScriptedLifecycle(installed),
+            counter=DiagnosticTokenCounter(),
+            source=source,
+            results_dir=model_results,
+            prompt_tokens=config.prompt_instruction_tokens or 1,
+        )
+    finally:
+        sampler.capture("before_unload")
+        recorded["unload_seconds"] = _unload(ollama_base_url, chosen.tag)
+        recorded["unload_recorded"] = True
+        time.sleep(1.0)
+        sampler.capture("after_unload")
+    hardware = sampler.summary()
+    recorded["hardware"] = hardware
+    run_id = str(payload.get("run_id") or "")
+    folder = model_results / run_id if run_id else model_results
+    _write_smoke_artifacts(
+        folder=folder,
+        preflight=preflight,
+        recorded=recorded,
+        hardware=hardware,
+        payload=payload,
+        chosen=chosen,
+        metadata=metadata,
+    )
+    last = recorded.get("last_event") or {}
+    payload.update(
+        {
+            "config_id": chosen.config_id,
+            "model_tag": chosen.tag,
+            "model_digest": chosen.digest,
+            "model_metadata": metadata,
+            "results_dir": str(model_results),
+            "artifact_dir": str(folder),
+            "lifecycle_unload_recorded": recorded["unload_recorded"],
+            "unload_seconds": recorded["unload_seconds"],
+            "load_duration_ns": last.get("load_duration"),
+            "prompt_eval_duration_ns": last.get("prompt_eval_duration"),
+            "eval_duration_ns": last.get("eval_duration"),
+            "total_duration_ns": last.get("total_duration"),
+            "hardware_telemetry": {
+                "vram_baseline_gb": hardware.get("vram_baseline_gb"),
+                "vram_peak_gb": hardware.get("vram_peak_gb"),
+                "vram_final_gb": hardware.get("vram_final_gb"),
+                "ram_baseline_gb": hardware.get("ram_baseline_gb"),
+                "ram_peak_gb": hardware.get("ram_peak_gb"),
+                "ram_final_gb": hardware.get("ram_final_gb"),
+                "cpu_offload": hardware.get("cpu_offload"),
+                "gpu_resident": hardware.get("gpu_resident"),
+                "exceeds_vram_ceiling": hardware.get("exceeds_vram_ceiling"),
+                "vram_released": _vram_released(
+                    hardware.get("vram_baseline_gb"), hardware.get("vram_final_gb")
+                ),
+                "ceiling_gb": VRAM_CEILING_GB,
+            },
+        }
+    )
+    payload["stop_before_next_model"] = _smoke_failed(payload, hardware)
+    if payload["stop_before_next_model"] is None and not payload["hardware_telemetry"]["vram_released"]:
+        payload["stop_before_next_model"] = "unload_vram_not_released"
+    return payload
 
 
 def run_gate2_smoke(
@@ -288,151 +553,69 @@ def run_gate2_smoke(
     inventory = inventory_installed_models(base_url=ollama_base_url)
     if inventory.get("pull_executed"):
         raise I11A0Error("inventory reported a pull")
-    chosen = _select_installed_smoke_model(config.models, inventory)
-    config = replace(config, models=(chosen,))
+    selected = _select_installed_smoke_models(config.models, inventory)
+    by_tag = {row["tag"]: row for row in inventory.get("approved") or []}
     pieces = _pieces_from_review(Path(chunks_root))
     source = PeggyPacketSource(pieces)
-    installed = {
-        chosen.tag: {
-            "digest": chosen.digest,
-            "quantization": chosen.quantization,
-            "resident_gb": 12.0,
-        }
-    }
-    sampler = HardwareSampler()
-    sampler.capture("baseline")
-    recorded: dict[str, Any] = {
-        "events": [],
-        "unload_recorded": False,
-        "unload_seconds": None,
-        "hardware": None,
-    }
-
-    def runner(request: RunRequest) -> tuple[Measurement, str]:
-        measurement, narration, events = _chat(
-            request,
-            base_url=ollama_base_url,
-            timeout=config.timeout_seconds,
-            sampler=sampler,
-        )
-        recorded["events"] = events
-        recorded["request"] = request
-        recorded["last_event"] = events[-1] if events else {}
-        return measurement, narration
-
-    try:
-        payload = run_authorized_stage(
+    runs: list[dict[str, Any]] = []
+    stopped = None
+    for chosen in selected:
+        payload = _smoke_one_model(
             config=config,
-            runner=runner,
-            lifecycle=ScriptedLifecycle(installed),
-            counter=DiagnosticTokenCounter(),
+            chosen=chosen,
+            inventory_row=by_tag.get(chosen.tag) or {},
             source=source,
-            results_dir=results,
-            prompt_tokens=config.prompt_instruction_tokens or 1,
+            results=results,
+            ollama_base_url=ollama_base_url,
+            preflight=preflight,
         )
-    finally:
-        sampler.capture("before_unload")
-        recorded["unload_seconds"] = _unload(ollama_base_url, chosen.tag)
-        recorded["unload_recorded"] = True
-        time.sleep(1.0)
-        sampler.capture("after_unload")
-    hardware = sampler.summary()
-    recorded["hardware"] = hardware
-    run_id = str(payload.get("run_id") or "")
-    folder = results / run_id if run_id else results
-    folder.mkdir(parents=True, exist_ok=True)
-    last = recorded.get("last_event") or {}
-    (folder / "host_affinity_preflight.json").write_text(
-        json.dumps(preflight, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-        newline="\n",
-    )
-    (folder / "raw_api.jsonl").write_text(
-        "".join(json.dumps(event) + "\n" for event in recorded.get("events") or []),
-        encoding="utf-8",
-        newline="\n",
-    )
-    (folder / "hardware_telemetry.json").write_text(
-        json.dumps(hardware, indent=2) + "\n",
-        encoding="utf-8",
-        newline="\n",
-    )
-    (folder / "telemetry.jsonl").write_text(
-        "".join(json.dumps(sample) + "\n" for sample in hardware.get("samples") or [])
-        + json.dumps(
-            {
-                "run_id": run_id,
-                "endpoint": "/api/chat",
-                "inference": True,
-                "purpose": "authorized_gate2_flightsim_hardware_smoke",
-                "model": chosen.tag,
-                "digest": chosen.digest,
-                "host_affinity": "flightsim_rtx_4090_local",
-                "elapsed_seconds": (payload.get("token_accounting") or {}).get("elapsed_seconds"),
-                "load_duration_ns": last.get("load_duration"),
-                "prompt_eval_duration_ns": last.get("prompt_eval_duration"),
-                "eval_duration_ns": last.get("eval_duration"),
-                "total_duration_ns": last.get("total_duration"),
-                "unload_seconds": recorded["unload_seconds"],
-                "vram_peak_gb": hardware.get("vram_peak_gb"),
-                "vram_after_unload_gb": hardware.get("vram_final_gb"),
-                "cpu_offload": hardware.get("cpu_offload"),
-                "exceeds_vram_ceiling": hardware.get("exceeds_vram_ceiling"),
-            }
-        )
-        + "\n",
-        encoding="utf-8",
-        newline="\n",
-    )
+        runs.append(payload)
+        stopped = payload.get("stop_before_next_model")
+        if stopped:
+            break
     approved = {row["config_id"]: row for row in inventory.get("approved") or []}
     missing = [
         row["config_id"]
         for row in inventory.get("approved") or []
         if row.get("status") != "installed"
     ]
-    gemma_only = chosen.config_id == "C" and missing
+    ids = [spec.config_id for spec in selected]
+    ab_complete = {"A", "B"}.issubset({row.get("config_id") for row in runs if row.get("ok")})
+    gemma_only = ids == ["C"]
     prompt_fields = prompt_acceptance_fields()
-    payload.update(
-        {
-            "gate": "2",
-            "command_kind": "preliminary_gemma_pipeline_check" if gemma_only else "gate2_smoke",
-            "gate2_complete": False if gemma_only else True,
-            "preliminary_gemma_pipeline_check": bool(gemma_only),
-            "full_context_ladder_blocked": True,
-            "model_tag": chosen.tag,
-            "model_digest": chosen.digest,
-            "models_called": True,
-            "pull_executed": False,
-            "thinking_mode": "off",
-            "prompt_status": prompt_fields["prompt_status"],
-            "production_prompt_accepted": prompt_fields["production_prompt_accepted"],
-            "prompt_accepted": prompt_fields["production_prompt_accepted"],
-            "token_estimator_formula": TOKEN_ESTIMATOR_FORMULA,
-            "token_estimator_id": TOKEN_ESTIMATOR_ID,
-            "token_estimator_label": TOKEN_ESTIMATOR_LABEL,
-            "actual_count_source": "recorded_smoke_generation_prompt_eval_count",
-            "hidden_token_eval_generations": 0,
-            "chunks_root": str(chunks_root),
-            "results_dir": str(results_dir),
-            "installed_configurations": approved,
-            "missing_configurations": missing,
-            "models_in_this_command": [chosen.tag],
-            "lifecycle_unload_recorded": recorded["unload_recorded"],
-            "unload_seconds": recorded["unload_seconds"],
-            "host_affinity": preflight,
-            "hardware_telemetry": {
-                "vram_baseline_gb": hardware.get("vram_baseline_gb"),
-                "vram_peak_gb": hardware.get("vram_peak_gb"),
-                "vram_final_gb": hardware.get("vram_final_gb"),
-                "ram_baseline_gb": hardware.get("ram_baseline_gb"),
-                "ram_peak_gb": hardware.get("ram_peak_gb"),
-                "ram_final_gb": hardware.get("ram_final_gb"),
-                "cpu_offload": hardware.get("cpu_offload"),
-                "gpu_resident": hardware.get("gpu_resident"),
-                "exceeds_vram_ceiling": hardware.get("exceeds_vram_ceiling"),
-                "ceiling_gb": VRAM_CEILING_GB,
-            },
-            "flightsim_hardware_smoke": True,
-        }
-    )
-    return payload
+    first = runs[0] if runs else {}
+    return {
+        "ok": bool(runs) and all(row.get("ok") for row in runs) and not stopped,
+        "gate": "2",
+        "command_kind": "gate2_ab_smoke" if "A" in ids or "B" in ids else (
+            "preliminary_gemma_pipeline_check" if gemma_only else "gate2_smoke"
+        ),
+        "gate2_complete": bool(ab_complete),
+        "preliminary_gemma_pipeline_check": bool(gemma_only),
+        "full_context_ladder_blocked": True,
+        "models_called": True,
+        "pull_executed": False,
+        "thinking_mode": "off",
+        "prompt_status": prompt_fields["prompt_status"],
+        "production_prompt_accepted": prompt_fields["production_prompt_accepted"],
+        "prompt_accepted": prompt_fields["production_prompt_accepted"],
+        "token_estimator_formula": TOKEN_ESTIMATOR_FORMULA,
+        "token_estimator_id": TOKEN_ESTIMATOR_ID,
+        "token_estimator_label": TOKEN_ESTIMATOR_LABEL,
+        "actual_count_source": "recorded_smoke_generation_prompt_eval_count",
+        "hidden_token_eval_generations": 0,
+        "chunks_root": str(chunks_root),
+        "results_dir": str(results),
+        "installed_configurations": approved,
+        "missing_configurations": missing,
+        "models_in_this_command": [row.get("model_tag") for row in runs],
+        "host_affinity": preflight,
+        "ollama_version": inventory.get("ollama_version"),
+        "runs": runs,
+        "run_id": first.get("run_id"),
+        "execution_id": first.get("execution_id"),
+        "test_case_id": first.get("test_case_id"),
+        "stop_reason": stopped,
+        "flightsim_hardware_smoke": True,
+    }
+

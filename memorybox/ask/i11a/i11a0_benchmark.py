@@ -206,7 +206,7 @@ class I11A0Config:
         if not self.models:
             raise I11A0Error("at least one model is required")
         for spec in self.models:
-            if not spec.digest:
+            if not spec.digest and self.stage != "smoke":
                 raise I11A0Error(f"digest is required for {spec.tag}")
 
 
@@ -971,6 +971,37 @@ def _default_fetcher(method: str, url: str, payload: dict[str, Any] | None) -> d
     return parsed
 
 
+def extract_installed_model_metadata(show: dict[str, Any], installed: dict[str, Any]) -> dict[str, Any]:
+    details = show.get("details") if isinstance(show.get("details"), dict) else {}
+    info = show.get("model_info") if isinstance(show.get("model_info"), dict) else {}
+    architecture = details.get("family")
+    parameter_count = None
+    expert_count = None
+    for key, value in info.items():
+        name = str(key).lower()
+        if name.endswith(".architecture") and architecture in {None, ""}:
+            architecture = value
+        if "parameter_count" in name or name.endswith(".parameters"):
+            parameter_count = value
+        if "expert" in name and "count" in name:
+            expert_count = value
+    return {
+        "architecture": architecture,
+        "family": details.get("family"),
+        "families": details.get("families"),
+        "parameter_size": details.get("parameter_size"),
+        "parameter_count": parameter_count,
+        "expert_count": expert_count,
+        "quantization": details.get("quantization_level"),
+        "format": details.get("format"),
+        "parent_model": details.get("parent_model"),
+        "digest": installed.get("digest") or show.get("digest"),
+        "size_bytes": installed.get("size"),
+        "context_length": _context_length(show),
+        "modified_at": installed.get("modified_at") or show.get("modified_at"),
+    }
+
+
 def _context_length(show: dict[str, Any]) -> int | None:
     info = show.get("model_info") if isinstance(show.get("model_info"), dict) else {}
     for key, value in info.items():
@@ -1047,6 +1078,7 @@ def inventory_installed_models(
         accepted = True
         if spec["quantization"] and quantization and quantization != spec["quantization"]:
             accepted = False
+        metadata = extract_installed_model_metadata(show, installed)
         approved_rows.append(
             {
                 "config_id": spec["config_id"],
@@ -1054,8 +1086,13 @@ def inventory_installed_models(
                 "status": "installed" if accepted else "quantization_mismatch",
                 "digest": digest or None,
                 "quantization": quantization or None,
+                "architecture": metadata.get("architecture"),
+                "parameter_size": metadata.get("parameter_size"),
+                "parameter_count": metadata.get("parameter_count"),
+                "expert_count": metadata.get("expert_count"),
                 "size_bytes": installed.get("size"),
-                "context_length": _context_length(show),
+                "context_length": metadata.get("context_length"),
+                "metadata": metadata,
                 "accepted_for_screen": accepted,
                 "models_called": False,
             }

@@ -15,6 +15,7 @@ from typing import Any, Callable
 
 from memorybox.ask.i11a.i11a0_benchmark import I11A0Error
 
+REQUIRED_CONTROLLER_HOSTNAME = "FlightSim"
 REQUIRED_OLLAMA_BASE_URL = "http://127.0.0.1:11434"
 REQUIRED_GPU_NAME = "NVIDIA GeForce RTX 4090"
 VRAM_TOTAL_MIN_GB = 22.0
@@ -291,8 +292,10 @@ def collect_host_affinity_preflight(
             "ollama_url_not_remote_flightsim_alias": not forbidden_host,
             "gpu_is_rtx_4090": gpu_ok,
             "vram_total_approximately_24gb": bool(vram_ok),
+            "controller_is_flightsim": controller.strip().lower() == REQUIRED_CONTROLLER_HOSTNAME.lower(),
         },
         "required": {
+            "controller_hostname": REQUIRED_CONTROLLER_HOSTNAME,
             "ollama_base_url": REQUIRED_OLLAMA_BASE_URL,
             "gpu_name": REQUIRED_GPU_NAME,
             "vram_total_gb_range": [VRAM_TOTAL_MIN_GB, VRAM_TOTAL_MAX_GB],
@@ -302,6 +305,11 @@ def collect_host_affinity_preflight(
 
 def require_flightsim_host_affinity(preflight: dict[str, Any]) -> None:
     checks = preflight.get("checks") or {}
+    if not checks.get("controller_is_flightsim"):
+        raise HostAffinityError(
+            "FlightSim hardware smoke requires controller hostname FlightSim; "
+            f"controller hostname was {preflight.get('controller_hostname') or 'unavailable'}"
+        )
     if not checks.get("ollama_base_url_local") or not checks.get("ollama_url_not_remote_flightsim_alias"):
         raise HostAffinityError(
             "FlightSim hardware smoke requires Ollama at http://127.0.0.1:11434 "
