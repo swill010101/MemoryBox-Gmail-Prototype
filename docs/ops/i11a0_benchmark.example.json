@@ -20,7 +20,7 @@
   "regression_elapsed_fraction": 0.25,
   "regression_run_count": 3,
   "smoke_evidence_tokens": 1000,
-  "prompt_version": "i11a0-narration-v0.1-draft",
+  "prompt_version": "i11a0-narration-v0.2-draft",
   "prompt_accepted": false,
   "models": [
     {

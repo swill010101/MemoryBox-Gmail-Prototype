@@ -162,6 +162,14 @@ def run_prove_i11a0_benchmark() -> dict[str, Any]:
         problems,
     )
     _check(
+        "prompt_allows_marked_interpretation",
+        "the exchange suggests" in SYSTEM_PROMPT
+        and "Do not describe emotions, motives, atmosphere" not in SYSTEM_PROMPT
+        and PROMPT_VERSION == "i11a0-narration-v0.2-draft",
+        checks,
+        problems,
+    )
+    _check(
         "prompt_is_not_production_narrator",
         "I11A0_BENCHMARK_NARRATION" not in PRODUCTION_NARRATOR and PROMPT_VERSION not in PRODUCTION_NARRATOR,
         checks,
@@ -678,6 +686,48 @@ def run_prove_i11a0_benchmark() -> dict[str, Any]:
             checks,
             problems,
             changed,
+        )
+
+    with tempfile.TemporaryDirectory() as manifest_dir:
+        folder = Path(manifest_dir)
+        body = b"reviewed chunk bytes\n"
+        (folder / "CHUNK_001_MODEL_PASTE.txt").write_bytes(body)
+        digest = hashlib.sha256(body).hexdigest()
+        (folder / "CHUNK_MANIFEST.json").write_text(
+            json.dumps(
+                {
+                    "chunks": [
+                        {
+                            "chunk_index": 1,
+                            "paste_file": "CHUNK_001_MODEL_PASTE.txt",
+                            "chunk_sha256": digest,
+                            "conversation_count": 4,
+                            "message_count": 9,
+                            "date_range": {"start": "2009-01-01", "end": "2009-02-01"},
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        (folder / "LOCAL_MANIFEST.json").write_text(
+            json.dumps({"source_commit": "abc123", "frozen_input_sha256": "ff"}),
+            encoding="utf-8",
+        )
+        listed = inventory_peggy_chunks([folder])
+        row = listed["chunks"][0]
+        _check(
+            "manifest_paste_file_fields_are_read",
+            row["conversation_count"] == 4
+            and row["message_count"] == 9
+            and row["date_start"] == "2009-01-01"
+            and row["sha256"] == digest
+            and row["artifact_status"] == "reviewed_manifest_match"
+            and any(item["role"] == "manifest" for item in listed["companions"])
+            and any(item["role"] == "generation_metadata" for item in listed["companions"]),
+            checks,
+            problems,
+            row,
         )
 
     seen: list[str] = []

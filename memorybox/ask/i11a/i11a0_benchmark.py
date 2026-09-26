@@ -8,6 +8,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import re
 import urllib.error
 import urllib.request
 from dataclasses import asdict, dataclass, field
@@ -853,99 +854,231 @@ def _read_json(path: Path) -> dict[str, Any] | None:
     return parsed if isinstance(parsed, dict) else None
 
 
+_COMPANION_ROLES = {
+    "chunk_manifest.json": "manifest",
+    "model_paste.txt": "model_paste",
+    "source_map.json": "source_map",
+    "preparation_report.txt": "preparation_report",
+    "chunk_preparation_report.txt": "chunk_preparation_report",
+    "chunk_manifest_resync_report.txt": "hash_ledger",
+    "freeze_resync_report.txt": "freeze_report",
+    "local_manifest.json": "generation_metadata",
+    "generation_manifest.json": "generation_metadata",
+}
+
+
 def inventory_peggy_chunks(roots: list[Path | str]) -> dict[str, Any]:
-    """Inventory CHUNK_*_MODEL_PASTE files. Does not call a model."""
-    files: list[Path] = []
+    """Inventory a review directory recursively. Does not call a model or copy evidence."""
+    chunk_files: list[Path] = []
+    companions: list[Path] = []
     searched = []
     for root in roots:
         path = Path(root)
         searched.append(str(path))
-        files.extend(_chunk_files(path))
-    files = sorted(set(files))
-    records = [_chunk_record(path) for path in files]
+        found_chunks, found_companions = _review_files(path)
+        chunk_files.extend(found_chunks)
+        companions.extend(found_companions)
+    chunk_files = sorted(set(chunk_files))
+    companions = sorted(set(companions))
+    records = [_chunk_record(path) for path in chunk_files]
+    companion_records = [_companion_record(path, roots) for path in companions]
     return {
         "ok": True,
         "models_called": False,
+        "pull_executed": False,
         "searched_roots": searched,
         "chunk_count": len(records),
+        "exactly_seven": len(records) == 7,
+        "seven_chunk_pool_found": len(records) == 7,
+        "canonical_set_resolved": len(records) == 7,
         "chunks": records,
-        "seven_chunk_pool_found": len(records) >= 7,
+        "companions": companion_records,
+        "i14_comparison_files": [
+            row["path"] for row in companion_records if "i14" in row["filename"].lower()
+        ],
     }
 
 
-def _chunk_files(root: Path) -> list[Path]:
+def _review_files(root: Path) -> tuple[list[Path], list[Path]]:
     import os
 
-    found: list[Path] = []
+    chunks: list[Path] = []
+    companions: list[Path] = []
     if not root.exists():
-        return found
+        return chunks, companions
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [name for name in dirnames if name not in {".git", "archive"}]
         for name in filenames:
+            path = Path(dirpath) / name
             if name.startswith("CHUNK_") and name.endswith("_MODEL_PASTE.txt"):
-                found.append(Path(dirpath) / name)
+                chunks.append(path)
+            else:
+                companions.append(path)
+    return chunks, companions
+
+
+def _chunk_files(root: Path) -> list[Path]:
+    chunks, _companions = _review_files(root)
+    return chunks
+
+
+def _manifest_row(manifest: dict[str, Any] | None, filename: str) -> dict[str, Any] | None:
+    if not manifest:
+        return None
+    for candidate in manifest.get("chunks") or []:
+        names = {candidate.get("file"), candidate.get("paste_file")}
+        if filename in names:
+            return candidate
+    return None
+
+
+def _review_identity(directory: Path) -> dict[str, Any]:
+    review_id = directory.name if directory.name.upper().startswith("REVIEW_") else None
+    local = _read_json(directory / "LOCAL_MANIFEST.json") or {}
+    generation = _read_json(directory / "GENERATION_MANIFEST.json") or {}
+    interval = local.get("interval") if isinstance(local.get("interval"), dict) else {}
+    return {
+        "review_id": review_id,
+        "generation_id": generation.get("generation_id"),
+        "source_commit": local.get("source_commit") or generation.get("source_commit"),
+        "frozen_input_sha256": local.get("frozen_input_sha256") or generation.get("model_paste_sha256"),
+        "interval_start": interval.get("start"),
+        "interval_end": interval.get("end"),
+    }
+
+
+def _resync_by_index(directory: Path) -> dict[int, dict[str, Any]]:
+    path = directory / "CHUNK_MANIFEST_RESYNC_REPORT.txt"
+    if not path.is_file():
+        return {}
+    text = path.read_text(encoding="utf-8", errors="replace")
+    start = text.find("[")
+    if start < 0:
+        return {}
+    try:
+        rows = json.loads(text[start:])
+    except json.JSONDecodeError:
+        return {}
+    found: dict[int, dict[str, Any]] = {}
+    if isinstance(rows, list):
+        for row in rows:
+            if isinstance(row, dict) and row.get("chunk_index") is not None:
+                found[int(row["chunk_index"])] = row
     return found
 
 
 def _chunk_record(path: Path) -> dict[str, Any]:
     data = path.read_bytes()
-    text = data.decode("utf-8", errors="replace")
+    actual_sha = hashlib.sha256(data).hexdigest()
     manifest = _read_json(path.parent / "CHUNK_MANIFEST.json")
-    generation = _read_json(path.parent.parent / "GENERATION_MANIFEST.json") or _read_json(
-        path.parent / "GENERATION_MANIFEST.json"
+    generation = _read_json(path.parent / "GENERATION_MANIFEST.json") or _read_json(
+        path.parent.parent / "GENERATION_MANIFEST.json"
     )
-    row = None
-    if manifest:
-        for candidate in manifest.get("chunks") or []:
-            if candidate.get("file") == path.name:
-                row = candidate
-                break
-    conversations = 0
-    messages = 0
-    date_start = None
-    date_end = None
-    evidence_ids: list[str] = []
-    source_map = _read_json(path.parent / "SOURCE_MAP.json") or {}
-    if "===== TRUSTED EMAIL CONVERSATIONS =====" in text:
-        try:
-            _prefix, parsed = parse_conversations(text, source_map)
-        except ValueError:
-            parsed = []
-        conversations = len(parsed)
-        messages = sum(len(item.turns) for item in parsed)
-        dates = [item.earliest for item in parsed if item.earliest and item.earliest != "9999"]
-        dates += [item.latest for item in parsed if item.latest]
-        if dates:
-            date_start = min(dates)
-            date_end = max(dates)
-        evidence_ids = [turn.cite_as for item in parsed for turn in item.turns]
+    row = _manifest_row(manifest, path.name)
+    identity = _review_identity(path.parent)
+    if generation and generation.get("generation_id"):
+        identity["generation_id"] = generation.get("generation_id")
+    time_range = {}
     if row:
-        time_range = row.get("time_range") or {}
-        date_start = date_start or time_range.get("start")
-        date_end = date_end or time_range.get("end")
-        evidence_ids = evidence_ids or list(row.get("email_ids") or [])
-        messages = messages or len(evidence_ids)
-        conversations = conversations or len(row.get("conversation_ids") or [])
-    generation_id = None
-    if generation:
-        generation_id = generation.get("generation_id")
-    elif row:
-        generation_id = row.get("chunk_id")
+        time_range = row.get("date_range") or row.get("time_range") or {}
+    conversations = row.get("conversation_count") if row else None
+    messages = row.get("message_count") if row else None
+    if conversations is None and row:
+        conversations = len(row.get("conversation_ids") or [])
+    if messages is None and row:
+        messages = len(row.get("email_ids") or row.get("cite_as") or [])
+    parsed_ids = 0
+    if conversations in (None, 0) or messages in (None, 0):
+        text = data.decode("utf-8", errors="replace")
+        source_map = _read_json(path.parent / "SOURCE_MAP.json") or {}
+        if "===== TRUSTED EMAIL CONVERSATIONS =====" in text:
+            try:
+                _prefix, parsed = parse_conversations(text, source_map)
+            except ValueError:
+                parsed = []
+            conversations = len(parsed)
+            messages = sum(len(item.turns) for item in parsed)
+            parsed_ids = messages
+            dates = [item.earliest for item in parsed if item.earliest and item.earliest != "9999"]
+            dates += [item.latest for item in parsed if item.latest]
+            if dates and not time_range:
+                time_range = {"start": min(dates), "end": max(dates)}
+    manifest_sha = None
+    if row:
+        manifest_sha = row.get("chunk_sha256") or row.get("sha256")
+    sequence = None
+    if row and row.get("chunk_index") is not None:
+        sequence = int(row["chunk_index"])
+    else:
+        match = re.search(r"CHUNK_(\d+)_", path.name, re.I)
+        if match:
+            sequence = int(match.group(1))
+    resync = _resync_by_index(path.parent).get(sequence or -1, {})
+    reviewed_sha = resync.get("reviewed_sha256")
+    i14_files = [
+        item.name
+        for item in path.parent.iterdir()
+        if item.is_file() and "i14" in item.name.lower()
+    ] if path.parent.exists() else []
+    if manifest_sha and actual_sha == str(manifest_sha).lower():
+        status = "reviewed_manifest_match"
+    elif reviewed_sha and actual_sha == str(reviewed_sha).lower():
+        status = "reviewed_hash_match"
+    elif not manifest_sha and not reviewed_sha:
+        status = "not_compared"
+    else:
+        status = "hash_disagrees_with_review_record"
+    return {
+        "sequence": sequence,
+        "filename": path.name,
+        "relative_path": path.name,
+        "path": str(path),
+        "flightsim_path": str(Path(r"C:\memorybox\docs\test-output\trusted-email-review") / path.parent.name / path.name)
+        if path.parent.name.upper().startswith("REVIEW_")
+        else None,
+        "review_id": identity.get("review_id"),
+        "generation_id": identity.get("generation_id"),
+        "source_commit": identity.get("source_commit"),
+        "frozen_input_sha256": identity.get("frozen_input_sha256"),
+        "sha256": actual_sha,
+        "manifest_sha256": manifest_sha,
+        "predecessor_sha256": resync.get("previous_sha256"),
+        "reviewed_sha256": reviewed_sha,
+        "bytes": len(data),
+        "diagnostic_tokens_bytes_div_4": max(1, (len(data) + 3) // 4),
+        "token_count_authoritative": False,
+        "date_start": time_range.get("start"),
+        "date_end": time_range.get("end"),
+        "conversation_count": conversations or 0,
+        "message_count": messages or 0,
+        "evidence_id_count": messages or parsed_ids or 0,
+        "review_status": status,
+        "i14_relationship": "no_i14_comparison_in_review_directory" if not i14_files else "i14_file_present",
+        "i14_files": i14_files,
+        "artifact_status": status,
+        "models_called": False,
+    }
+
+
+def _companion_record(path: Path, roots: list[Path | str]) -> dict[str, Any]:
+    data = path.read_bytes()
+    relative = path.name
+    for root in roots:
+        try:
+            relative = str(path.relative_to(Path(root)))
+            break
+        except ValueError:
+            continue
+    role = _COMPANION_ROLES.get(path.name.lower(), "companion")
+    if "i14" in path.name.lower():
+        role = "i14_comparison"
     return {
         "filename": path.name,
+        "relative_path": relative,
         "path": str(path),
-        "generation_id": generation_id,
-        "sha256": hashlib.sha256(data).hexdigest(),
         "bytes": len(data),
-        "diagnostic_tokens_bytes_div_4": estimate_tokens(text),
-        "token_count_authoritative": False,
-        "date_start": date_start,
-        "date_end": date_end,
-        "conversation_count": conversations,
-        "message_count": messages,
-        "evidence_id_count": len(evidence_ids),
-        "i14_relationship": "not_compared",
-        "artifact_status": "not_compared",
+        "sha256": hashlib.sha256(data).hexdigest(),
+        "role": role,
         "models_called": False,
     }
 
