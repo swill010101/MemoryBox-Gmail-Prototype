@@ -1,0 +1,37 @@
+{
+  "stage": "smoke",
+  "inference_authorized": true,
+  "command_kind": "preliminary_gemma_pipeline_check",
+  "gate2_complete": false,
+  "full_context_ladder_blocked": true,
+  "thinking_mode": "off",
+  "authorize_thinking_comparison": false,
+  "temperature": 0.1,
+  "seed": 42,
+  "reserved_output_tokens": 2500,
+  "safety_margin_tokens": 1500,
+  "configured_num_ctx": 6144,
+  "maximum_vram_gb": 22.5,
+  "timeout_seconds": 1800,
+  "smoke_evidence_tokens": 1000,
+  "token_estimator_id": "utf8_bytes_plus_3_div_4",
+  "token_estimator_formula": "max(1, (len(text.encode('utf-8')) + 3) // 4)",
+  "token_estimator_label": "estimated",
+  "actual_count_source": "recorded_smoke_generation_prompt_eval_count",
+  "prompt_version": "i11a0-narration-v0.2-draft",
+  "prompt_accepted": false,
+  "models": [
+    {
+      "config_id": "C",
+      "tag": "gemma4:26b",
+      "alias": "",
+      "quantization": "Q4_K_M",
+      "digest": "08ae7ec1744bd7f451c4a530afb39d2673ad9d07a8369b8a33a3613b41212a68"
+    }
+  ],
+  "founder_gate3_accepted": false,
+  "founder_gate4_accepted": false,
+  "authorize_alternate_quantization": false,
+  "alternate_quantization_tag": null,
+  "gate2_note": "Corrected Gemma 4 26B smoke only. Same packet, prompt, temperature, seed, thinking, and output reserve as the first run. num_ctx is pinned at 6144 from the +182 calibration. Do not shrink evidence. Gate 2 is not complete. Qwen models remain uninstalled. The context ladder remains blocked."
+}

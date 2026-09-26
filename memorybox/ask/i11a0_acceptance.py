@@ -37,7 +37,10 @@ from memorybox.ask.i11a.i11a0_benchmark import (
     build_preflight_package,
     classify_measurement,
     compare_i14_successor,
+    ORIGINAL_GATE2_GEMMA_RUN_ID,
+    apply_original_gemma_smoke_safety_correction,
     evaluate_recorded_prompt_safety,
+    prompt_safety_assessment,
     inventory_installed_models,
     inventory_peggy_chunks,
     pack_conversation_intact,
@@ -495,19 +498,130 @@ def run_prove_i11a0_benchmark() -> dict[str, Any]:
             problems,
             smoke.get("token_accounting"),
         )
-        gemma_smoke_safety = evaluate_recorded_prompt_safety(
+        original_values = prompt_safety_assessment(
+            actual_prompt_tokens=2075,
+            estimated_prompt_tokens=1893,
+            configured_num_ctx=5893,
+            output_reserve_tokens=2500,
+            required_safety_margin_tokens=1500,
+            pipeline_execution="passed",
+            generation_completion="passed",
+        )
+        _check(
+            "original_gemma_values_fail_safety_margin_by_182",
+            original_values["required_context_tokens"] == 6075
+            and original_values["remaining_context_after_prompt_and_output"] == 1318
+            and original_values["remaining_safety_margin_tokens"] == 1318
+            and original_values["safety_margin_shortfall_tokens"] == 182
+            and original_values["context_overflow"] is False
+            and original_values["pipeline_execution"] == "passed"
+            and original_values["generation_completion"] == "passed"
+            and original_values["final_safety_result"] == "failed"
+            and original_values["overall_classification"]
+            == "successful_pipeline_safety_margin_failed",
+            checks,
+            problems,
+            original_values,
+        )
+        exact_pass = evaluate_recorded_prompt_safety(
             actual_prompt_eval_count=2075,
             estimated_total_prompt_tokens=1893,
-            num_ctx=5893,
+            num_ctx=6075,
             reserved_output_tokens=2500,
             safety_margin_tokens=1500,
         )
         _check(
-            "recorded_underestimate_within_margin_passes",
-            gemma_smoke_safety == ("passed", None),
+            "same_values_pass_exactly_at_num_ctx_6075",
+            exact_pass["required_context_tokens"] == 6075
+            and exact_pass["safety_margin_shortfall_tokens"] == 0
+            and exact_pass["remaining_safety_margin_tokens"] == 1500
+            and exact_pass["final_safety_result"] == "passed"
+            and exact_pass["overall_classification"] == "successful_stable",
             checks,
             problems,
-            gemma_smoke_safety,
+            exact_pass,
+        )
+        overestimate = prompt_safety_assessment(
+            actual_prompt_tokens=2075,
+            estimated_prompt_tokens=2300,
+            configured_num_ctx=6075,
+            output_reserve_tokens=2500,
+            required_safety_margin_tokens=1500,
+        )
+        _check(
+            "conservative_overestimate_does_not_fail_when_equation_passes",
+            overestimate["estimation_error_tokens"] == -225
+            and overestimate["final_safety_result"] == "passed"
+            and overestimate["enlargement_stop"] is False
+            and overestimate["overall_classification"] == "successful_stable",
+            checks,
+            problems,
+            overestimate,
+        )
+        enlargement_stop = prompt_safety_assessment(
+            actual_prompt_tokens=3601,
+            estimated_prompt_tokens=2100,
+            configured_num_ctx=7601,
+            output_reserve_tokens=2500,
+            required_safety_margin_tokens=1500,
+        )
+        _check(
+            "positive_estimation_error_over_1500_stops_enlargement",
+            enlargement_stop["estimation_error_tokens"] == 1501
+            and enlargement_stop["enlargement_stop"] is True
+            and enlargement_stop["final_safety_result"] == "passed"
+            and enlargement_stop["overall_classification"]
+            == "successful_pipeline_recalibrate",
+            checks,
+            problems,
+            enlargement_stop,
+        )
+        completed_without_overflow = original_values
+        _check(
+            "completed_generation_without_overflow_can_fail_safety_margin",
+            completed_without_overflow["context_overflow"] is False
+            and completed_without_overflow["generation_completion"] == "passed"
+            and completed_without_overflow["final_safety_result"] == "failed",
+            checks,
+            problems,
+            completed_without_overflow,
+        )
+        original_dir = root / ORIGINAL_GATE2_GEMMA_RUN_ID
+        original_dir.mkdir(parents=True, exist_ok=True)
+        original_record = {
+            "identity": ORIGINAL_GATE2_GEMMA_RUN_ID,
+            "classification": "successful_stable",
+            "skipped": False,
+            "request": {"num_ctx": 5893},
+            "measurement": {
+                "prompt_eval_count": 2075,
+                "estimated_prompt_tokens": 1893,
+                "configured_num_ctx": 5893,
+                "output_reserve_tokens": 2500,
+                "safety_margin_tokens": 1500,
+                "final_safety_result": "passed",
+            },
+        }
+        (original_dir / "run_record.json").write_text(
+            json.dumps(original_record, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+            newline="\n",
+        )
+        original_hash = hashlib.sha256((original_dir / "run_record.json").read_bytes()).hexdigest()
+        correction = apply_original_gemma_smoke_safety_correction(original_dir)
+        rewritten_hash = hashlib.sha256((original_dir / "run_record.json").read_bytes()).hexdigest()
+        preserved = json.loads((original_dir / "run_record.json").read_text(encoding="utf-8"))
+        _check(
+            "original_run_is_preserved_and_superseded",
+            original_hash == rewritten_hash
+            and preserved["classification"] == "successful_stable"
+            and preserved["measurement"]["final_safety_result"] == "passed"
+            and correction["corrected_overall_classification"]
+            == "successful_pipeline_safety_margin_failed"
+            and (original_dir / "safety_assessment_correction.json").exists(),
+            checks,
+            problems,
+            correction,
         )
         try:
             run_authorized_stage(

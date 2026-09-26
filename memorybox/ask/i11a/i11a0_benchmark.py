@@ -33,6 +33,10 @@ TOKEN_ESTIMATOR_LABEL = "estimated"
 VRAM_CEILING_GB = 22.5
 OUTPUT_RESERVE_TOKENS = 2500
 SAFETY_MARGIN_TOKENS = 1500
+ESTIMATOR_ENLARGEMENT_STOP_TOKENS = 1500
+ORIGINAL_GATE2_GEMMA_RUN_ID = (
+    "2b2af68a97f6ac5a6cf60a62e028f93bad5b261e857042078abc796af780a473"
+)
 START_EVIDENCE_TOKENS = 8000
 PRIMARY_INCREMENT_TOKENS = 1000
 REFINEMENT_INCREMENT_TOKENS = 250
@@ -153,6 +157,7 @@ class I11A0Config:
     alternate_quantization_tag: str | None = None
     finalist_tags: tuple[str, ...] = ()
     prompt_instruction_tokens: int = 0
+    configured_num_ctx: int | None = None
 
     def validate(self) -> None:
         if self.stage not in {
@@ -256,6 +261,9 @@ def load_config(path: Path | str) -> I11A0Config:
         alternate_quantization_tag=raw.get("alternate_quantization_tag"),
         finalist_tags=tuple(raw.get("finalist_tags") or ()),
         prompt_instruction_tokens=int(raw.get("prompt_instruction_tokens", 0)),
+        configured_num_ctx=(
+            int(raw["configured_num_ctx"]) if raw.get("configured_num_ctx") is not None else None
+        ),
     )
 
 
@@ -376,6 +384,70 @@ def plan_context(
     )
 
 
+def prompt_safety_assessment(
+    *,
+    actual_prompt_tokens: int,
+    estimated_prompt_tokens: int,
+    configured_num_ctx: int,
+    output_reserve_tokens: int,
+    required_safety_margin_tokens: int,
+    pipeline_execution: str = "passed",
+    generation_completion: str = "passed",
+) -> dict[str, Any]:
+    """Authoritative post-measurement safety. Does not mutate original run files."""
+    estimation_error_tokens = actual_prompt_tokens - estimated_prompt_tokens
+    estimation_error_percent = (
+        round((estimation_error_tokens / estimated_prompt_tokens) * 100.0, 4)
+        if estimated_prompt_tokens
+        else None
+    )
+    required_context_tokens = (
+        actual_prompt_tokens + output_reserve_tokens + required_safety_margin_tokens
+    )
+    remaining_context_after_prompt_and_output = (
+        configured_num_ctx - actual_prompt_tokens - output_reserve_tokens
+    )
+    remaining_safety_margin_tokens = max(0, remaining_context_after_prompt_and_output)
+    safety_margin_shortfall_tokens = max(
+        0, required_safety_margin_tokens - remaining_context_after_prompt_and_output
+    )
+    context_overflow = actual_prompt_tokens > configured_num_ctx
+    equation_pass = required_context_tokens <= configured_num_ctx
+    enlargement_stop = estimation_error_tokens > ESTIMATOR_ENLARGEMENT_STOP_TOKENS
+    if context_overflow:
+        overall = "context_rejected"
+        final_safety = "failed"
+    elif not equation_pass:
+        overall = "successful_pipeline_safety_margin_failed"
+        final_safety = "failed"
+    elif enlargement_stop:
+        overall = "successful_pipeline_recalibrate"
+        final_safety = "passed"
+    else:
+        overall = "successful_stable"
+        final_safety = "passed"
+    return {
+        "pipeline_execution": pipeline_execution,
+        "generation_completion": generation_completion,
+        "context_overflow": context_overflow,
+        "estimated_prompt_tokens": estimated_prompt_tokens,
+        "actual_prompt_tokens": actual_prompt_tokens,
+        "estimation_error_tokens": estimation_error_tokens,
+        "estimation_error_percent": estimation_error_percent,
+        "output_reserve_tokens": output_reserve_tokens,
+        "required_safety_margin_tokens": required_safety_margin_tokens,
+        "required_context_tokens": required_context_tokens,
+        "configured_num_ctx": configured_num_ctx,
+        "remaining_context_after_prompt_and_output": remaining_context_after_prompt_and_output,
+        "remaining_safety_margin_tokens": remaining_safety_margin_tokens,
+        "safety_margin_shortfall_tokens": safety_margin_shortfall_tokens,
+        "final_safety_result": final_safety,
+        "overall_classification": overall,
+        "enlargement_stop": enlargement_stop,
+        "equation": "actual_prompt_tokens + output_reserve_tokens + required_safety_margin_tokens <= configured_num_ctx",
+    }
+
+
 def evaluate_recorded_prompt_safety(
     *,
     actual_prompt_eval_count: int,
@@ -383,18 +455,128 @@ def evaluate_recorded_prompt_safety(
     num_ctx: int,
     reserved_output_tokens: int,
     safety_margin_tokens: int,
-) -> tuple[str, str | None]:
-    """Post-run check. num_ctx already includes the safety margin."""
-    error = actual_prompt_eval_count - estimated_total_prompt_tokens
-    generation_fits = actual_prompt_eval_count + reserved_output_tokens <= num_ctx
-    underestimated = error > safety_margin_tokens
-    if not generation_fits:
-        return "failed", "context_rejected"
-    if underestimated:
-        return "failed", "estimation_exceeded"
-    if error < -safety_margin_tokens:
-        return "passed_conservative_overestimate", None
-    return "passed", None
+) -> dict[str, Any]:
+    return prompt_safety_assessment(
+        actual_prompt_tokens=actual_prompt_eval_count,
+        estimated_prompt_tokens=estimated_total_prompt_tokens,
+        configured_num_ctx=num_ctx,
+        output_reserve_tokens=reserved_output_tokens,
+        required_safety_margin_tokens=safety_margin_tokens,
+    )
+
+
+def write_superseding_safety_assessment(
+    run_dir: Path,
+    *,
+    assessment: dict[str, Any],
+    supersedes_identity: str,
+    original_classification: str | None = None,
+    provenance: dict[str, Any] | None = None,
+) -> Path:
+    """Write a correction beside an original run. Never rewrite run_record.json."""
+    run_dir = Path(run_dir)
+    record_path = run_dir / "run_record.json"
+    if not record_path.exists():
+        raise I11A0Error(f"original run_record.json is missing in {run_dir}")
+    payload = {
+        "kind": "superseding_safety_assessment",
+        "supersedes_identity": supersedes_identity,
+        "original_files_unmodified": True,
+        "original_run_record_path": str(record_path),
+        "original_classification": original_classification,
+        "corrected_overall_classification": assessment["overall_classification"],
+        "pipeline_execution": assessment.get("pipeline_execution"),
+        "generation_completion": assessment.get("generation_completion"),
+        "context_overflow": assessment.get("context_overflow"),
+        "assessment": assessment,
+        "provenance": provenance
+        or {
+            "reason": "post-measurement_safety_equation",
+            "equation": assessment.get("equation"),
+        },
+    }
+    dest = run_dir / "safety_assessment_correction.json"
+    dest.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    return dest
+
+
+def apply_original_gemma_smoke_safety_correction(run_dir: Path) -> dict[str, Any]:
+    """Supersede the first Gemma smoke classification without rewriting its metrics."""
+    run_dir = Path(run_dir)
+    record = json.loads((run_dir / "run_record.json").read_text(encoding="utf-8"))
+    identity = str(record.get("identity") or run_dir.name)
+    measurement = record.get("measurement") or {}
+    accounting = {}
+    accounting_path = run_dir / "token_accounting.json"
+    if accounting_path.exists():
+        accounting = json.loads(accounting_path.read_text(encoding="utf-8"))
+    actual = int(
+        measurement.get("actual_prompt_tokens")
+        or measurement.get("prompt_eval_count")
+        or accounting.get("actual_prompt_eval_count")
+    )
+    estimated = int(
+        measurement.get("estimated_prompt_tokens")
+        or measurement.get("estimated_total_prompt_tokens")
+        or accounting.get("estimated_total_prompt_tokens")
+    )
+    num_ctx = int(
+        measurement.get("configured_num_ctx")
+        or accounting.get("configured_num_ctx")
+        or (record.get("request") or {}).get("num_ctx")
+    )
+    reserve = int(
+        measurement.get("output_reserve_tokens")
+        or accounting.get("output_reserve_tokens")
+        or OUTPUT_RESERVE_TOKENS
+    )
+    margin = int(
+        measurement.get("safety_margin_tokens")
+        or accounting.get("safety_margin_tokens")
+        or SAFETY_MARGIN_TOKENS
+    )
+    assessment = prompt_safety_assessment(
+        actual_prompt_tokens=actual,
+        estimated_prompt_tokens=estimated,
+        configured_num_ctx=num_ctx,
+        output_reserve_tokens=reserve,
+        required_safety_margin_tokens=margin,
+        pipeline_execution="passed",
+        generation_completion="passed",
+    )
+    hashes = {}
+    for name in ("run_record.json", "token_accounting.json", "narration.txt", "raw_api.jsonl"):
+        path = run_dir / name
+        if path.exists():
+            hashes[name] = hashlib.sha256(path.read_bytes()).hexdigest()
+    dest = write_superseding_safety_assessment(
+        run_dir,
+        assessment=assessment,
+        supersedes_identity=identity,
+        original_classification=str(record.get("classification")),
+        provenance={
+            "reason": "post-measurement_safety_equation",
+            "original_run_id": identity,
+            "original_artifact_sha256": hashes,
+            "equation": (
+                f"{actual} + {reserve} + {margin} = "
+                f"{assessment['required_context_tokens']} vs num_ctx {num_ctx}"
+            ),
+        },
+    )
+    return {
+        "ok": True,
+        "correction_path": str(dest),
+        "supersedes_identity": identity,
+        "original_classification": record.get("classification"),
+        "corrected_overall_classification": assessment["overall_classification"],
+        "original_artifact_sha256": hashes,
+        "assessment": assessment,
+    }
 
 
 @dataclass
@@ -497,7 +679,15 @@ class Measurement:
     configured_num_ctx: int | None = None
     output_reserve_tokens: int | None = None
     safety_margin_tokens: int | None = None
+    required_safety_margin_tokens: int | None = None
+    required_context_tokens: int | None = None
+    remaining_context_after_prompt_and_output: int | None = None
+    remaining_safety_margin_tokens: int | None = None
+    safety_margin_shortfall_tokens: int | None = None
+    actual_prompt_tokens: int | None = None
+    estimation_error_tokens: int | None = None
     final_safety_result: str | None = None
+    overall_classification: str | None = None
 
 
 def classify_measurement(measurement: Measurement, *, vram_ceiling_gb: float) -> str:
@@ -1340,6 +1530,7 @@ def run_identity(request: RunRequest) -> str:
         "thinking_mode": request.thinking_mode,
         "confirmation": request.confirmation,
         "seed": request.seed,
+        "num_ctx": request.num_ctx,
     }
     return hashlib.sha256(
         json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
@@ -1387,13 +1578,25 @@ def _persist_run(results_dir: Path, observation: RunObservation) -> None:
         "estimator_formula": observation.measurement.token_estimator_formula or TOKEN_ESTIMATOR_FORMULA,
         "estimator_result_kind": TOKEN_ESTIMATOR_LABEL,
         "actual_prompt_eval_count": observation.measurement.prompt_eval_count,
+        "actual_prompt_tokens": observation.measurement.actual_prompt_tokens
+        or observation.measurement.prompt_eval_count,
         "actual_count_source": "recorded_generation_prompt_eval_count",
         "actual_includes_chat_template_and_instructions": True,
+        "estimated_prompt_tokens": observation.measurement.estimated_prompt_tokens,
+        "estimation_error_tokens": observation.measurement.estimation_error_tokens
+        or observation.measurement.token_error,
+        "estimation_error_percent": observation.measurement.token_error_percent,
         "token_error": observation.measurement.token_error,
         "token_error_percent": observation.measurement.token_error_percent,
         "configured_num_ctx": observation.measurement.configured_num_ctx,
         "output_reserve_tokens": observation.measurement.output_reserve_tokens,
         "safety_margin_tokens": observation.measurement.safety_margin_tokens,
+        "required_safety_margin_tokens": observation.measurement.required_safety_margin_tokens,
+        "required_context_tokens": observation.measurement.required_context_tokens,
+        "remaining_context_after_prompt_and_output": observation.measurement.remaining_context_after_prompt_and_output,
+        "remaining_safety_margin_tokens": observation.measurement.remaining_safety_margin_tokens,
+        "safety_margin_shortfall_tokens": observation.measurement.safety_margin_shortfall_tokens,
+        "overall_classification": observation.measurement.overall_classification,
         "final_safety_result": observation.measurement.final_safety_result,
         "calibration_recorded": observation.measurement.token_error is not None,
     }
@@ -1487,29 +1690,6 @@ def _execute(
         evidence_ids=list(evidence.evidence_ids),
         evidence_text=evidence.text,
     )
-    request_key = RunRequest(
-        model_tag=spec.tag,
-        digest=spec.digest,
-        requested_evidence_tokens=requested_tokens,
-        evidence_sha256="",
-        evidence_text="",
-        repetition=repetition,
-        warm_or_cold=warm_or_cold,
-        confirmation=confirmation,
-        thinking_mode=config.thinking_mode,
-        seed=config.seed,
-        num_ctx=0,
-        reserved_output_tokens=config.reserved_output_tokens,
-        prompt_sha256=prompt_sha256(),
-    )
-    identity = run_identity(request_key)
-    if identity in completed:
-        return RunObservation(
-            request=request_key,
-            measurement=Measurement(evidence_tokens=requested_tokens),
-            classification="resumed_skip",
-            skipped=True,
-        )
     full_prompt = SYSTEM_PROMPT + "\n" + user
     if smoke:
         estimated_evidence = estimate_tokens(evidence.text)
@@ -1526,6 +1706,7 @@ def _execute(
         prompt_tokens=estimated_template,
         reserved_output_tokens=config.reserved_output_tokens,
         safety_margin_tokens=config.safety_margin_tokens,
+        num_ctx=config.configured_num_ctx,
     )
     estimated_budget_ok = (
         estimated_total + config.reserved_output_tokens + config.safety_margin_tokens
@@ -1555,6 +1736,14 @@ def _execute(
         partial_boundary_note=evidence.partial_boundary_note,
         evidence_ids=evidence.evidence_ids,
     )
+    identity = run_identity(request)
+    if identity in completed:
+        return RunObservation(
+            request=request,
+            measurement=Measurement(evidence_tokens=requested_tokens),
+            classification="resumed_skip",
+            skipped=True,
+        )
     measurement, narration = runner(request)
     measurement.evidence_tokens = measurement.evidence_tokens or estimated_evidence
     measurement.evidence_bytes = len(evidence.text.encode("utf-8"))
@@ -1570,6 +1759,7 @@ def _execute(
     measurement.output_reserve_tokens = config.reserved_output_tokens
     measurement.safety_margin_tokens = config.safety_margin_tokens
     actual = measurement.prompt_eval_count
+    assessment: dict[str, Any] | None = None
     if actual is not None:
         error = actual - estimated_total
         calibration.add(spec.tag, error)
@@ -1577,19 +1767,24 @@ def _execute(
         measurement.token_error_percent = (
             round((error / estimated_total) * 100.0, 4) if estimated_total else None
         )
-        safety_result, reject_reason = evaluate_recorded_prompt_safety(
+        assessment = evaluate_recorded_prompt_safety(
             actual_prompt_eval_count=actual,
             estimated_total_prompt_tokens=estimated_total,
             num_ctx=plan.num_ctx,
             reserved_output_tokens=config.reserved_output_tokens,
             safety_margin_tokens=config.safety_margin_tokens,
         )
-        measurement.final_safety_result = safety_result
-        if reject_reason:
-            observation = RunObservation(request, measurement, reject_reason, narration)
-            _persist_run(results_dir, observation)
-            completed.add(identity)
-            return observation
+        measurement.actual_prompt_tokens = assessment["actual_prompt_tokens"]
+        measurement.estimation_error_tokens = assessment["estimation_error_tokens"]
+        measurement.required_safety_margin_tokens = assessment["required_safety_margin_tokens"]
+        measurement.required_context_tokens = assessment["required_context_tokens"]
+        measurement.remaining_context_after_prompt_and_output = assessment[
+            "remaining_context_after_prompt_and_output"
+        ]
+        measurement.remaining_safety_margin_tokens = assessment["remaining_safety_margin_tokens"]
+        measurement.safety_margin_shortfall_tokens = assessment["safety_margin_shortfall_tokens"]
+        measurement.final_safety_result = assessment["final_safety_result"]
+        measurement.overall_classification = assessment["overall_classification"]
     elif smoke:
         measurement.final_safety_result = "failed_missing_prompt_eval_count"
         observation = RunObservation(request, measurement, "context_rejected", narration)
@@ -1599,6 +1794,12 @@ def _execute(
     classification = classify_measurement(
         measurement, vram_ceiling_gb=config.maximum_vram_gb
     )
+    if (
+        assessment is not None
+        and classification == "successful_stable"
+        and assessment["overall_classification"] != "successful_stable"
+    ):
+        classification = assessment["overall_classification"]
     if measurement.final_safety_result is None:
         measurement.final_safety_result = "passed"
     observation = RunObservation(request, measurement, classification, narration)
@@ -1636,7 +1837,7 @@ def _run_smoke(
         repetition=1,
         warm_or_cold="cold",
         confirmation=False,
-        pack_target=calibration.calibrated_target(spec.tag, config.smoke_evidence_tokens),
+        pack_target=config.smoke_evidence_tokens,
     )
     return {
         "ok": observation.classification in {"successful_stable", "resumed_skip"},
@@ -1659,11 +1860,23 @@ def _run_smoke(
             "estimator_formula": TOKEN_ESTIMATOR_FORMULA,
             "estimator_result_kind": TOKEN_ESTIMATOR_LABEL,
             "actual_prompt_eval_count": observation.measurement.prompt_eval_count,
+            "actual_prompt_tokens": observation.measurement.actual_prompt_tokens
+            or observation.measurement.prompt_eval_count,
+            "estimated_prompt_tokens": observation.measurement.estimated_prompt_tokens,
+            "estimation_error_tokens": observation.measurement.estimation_error_tokens
+            or observation.measurement.token_error,
+            "estimation_error_percent": observation.measurement.token_error_percent,
             "token_error": observation.measurement.token_error,
             "token_error_percent": observation.measurement.token_error_percent,
             "configured_num_ctx": observation.measurement.configured_num_ctx,
             "output_reserve_tokens": observation.measurement.output_reserve_tokens,
             "safety_margin_tokens": observation.measurement.safety_margin_tokens,
+            "required_safety_margin_tokens": observation.measurement.required_safety_margin_tokens,
+            "required_context_tokens": observation.measurement.required_context_tokens,
+            "remaining_context_after_prompt_and_output": observation.measurement.remaining_context_after_prompt_and_output,
+            "remaining_safety_margin_tokens": observation.measurement.remaining_safety_margin_tokens,
+            "safety_margin_shortfall_tokens": observation.measurement.safety_margin_shortfall_tokens,
+            "overall_classification": observation.measurement.overall_classification,
             "final_safety_result": observation.measurement.final_safety_result,
         },
     }
@@ -1737,6 +1950,12 @@ def _run_capacity(
                 if cold.classification == "context_rejected":
                     stop_reason = "context_budget"
                     break
+                if cold.classification == "successful_pipeline_recalibrate":
+                    stop_reason = "estimator_error_requires_recalibration"
+                    break
+                if cold.classification == "successful_pipeline_safety_margin_failed":
+                    stop_reason = "safety_margin_failed"
+                    break
                 if cold.classification in {"vram_ceiling", "infrastructure_failure", "out_of_memory", "operator_cancelled"}:
                     stop_reason = cold.classification
                     break
@@ -1766,6 +1985,12 @@ def _run_capacity(
                 warm_rows.append(warm)
                 if warm.classification == "context_rejected":
                     hard_stop = "context_budget"
+                    break
+                if warm.classification == "successful_pipeline_recalibrate":
+                    hard_stop = "estimator_error_requires_recalibration"
+                    break
+                if warm.classification == "successful_pipeline_safety_margin_failed":
+                    hard_stop = "safety_margin_failed"
                     break
                 if warm.classification in {
                     "vram_ceiling",
