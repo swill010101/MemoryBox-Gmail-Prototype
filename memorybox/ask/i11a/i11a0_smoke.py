@@ -18,16 +18,18 @@ from memorybox.ask.i11a.i11a0_benchmark import (
     GateNotAuthorized,
     I11A0Error,
     InferenceNotAuthorized,
+    MaterializedEvidence,
     Measurement,
     ModelSpec,
     RunRequest,
     ScriptedLifecycle,
     TokenCount,
     UncertainTokenCount,
+    _sha256_text,
+    estimate_tokens,
     inventory_installed_models,
     inventory_peggy_chunks,
     load_config,
-    pack_conversation_intact,
     run_authorized_stage,
 )
 from memorybox.ask.i11a.i11a0_prompt import SYSTEM_PROMPT, render_user_message
@@ -36,38 +38,130 @@ PINNED_C_DIGEST = "08ae7ec1744bd7f451c4a530afb39d2673ad9d07a8369b8a33a3613b41212
 
 
 class OllamaTokenCounter:
+    """Model-aware counts. /api/tokenize if present; otherwise prompt_eval_count."""
+
     def __init__(self, *, base_url: str) -> None:
         self.base_url = base_url.rstrip("/")
+        self._cache: dict[tuple[str, str], TokenCount] = {}
 
     def count(self, text: str, *, model: str) -> TokenCount:
-        payload = json.dumps({"model": model, "prompt": text}).encode("utf-8")
-        request = urllib.request.Request(
+        key = (model, _sha256_text(text))
+        cached = self._cache.get(key)
+        if cached is not None:
+            return cached
+        counted = self._tokenize(text, model=model)
+        if counted is None:
+            counted = self._prompt_eval(text, model=model)
+        if counted is None:
+            raise UncertainTokenCount(
+                "Ollama returned no token count from /api/tokenize or prompt_eval_count"
+            )
+        self._cache[key] = counted
+        return counted
+
+    def _tokenize(self, text: str, *, model: str) -> TokenCount | None:
+        body, status = _post_json(
             f"{self.base_url}/api/tokenize",
-            data=payload,
-            headers={"Content-Type": "application/json"},
-            method="POST",
+            {"model": model, "prompt": text},
+            timeout=120,
         )
-        try:
-            with urllib.request.urlopen(request, timeout=120) as response:
-                body = json.loads(response.read().decode("utf-8"))
-        except urllib.error.HTTPError as exc:
-            raise UncertainTokenCount(f"tokenize failed HTTP {exc.code}") from exc
-        except urllib.error.URLError as exc:
-            raise UncertainTokenCount(f"tokenize unavailable: {exc}") from exc
+        if status == 404:
+            return None
+        if status != 200 or not isinstance(body, dict):
+            raise UncertainTokenCount(f"tokenize failed HTTP {status}")
         tokens = body.get("tokens")
         if not isinstance(tokens, list):
             raise UncertainTokenCount("tokenize response had no token list")
-        return TokenCount(tokens=len(tokens), method="ollama_tokenize", certain=True, model=model)
+        return TokenCount(
+            tokens=len(tokens), method="ollama_tokenize", certain=True, model=model
+        )
+
+    def _prompt_eval(self, text: str, *, model: str) -> TokenCount | None:
+        for num_predict in (0, 1):
+            body, status = _post_json(
+                f"{self.base_url}/api/generate",
+                {
+                    "model": model,
+                    "prompt": text,
+                    "stream": False,
+                    "keep_alive": "10m",
+                    "options": {"num_predict": num_predict, "temperature": 0, "seed": 42},
+                },
+                timeout=1800,
+            )
+            if status != 200 or not isinstance(body, dict):
+                continue
+            n = body.get("prompt_eval_count")
+            if isinstance(n, int) and n > 0:
+                return TokenCount(
+                    tokens=n,
+                    method=f"ollama_prompt_eval_count_num_predict_{num_predict}",
+                    certain=True,
+                    model=model,
+                )
+        return None
+
+
+def _post_json(url: str, payload: dict[str, Any], *, timeout: int) -> tuple[Any, int]:
+    encoded = json.dumps(payload).encode("utf-8")
+    request = urllib.request.Request(
+        url,
+        data=encoded,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            raw = response.read().decode("utf-8")
+            return json.loads(raw) if raw else {}, int(response.status)
+    except urllib.error.HTTPError as exc:
+        return None, int(exc.code)
+    except urllib.error.URLError:
+        return None, 0
 
 
 class PeggyPacketSource:
     def __init__(self, pieces: list[EvidencePiece]) -> None:
         self.pieces = pieces
 
-    def materialize(self, *, model: str, target_tokens: int, counter: Any) -> Any:
-        return pack_conversation_intact(
-            self.pieces, target_tokens=target_tokens, counter=counter, model=model
-        )
+    def materialize(self, *, model: str, target_tokens: int, counter: Any) -> MaterializedEvidence:
+        chosen: list[EvidencePiece] = []
+        for piece in self.pieces:
+            trial = chosen + [piece]
+            trial_text = "\n\n".join(item.render() for item in trial)
+            if chosen and estimate_tokens(trial_text) > target_tokens:
+                break
+            if estimate_tokens(piece.render()) > target_tokens:
+                continue
+            chosen.append(piece)
+        if not chosen:
+            raise I11A0Error("no conversation fits the smoke target")
+
+        def build(items: list[EvidencePiece]) -> MaterializedEvidence:
+            text = "\n\n".join(item.render() for item in items)
+            ids = tuple(evidence_id for item in items for evidence_id in item.evidence_ids)
+            counted = counter.count(text, model=model)
+            if not counted.certain:
+                raise UncertainTokenCount(counted.method)
+            return MaterializedEvidence(
+                text=text,
+                sha256=_sha256_text(text),
+                estimated_evidence_tokens=counted.tokens,
+                evidence_ids=ids,
+                partial_context=False,
+                partial_boundary_note="none",
+                time_start=min(item.earliest for item in items),
+                time_end=max(item.latest for item in items),
+                certain=True,
+            )
+
+        evidence = build(chosen)
+        while evidence.estimated_evidence_tokens > target_tokens and len(chosen) > 1:
+            chosen = chosen[:-1]
+            evidence = build(chosen)
+        if evidence.estimated_evidence_tokens > target_tokens:
+            raise I11A0Error("packed smoke evidence still exceeds the token target")
+        return evidence
 
 
 def _nvidia_used_gb() -> float | None:
