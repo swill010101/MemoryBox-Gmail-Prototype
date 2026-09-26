@@ -10,6 +10,7 @@
   "seed": 42,
   "reserved_output_tokens": 2500,
   "safety_margin_tokens": 1500,
+  "configured_num_ctx": 6144,
   "maximum_vram_gb": 22.5,
   "timeout_seconds": 1800,
   "smoke_evidence_tokens": 1000,

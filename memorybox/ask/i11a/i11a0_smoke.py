@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import json
-import subprocess
 import time
 import urllib.error
 import urllib.request
@@ -33,11 +32,17 @@ from memorybox.ask.i11a.i11a0_benchmark import (
     inventory_peggy_chunks,
     load_config,
     run_authorized_stage,
-    run_identity,
+)
+from memorybox.ask.i11a.i11a0_host import (
+    HardwareSampler,
+    VRAM_CEILING_GB,
+    collect_host_affinity_preflight,
+    require_flightsim_host_affinity,
 )
 from memorybox.ask.i11a.i11a0_prompt import SYSTEM_PROMPT, render_user_message
 
 PINNED_C_DIGEST = "08ae7ec1744bd7f451c4a530afb39d2673ad9d07a8369b8a33a3613b41212a68"
+REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
 class PeggyPacketSource:
@@ -74,57 +79,8 @@ class PeggyPacketSource:
         )
 
 
-def _nvidia_used_gb() -> float | None:
-    try:
-        completed = subprocess.run(
-            [
-                "nvidia-smi",
-                "--query-gpu=memory.used",
-                "--format=csv,noheader,nounits",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=8,
-            check=False,
-        )
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        return None
-    if completed.returncode != 0:
-        return None
-    line = (completed.stdout or "").strip().splitlines()
-    if not line:
-        return None
-    try:
-        return float(line[0].strip()) / 1024.0
-    except ValueError:
-        return None
-
-
-def _ollama_vram_gb(base_url: str, tag: str) -> float | None:
-    try:
-        with urllib.request.urlopen(f"{base_url.rstrip('/')}/api/ps", timeout=2) as response:
-            payload = json.loads(response.read().decode("utf-8"))
-    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, json.JSONDecodeError):
-        return None
-    peak = None
-    for model in payload.get("models") or []:
-        name = str(model.get("name") or model.get("model") or "")
-        if tag not in name:
-            continue
-        size = model.get("size_vram")
-        if size is None:
-            continue
-        gb = float(size) / (1024 ** 3)
-        peak = gb if peak is None else max(peak, gb)
-    return peak
-
-
-def _peak_vram_gb(base_url: str, tag: str, current: float | None) -> float | None:
-    samples = [value for value in (current, _nvidia_used_gb(), _ollama_vram_gb(base_url, tag)) if value is not None]
-    return max(samples) if samples else None
-
-
-def _unload(base_url: str, tag: str) -> None:
+def _unload(base_url: str, tag: str) -> float:
+    started = time.monotonic()
     payload = json.dumps({"model": tag, "keep_alive": 0}).encode("utf-8")
     request = urllib.request.Request(
         f"{base_url.rstrip('/')}/api/generate",
@@ -135,10 +91,17 @@ def _unload(base_url: str, tag: str) -> None:
     try:
         urllib.request.urlopen(request, timeout=30).read()
     except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError):
-        return
+        pass
+    return time.monotonic() - started
 
 
-def _chat(request: RunRequest, *, base_url: str, timeout: int) -> tuple[Measurement, str]:
+def _chat(
+    request: RunRequest,
+    *,
+    base_url: str,
+    timeout: int,
+    sampler: HardwareSampler,
+) -> tuple[Measurement, str]:
     user = render_user_message(
         packet_id=f"{request.model_tag}-{request.requested_evidence_tokens}-{request.warm_or_cold}-{request.repetition}",
         packet_role="smoke",
@@ -176,14 +139,14 @@ def _chat(request: RunRequest, *, base_url: str, timeout: int) -> tuple[Measurem
     events: list[dict[str, Any]] = []
     last: dict[str, Any] = {}
     started = time.monotonic()
-    peak = _peak_vram_gb(base_url, request.model_tag, None)
+    sampler.capture("generate_start")
     samples = 0
     try:
         with urllib.request.urlopen(http, timeout=timeout) as response:
             for raw in response:
                 samples += 1
                 if samples == 1 or samples % 25 == 0:
-                    peak = _peak_vram_gb(base_url, request.model_tag, peak)
+                    sampler.capture("generate")
                 line = raw.decode("utf-8", errors="replace").strip()
                 if not line:
                     continue
@@ -195,13 +158,13 @@ def _chat(request: RunRequest, *, base_url: str, timeout: int) -> tuple[Measurem
                 if piece:
                     chunks.append(str(piece))
                 if event.get("done"):
-                    peak = _peak_vram_gb(base_url, request.model_tag, peak)
+                    sampler.capture("generate_done")
                     break
     except urllib.error.HTTPError as exc:
         measurement = Measurement(
             elapsed_seconds=time.monotonic() - started,
             infrastructure_failure=True,
-            peak_vram_gb=peak,
+            peak_vram_gb=sampler.summary().get("vram_peak_gb"),
         )
         return measurement, f"HTTP {exc.code}", events
     except (urllib.error.URLError, TimeoutError) as exc:
@@ -209,7 +172,7 @@ def _chat(request: RunRequest, *, base_url: str, timeout: int) -> tuple[Measurem
             elapsed_seconds=time.monotonic() - started,
             infrastructure_failure=True,
             timed_out=True,
-            peak_vram_gb=peak,
+            peak_vram_gb=sampler.summary().get("vram_peak_gb"),
         )
         return measurement, str(exc), events
     elapsed = time.monotonic() - started
@@ -223,16 +186,15 @@ def _chat(request: RunRequest, *, base_url: str, timeout: int) -> tuple[Measurem
         prompt_tps = prompt_n / (float(prompt_ns) / 1e9)
     if gen_n and isinstance(gen_ns, (int, float)) and gen_ns > 0:
         gen_tps = gen_n / (float(gen_ns) / 1e9)
-    gpu_resident = True
-    if peak is not None and peak >= 22.5:
-        gpu_resident = False
+    hardware = sampler.summary()
+    peak = hardware.get("vram_peak_gb")
     measurement = Measurement(
         prompt_tokens_per_second=prompt_tps,
         generation_tokens_per_second=gen_tps,
         elapsed_seconds=elapsed,
         peak_vram_gb=peak,
-        gpu_resident=gpu_resident,
-        cpu_spill=bool(peak is not None and peak < 1.0 and gen_n > 0),
+        gpu_resident=bool(hardware.get("gpu_resident")),
+        cpu_spill=bool(hardware.get("cpu_offload")),
         prompt_eval_count=prompt_n or None,
         truncated=bool(last.get("done_reason") == "length"),
     )
@@ -309,6 +271,20 @@ def run_gate2_smoke(
         raise GateNotAuthorized(f"{config.stage} is not authorized; Gate 2 is smoke only")
     if config.thinking_mode != "off":
         raise GateNotAuthorized("Gate 2 smoke is thinking-off only")
+    results = Path(results_dir)
+    results.mkdir(parents=True, exist_ok=True)
+    preflight = collect_host_affinity_preflight(
+        ollama_base_url=ollama_base_url,
+        output_path=results,
+        chunks_path=chunks_root,
+        repo=REPO_ROOT,
+    )
+    (results / "host_affinity_preflight.json").write_text(
+        json.dumps(preflight, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    require_flightsim_host_affinity(preflight)
     inventory = inventory_installed_models(base_url=ollama_base_url)
     if inventory.get("pull_executed"):
         raise I11A0Error("inventory reported a pull")
@@ -323,14 +299,25 @@ def run_gate2_smoke(
             "resident_gb": 12.0,
         }
     }
-    recorded: dict[str, Any] = {"events": [], "unload_recorded": False}
+    sampler = HardwareSampler()
+    sampler.capture("baseline")
+    recorded: dict[str, Any] = {
+        "events": [],
+        "unload_recorded": False,
+        "unload_seconds": None,
+        "hardware": None,
+    }
 
     def runner(request: RunRequest) -> tuple[Measurement, str]:
         measurement, narration, events = _chat(
-            request, base_url=ollama_base_url, timeout=config.timeout_seconds
+            request,
+            base_url=ollama_base_url,
+            timeout=config.timeout_seconds,
+            sampler=sampler,
         )
         recorded["events"] = events
         recorded["request"] = request
+        recorded["last_event"] = events[-1] if events else {}
         return measurement, narration
 
     try:
@@ -340,30 +327,57 @@ def run_gate2_smoke(
             lifecycle=ScriptedLifecycle(installed),
             counter=DiagnosticTokenCounter(),
             source=source,
-            results_dir=results_dir,
+            results_dir=results,
             prompt_tokens=config.prompt_instruction_tokens or 1,
         )
     finally:
-        _unload(ollama_base_url, chosen.tag)
+        sampler.capture("before_unload")
+        recorded["unload_seconds"] = _unload(ollama_base_url, chosen.tag)
         recorded["unload_recorded"] = True
+        time.sleep(1.0)
+        sampler.capture("after_unload")
+    hardware = sampler.summary()
+    recorded["hardware"] = hardware
     run_id = str(payload.get("run_id") or "")
-    folder = Path(results_dir) / run_id if run_id else Path(results_dir)
+    folder = results / run_id if run_id else results
     folder.mkdir(parents=True, exist_ok=True)
+    last = recorded.get("last_event") or {}
+    (folder / "host_affinity_preflight.json").write_text(
+        json.dumps(preflight, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
     (folder / "raw_api.jsonl").write_text(
         "".join(json.dumps(event) + "\n" for event in recorded.get("events") or []),
         encoding="utf-8",
         newline="\n",
     )
+    (folder / "hardware_telemetry.json").write_text(
+        json.dumps(hardware, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
     (folder / "telemetry.jsonl").write_text(
-        json.dumps(
+        "".join(json.dumps(sample) + "\n" for sample in hardware.get("samples") or [])
+        + json.dumps(
             {
                 "run_id": run_id,
                 "endpoint": "/api/chat",
                 "inference": True,
-                "purpose": "authorized_gate2_smoke_generation",
+                "purpose": "authorized_gate2_flightsim_hardware_smoke",
                 "model": chosen.tag,
                 "digest": chosen.digest,
+                "host_affinity": "flightsim_rtx_4090_local",
                 "elapsed_seconds": (payload.get("token_accounting") or {}).get("elapsed_seconds"),
+                "load_duration_ns": last.get("load_duration"),
+                "prompt_eval_duration_ns": last.get("prompt_eval_duration"),
+                "eval_duration_ns": last.get("eval_duration"),
+                "total_duration_ns": last.get("total_duration"),
+                "unload_seconds": recorded["unload_seconds"],
+                "vram_peak_gb": hardware.get("vram_peak_gb"),
+                "vram_after_unload_gb": hardware.get("vram_final_gb"),
+                "cpu_offload": hardware.get("cpu_offload"),
+                "exceeds_vram_ceiling": hardware.get("exceeds_vram_ceiling"),
             }
         )
         + "\n",
@@ -401,6 +415,21 @@ def run_gate2_smoke(
             "missing_configurations": missing,
             "models_in_this_command": [chosen.tag],
             "lifecycle_unload_recorded": recorded["unload_recorded"],
+            "unload_seconds": recorded["unload_seconds"],
+            "host_affinity": preflight,
+            "hardware_telemetry": {
+                "vram_baseline_gb": hardware.get("vram_baseline_gb"),
+                "vram_peak_gb": hardware.get("vram_peak_gb"),
+                "vram_final_gb": hardware.get("vram_final_gb"),
+                "ram_baseline_gb": hardware.get("ram_baseline_gb"),
+                "ram_peak_gb": hardware.get("ram_peak_gb"),
+                "ram_final_gb": hardware.get("ram_final_gb"),
+                "cpu_offload": hardware.get("cpu_offload"),
+                "gpu_resident": hardware.get("gpu_resident"),
+                "exceeds_vram_ceiling": hardware.get("exceeds_vram_ceiling"),
+                "ceiling_gb": VRAM_CEILING_GB,
+            },
+            "flightsim_hardware_smoke": True,
         }
     )
     return payload

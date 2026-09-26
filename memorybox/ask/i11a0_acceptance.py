@@ -951,6 +951,16 @@ def run_prove_i11a0_benchmark() -> dict[str, Any]:
         inference_blocked = "confirm-benchmark" in str(exc)
     _check("cli_refuses_inference_without_smoke_confirm", inference_blocked, checks, problems)
     from memorybox.ask.i11a.i11a0_smoke import PINNED_C_DIGEST, _select_installed_smoke_model
+    from memorybox.ask.i11a.i11a0_host import (
+        REMOTE_FUNCTIONAL_LABEL,
+        REMOTE_FUNCTIONAL_RUN_ID,
+        VRAM_CEILING_GB,
+        HardwareSampler,
+        HostAffinityError,
+        collect_host_affinity_preflight,
+        label_remote_functional_run,
+        require_flightsim_host_affinity,
+    )
 
     selected = _select_installed_smoke_model(
         (
@@ -982,6 +992,137 @@ def run_prove_i11a0_benchmark() -> dict[str, Any]:
         selected,
     )
     _check("gate2_smoke_is_authorized_flag", GATE2_SMOKE_AUTHORIZED is True, checks, problems)
+    rtx_preflight = collect_host_affinity_preflight(
+        ollama_base_url="http://127.0.0.1:11434",
+        output_path="C:/memorybox/docs/test-output/i11a0-benchmark/smoke-flightsim",
+        chunks_path="C:/memorybox/docs/test-output/trusted-email-review/REVIEW_20260831T120929Z",
+        repo=Path("."),
+        nvidia_reader=lambda: {
+            "available": True,
+            "name": "NVIDIA GeForce RTX 4090",
+            "memory_total_gb": 23.988,
+            "memory_used_gb": 0.4,
+            "utilization_gpu_percent": 2.0,
+        },
+        ram_reader=lambda: {"available": True, "total_gb": 64.0, "used_gb": 20.0},
+        git_reader=lambda _repo: {
+            "branch": "cursor/p2-i11a0-offline-harness",
+            "commit": "dfbe45b0712a8df3fab8d84fbc2c1b4747a3feba",
+        },
+        ollama_version_reader=lambda _url: "0.34.1",
+        controller_hostname="FlightSim",
+    )
+    require_flightsim_host_affinity(rtx_preflight)
+    _check(
+        "flightsim_host_affinity_accepts_local_4090",
+        rtx_preflight["checks"]["gpu_is_rtx_4090"] is True
+        and rtx_preflight["checks"]["ollama_base_url_local"] is True
+        and rtx_preflight["ollama_version"] == "0.34.1",
+        checks,
+        problems,
+        rtx_preflight["checks"],
+    )
+    desktop_preflight = collect_host_affinity_preflight(
+        ollama_base_url="http://127.0.0.1:11434",
+        output_path=".",
+        chunks_path=".",
+        repo=Path("."),
+        nvidia_reader=lambda: {
+            "available": True,
+            "name": "NVIDIA GeForce GTX 1650",
+            "memory_total_gb": 4.0,
+            "memory_used_gb": 1.5,
+            "utilization_gpu_percent": 5.0,
+        },
+        ram_reader=lambda: {"available": True, "total_gb": 32.0, "used_gb": 10.0},
+        git_reader=lambda _repo: {"branch": "cursor/p2-i11a0-offline-harness", "commit": "x"},
+        ollama_version_reader=lambda _url: "0.34.1",
+        controller_hostname="Toms-Desktop",
+    )
+    desktop_blocked = False
+    try:
+        require_flightsim_host_affinity(desktop_preflight)
+    except HostAffinityError:
+        desktop_blocked = True
+    _check(
+        "desktop_gpu_is_refused_before_inference",
+        desktop_blocked and desktop_preflight["checks"]["gpu_is_rtx_4090"] is False,
+        checks,
+        problems,
+        desktop_preflight["gpu_name"],
+    )
+    remote_url_blocked = False
+    try:
+        require_flightsim_host_affinity(
+            collect_host_affinity_preflight(
+                ollama_base_url="http://flightsim:11434",
+                output_path=".",
+                chunks_path=".",
+                repo=Path("."),
+                nvidia_reader=lambda: {
+                    "available": True,
+                    "name": "NVIDIA GeForce RTX 4090",
+                    "memory_total_gb": 23.988,
+                    "memory_used_gb": 0.4,
+                    "utilization_gpu_percent": 1.0,
+                },
+                ram_reader=lambda: {"available": True, "total_gb": 64.0, "used_gb": 20.0},
+                git_reader=lambda _repo: {"branch": "x", "commit": "y"},
+                ollama_version_reader=lambda _url: "0.34.1",
+            )
+        )
+    except HostAffinityError:
+        remote_url_blocked = True
+    _check(
+        "remote_flightsim_ollama_alias_is_refused",
+        remote_url_blocked,
+        checks,
+        problems,
+    )
+    ceiling = HardwareSampler()
+    ceiling.samples = [
+        {"vram_used_gb": 1.0, "system_ram_used_gb": 20.0, "gpu_utilization_percent": 0},
+        {"vram_used_gb": 22.6, "system_ram_used_gb": 24.0, "gpu_utilization_percent": 90},
+    ]
+    ceiling_summary = ceiling.summary()
+    _check(
+        "flightsim_vram_ceiling_uses_local_peak",
+        ceiling_summary["vram_peak_gb"] == 22.6
+        and ceiling_summary["exceeds_vram_ceiling"] is True
+        and VRAM_CEILING_GB == 22.5,
+        checks,
+        problems,
+        ceiling_summary,
+    )
+    with tempfile.TemporaryDirectory() as remote_dir:
+        remote_path = Path(remote_dir) / REMOTE_FUNCTIONAL_RUN_ID
+        remote_path.mkdir()
+        (remote_path / "run_record.json").write_text(
+            json.dumps(
+                {
+                    "identity": REMOTE_FUNCTIONAL_RUN_ID,
+                    "classification": "successful_stable",
+                    "measurement": {"peak_vram_gb": 1.515625, "final_safety_result": "passed"},
+                },
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+            newline="\n",
+        )
+        labeled = label_remote_functional_run(remote_path)
+        preserved = json.loads((remote_path / "run_record.json").read_text(encoding="utf-8"))
+        _check(
+            "remote_corrected_run_is_labeled_not_rewritten",
+            labeled["label"] == REMOTE_FUNCTIONAL_LABEL
+            and labeled["flightsim_hardware_smoke"] is False
+            and preserved["classification"] == "successful_stable"
+            and preserved["measurement"]["peak_vram_gb"] == 1.515625
+            and (remote_path / "hardware_telemetry_classification.json").exists(),
+            checks,
+            problems,
+            labeled,
+        )
     _check(
         "approved_screen_is_the_three_named_tags",
         [row["tag"] for row in APPROVED_MODELS]
