@@ -6,9 +6,12 @@ text; Gate 5 still has to accept a production prompt.
 from __future__ import annotations
 
 import hashlib
+from typing import Any
 
 PROMPT_VERSION = "i11a0-narration-v0.2-draft"
 PROMPT_ACCEPTED = False
+PRODUCTION_PROMPT_ACCEPTED = False
+PROMPT_STATUS = "accepted_for_gate2_benchmark_only"
 PRODUCTION_NARRATOR = False
 
 SYSTEM_PROMPT = """I11A0_BENCHMARK_NARRATION
@@ -86,6 +89,15 @@ def prompt_canonical_text() -> str:
 
 def prompt_sha256() -> str:
     return hashlib.sha256(prompt_canonical_text().encode("utf-8")).hexdigest()
+
+
+def prompt_acceptance_fields() -> dict[str, Any]:
+    return {
+        "prompt_status": PROMPT_STATUS,
+        "production_prompt_accepted": PRODUCTION_PROMPT_ACCEPTED,
+        "prompt_version": PROMPT_VERSION,
+        "prompt_sha256": prompt_sha256(),
+    }
 
 
 def render_user_message(

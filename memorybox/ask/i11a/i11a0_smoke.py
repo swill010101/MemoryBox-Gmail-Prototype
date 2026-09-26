@@ -39,7 +39,7 @@ from memorybox.ask.i11a.i11a0_host import (
     collect_host_affinity_preflight,
     require_flightsim_host_affinity,
 )
-from memorybox.ask.i11a.i11a0_prompt import SYSTEM_PROMPT, render_user_message
+from memorybox.ask.i11a.i11a0_prompt import SYSTEM_PROMPT, prompt_acceptance_fields, render_user_message
 
 PINNED_C_DIGEST = "08ae7ec1744bd7f451c4a530afb39d2673ad9d07a8369b8a33a3613b41212a68"
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -391,6 +391,7 @@ def run_gate2_smoke(
         if row.get("status") != "installed"
     ]
     gemma_only = chosen.config_id == "C" and missing
+    prompt_fields = prompt_acceptance_fields()
     payload.update(
         {
             "gate": "2",
@@ -403,7 +404,9 @@ def run_gate2_smoke(
             "models_called": True,
             "pull_executed": False,
             "thinking_mode": "off",
-            "prompt_accepted": False,
+            "prompt_status": prompt_fields["prompt_status"],
+            "production_prompt_accepted": prompt_fields["production_prompt_accepted"],
+            "prompt_accepted": prompt_fields["production_prompt_accepted"],
             "token_estimator_formula": TOKEN_ESTIMATOR_FORMULA,
             "token_estimator_id": TOKEN_ESTIMATOR_ID,
             "token_estimator_label": TOKEN_ESTIMATOR_LABEL,

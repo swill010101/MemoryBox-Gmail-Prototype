@@ -8,6 +8,9 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import socket
+import uuid
+from datetime import datetime, timezone
 import re
 import urllib.error
 import urllib.request
@@ -17,9 +20,11 @@ from typing import Any, Callable, Protocol
 
 from memorybox.ask.i11a.c1t_benchmark import estimate_tokens, parse_conversations
 from memorybox.ask.i11a.i11a0_prompt import (
-    PROMPT_ACCEPTED,
+    PRODUCTION_PROMPT_ACCEPTED,
+    PROMPT_STATUS,
     PROMPT_VERSION,
     SYSTEM_PROMPT,
+    prompt_acceptance_fields,
     prompt_sha256,
     render_user_message,
 )
@@ -300,7 +305,9 @@ def default_config_document() -> dict[str, Any]:
         "token_estimator_label": TOKEN_ESTIMATOR_LABEL,
         "prompt_version": PROMPT_VERSION,
         "prompt_sha256": prompt_sha256(),
-        "prompt_accepted": PROMPT_ACCEPTED,
+        "prompt_status": PROMPT_STATUS,
+        "production_prompt_accepted": PRODUCTION_PROMPT_ACCEPTED,
+        "prompt_accepted": PRODUCTION_PROMPT_ACCEPTED,
         "models": [
             {
                 "config_id": row["config_id"],
@@ -1512,18 +1519,21 @@ class RunObservation:
     classification: str
     narration_text: str = ""
     skipped: bool = False
+    test_case_id: str = ""
+    execution_id: str = ""
 
 
 class Runner(Protocol):
     def __call__(self, request: RunRequest) -> tuple[Measurement, str]: ...
 
 
-def run_identity(request: RunRequest) -> str:
-    """Identity of a scheduled ladder step. Evidence bytes stay in the saved record."""
+def test_case_id(request: RunRequest) -> str:
+    """Stable identity of the scheduled case. Does not include host or time."""
     payload = {
         "model": request.model_tag,
         "digest": request.digest,
         "prompt_sha256": request.prompt_sha256,
+        "evidence_sha256": request.evidence_sha256,
         "requested_evidence_tokens": request.requested_evidence_tokens,
         "repetition": request.repetition,
         "warm_or_cold": request.warm_or_cold,
@@ -1531,10 +1541,97 @@ def run_identity(request: RunRequest) -> str:
         "confirmation": request.confirmation,
         "seed": request.seed,
         "num_ctx": request.num_ctx,
+        "reserved_output_tokens": request.reserved_output_tokens,
     }
     return hashlib.sha256(
         json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     ).hexdigest()
+
+
+def run_identity(request: RunRequest) -> str:
+    """Historical name for the stable test-case hash. Folder names use execution_id."""
+    return test_case_id(request)
+
+
+def new_execution_id(
+    *,
+    test_case: str,
+    hostname: str,
+    started_at_utc: str,
+    nonce: str | None = None,
+) -> str:
+    payload = {
+        "test_case_id": test_case,
+        "hostname": hostname,
+        "started_at_utc": started_at_utc,
+        "nonce": nonce or uuid.uuid4().hex,
+    }
+    return hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+
+
+def write_identity_supersession(
+    run_dir: Path,
+    *,
+    controller_hostname: str,
+    started_at_utc: str,
+    role: str,
+) -> dict[str, Any]:
+    """Attach unique execution identity without rewriting original run files."""
+    run_dir = Path(run_dir)
+    record_path = run_dir / "run_record.json"
+    if not record_path.exists():
+        raise I11A0Error(f"run_record.json is missing in {run_dir}")
+    record = json.loads(record_path.read_text(encoding="utf-8"))
+    request = record.get("request") or {}
+    case = test_case_id(
+        RunRequest(
+            model_tag=str(request.get("model_tag") or ""),
+            digest=str(request.get("digest") or ""),
+            requested_evidence_tokens=int(request.get("requested_evidence_tokens") or 0),
+            evidence_sha256=str(request.get("evidence_sha256") or ""),
+            evidence_text="",
+            repetition=int(request.get("repetition") or 1),
+            warm_or_cold=str(request.get("warm_or_cold") or "cold"),
+            confirmation=bool(request.get("confirmation")),
+            thinking_mode=str(request.get("thinking_mode") or "off"),
+            seed=int(request.get("seed") or 42),
+            num_ctx=int(request.get("num_ctx") or 0),
+            reserved_output_tokens=int(request.get("reserved_output_tokens") or 0),
+            prompt_sha256=str(request.get("prompt_sha256") or ""),
+        )
+    )
+    execution = new_execution_id(
+        test_case=case,
+        hostname=controller_hostname,
+        started_at_utc=started_at_utc,
+        nonce=str(run_dir.resolve()),
+    )
+    hashes = {
+        name: hashlib.sha256((run_dir / name).read_bytes()).hexdigest()
+        for name in ("run_record.json", "token_accounting.json", "narration.txt", "raw_api.jsonl")
+        if (run_dir / name).exists()
+    }
+    payload = {
+        "kind": "identity_supersession",
+        "legacy_identity": str(record.get("identity") or run_dir.name),
+        "test_case_id": case,
+        "execution_id": execution,
+        "run_id": execution,
+        "controller_hostname": controller_hostname,
+        "started_at_utc": started_at_utc,
+        "role": role,
+        "original_files_unmodified": True,
+        "original_artifact_sha256": hashes,
+    }
+    dest = run_dir / "identity_supersession.json"
+    dest.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    return payload
 
 
 def load_completed_identities(results_dir: Path) -> set[str]:
@@ -1546,17 +1643,19 @@ def load_completed_identities(results_dir: Path) -> set[str]:
             record = json.loads(path.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
             continue
-        identity = str(record.get("identity") or path.parent.name)
-        found.add(identity)
+        case = str(record.get("test_case_id") or record.get("identity") or path.parent.name)
+        found.add(case)
     return found
 
 
 def _persist_run(results_dir: Path, observation: RunObservation) -> None:
-    identity = run_identity(observation.request)
+    identity = observation.execution_id or test_case_id(observation.request)
     folder = results_dir / identity
     folder.mkdir(parents=True, exist_ok=True)
     record = {
         "identity": identity,
+        "execution_id": identity,
+        "test_case_id": observation.test_case_id or test_case_id(observation.request),
         "classification": observation.classification,
         "skipped": observation.skipped,
         "request": {key: value for key, value in asdict(observation.request).items() if key != "evidence_text"},
@@ -1736,14 +1835,21 @@ def _execute(
         partial_boundary_note=evidence.partial_boundary_note,
         evidence_ids=evidence.evidence_ids,
     )
-    identity = run_identity(request)
-    if identity in completed:
+    case = test_case_id(request)
+    if (not smoke) and case in completed:
         return RunObservation(
             request=request,
             measurement=Measurement(evidence_tokens=requested_tokens),
             classification="resumed_skip",
             skipped=True,
+            test_case_id=case,
         )
+    started_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    exec_id = new_execution_id(
+        test_case=case,
+        hostname=socket.gethostname(),
+        started_at_utc=started_at,
+    )
     measurement, narration = runner(request)
     measurement.evidence_tokens = measurement.evidence_tokens or estimated_evidence
     measurement.evidence_bytes = len(evidence.text.encode("utf-8"))
@@ -1787,9 +1893,15 @@ def _execute(
         measurement.overall_classification = assessment["overall_classification"]
     elif smoke:
         measurement.final_safety_result = "failed_missing_prompt_eval_count"
-        observation = RunObservation(request, measurement, "context_rejected", narration)
+        observation = RunObservation(
+            request,
+            measurement,
+            "context_rejected",
+            narration,
+            test_case_id=case,
+            execution_id=exec_id,
+        )
         _persist_run(results_dir, observation)
-        completed.add(identity)
         return observation
     classification = classify_measurement(
         measurement, vram_ceiling_gb=config.maximum_vram_gb
@@ -1802,9 +1914,17 @@ def _execute(
         classification = assessment["overall_classification"]
     if measurement.final_safety_result is None:
         measurement.final_safety_result = "passed"
-    observation = RunObservation(request, measurement, classification, narration)
+    observation = RunObservation(
+        request,
+        measurement,
+        classification,
+        narration,
+        test_case_id=case,
+        execution_id=exec_id,
+    )
     _persist_run(results_dir, observation)
-    completed.add(identity)
+    if not smoke:
+        completed.add(case)
     return observation
 
 
@@ -1846,7 +1966,9 @@ def _run_smoke(
         if observation.classification in {"successful_stable", "resumed_skip"}
         else observation.classification,
         "runs": 1 if not observation.skipped else 0,
-        "run_id": run_identity(observation.request),
+        "run_id": observation.execution_id or test_case_id(observation.request),
+        "execution_id": observation.execution_id,
+        "test_case_id": observation.test_case_id or test_case_id(observation.request),
         "runner_invocations_recorded_by_caller": True,
         "classifications": [observation.classification],
         "lifecycle_events": list(lifecycle.events),
@@ -2221,7 +2343,9 @@ def build_preflight_package(
         "ok": True,
         "inference_authorized": INFERENCE_AUTHORIZED,
         "gate2_smoke_authorized": GATE2_SMOKE_AUTHORIZED,
-        "prompt_accepted": PROMPT_ACCEPTED,
+        "prompt_status": PROMPT_STATUS,
+        "production_prompt_accepted": PRODUCTION_PROMPT_ACCEPTED,
+        "prompt_accepted": PRODUCTION_PROMPT_ACCEPTED,
         "prompt_version": PROMPT_VERSION,
         "prompt_sha256": prompt_sha256(),
         "models_called": False,

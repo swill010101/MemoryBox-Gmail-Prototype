@@ -19,7 +19,8 @@
   "token_estimator_label": "estimated",
   "actual_count_source": "recorded_smoke_generation_prompt_eval_count",
   "prompt_version": "i11a0-narration-v0.2-draft",
-  "prompt_accepted": false,
+  "prompt_status": "accepted_for_gate2_benchmark_only",
+  "production_prompt_accepted": false,
   "models": [
     {
       "config_id": "C",

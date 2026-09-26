@@ -41,6 +41,7 @@ from memorybox.ask.i11a.i11a0_benchmark import (
     apply_original_gemma_smoke_safety_correction,
     evaluate_recorded_prompt_safety,
     prompt_safety_assessment,
+    write_identity_supersession,
     inventory_installed_models,
     inventory_peggy_chunks,
     pack_conversation_intact,
@@ -55,6 +56,8 @@ from memorybox.ask.i11a.i11a0_benchmark import (
 )
 from memorybox.ask.i11a.i11a0_prompt import (
     PROMPT_ACCEPTED,
+    PRODUCTION_PROMPT_ACCEPTED,
+    PROMPT_STATUS,
     PROMPT_VERSION,
     SYSTEM_PROMPT,
     prompt_sha256,
@@ -175,6 +178,14 @@ def run_prove_i11a0_benchmark() -> dict[str, Any]:
         problems,
     )
     _check("prompt_is_draft", PROMPT_ACCEPTED is False, checks, problems)
+    _check(
+        "prompt_is_accepted_for_gate2_benchmark_only",
+        PROMPT_STATUS == "accepted_for_gate2_benchmark_only"
+        and PRODUCTION_PROMPT_ACCEPTED is False,
+        checks,
+        problems,
+        PROMPT_STATUS,
+    )
     _check("prompt_hash_stable", prompt_hash == prompt_sha256() and len(prompt_hash) == 64, checks, problems)
     _check(
         "prompt_requests_narrative",
@@ -488,6 +499,72 @@ def run_prove_i11a0_benchmark() -> dict[str, Any]:
             checks,
             problems,
             smoke,
+        )
+        smoke_again = run_authorized_stage(
+            config=_config(stage="smoke", maximum_input_tokens=None),
+            runner=_runner,
+            lifecycle=ScriptedLifecycle({"gemma4:26b": {"digest": "digest-c", "quantization": ""}}),
+            counter=_CertainCounter(),
+            source=_EchoSource(),
+            results_dir=root / "smoke",
+            prompt_tokens=100,
+        )
+        _check(
+            "repeat_smoke_gets_unique_execution_id",
+            smoke_again["execution_id"] != smoke["execution_id"]
+            and smoke_again["test_case_id"] == smoke["test_case_id"]
+            and smoke_again["run_id"] != smoke["run_id"]
+            and len(calls) == smoke_calls + 2,
+            checks,
+            problems,
+            {"first": smoke["run_id"], "second": smoke_again["run_id"], "case": smoke["test_case_id"]},
+        )
+        shared = {
+            "identity": "0717c7de073416f1200ce2047b39c961161d9ffe674f8374657700273117a24e",
+            "classification": "successful_stable",
+            "request": {
+                "model_tag": "gemma4:26b",
+                "digest": "digest-c",
+                "requested_evidence_tokens": 1000,
+                "evidence_sha256": "abc",
+                "repetition": 1,
+                "warm_or_cold": "cold",
+                "confirmation": False,
+                "thinking_mode": "off",
+                "seed": 42,
+                "num_ctx": 6144,
+                "reserved_output_tokens": 2500,
+                "prompt_sha256": prompt_hash,
+            },
+        }
+        desktop_dup = root / "desktop-dup" / shared["identity"]
+        flight_dup = root / "flight-dup" / shared["identity"]
+        desktop_dup.mkdir(parents=True)
+        flight_dup.mkdir(parents=True)
+        (desktop_dup / "run_record.json").write_text(json.dumps(shared) + "\n", encoding="utf-8")
+        (flight_dup / "run_record.json").write_text(json.dumps(shared) + "\n", encoding="utf-8")
+        desktop_ids = write_identity_supersession(
+            desktop_dup,
+            controller_hostname="Toms-Desktop",
+            started_at_utc="2026-09-26T18:37:00Z",
+            role="functional_token_safety_pass_hardware_telemetry_invalid",
+        )
+        flight_ids = write_identity_supersession(
+            flight_dup,
+            controller_hostname="FlightSim",
+            started_at_utc="2026-09-26T19:01:54Z",
+            role="flightsim_hardware_smoke",
+        )
+        _check(
+            "duplicate_legacy_run_ids_receive_separate_execution_ids",
+            desktop_ids["legacy_identity"] == flight_ids["legacy_identity"]
+            and desktop_ids["test_case_id"] == flight_ids["test_case_id"]
+            and desktop_ids["execution_id"] != flight_ids["execution_id"]
+            and json.loads((desktop_dup / "run_record.json").read_text(encoding="utf-8"))["identity"]
+            == shared["identity"],
+            checks,
+            problems,
+            {"desktop": desktop_ids["execution_id"], "flight": flight_ids["execution_id"]},
         )
         _check(
             "conservative_overestimate_is_not_a_safety_failure",
