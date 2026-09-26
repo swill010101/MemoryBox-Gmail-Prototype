@@ -221,7 +221,7 @@ def write_results_bundle(
     config_text: str,
     prompt_text: str,
     manifests: dict[str, str],
-    identity_map: dict[str, str],
+    identity_map: dict[str, Any],
 ) -> dict[str, Any]:
     """Copy a movable bundle. Workbook links are relative to the bundle root."""
     root = Path(bundle_dir)

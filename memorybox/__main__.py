@@ -770,6 +770,14 @@ def main(argv: list[str] | None = None) -> int:
         "--out",
         default="docs/test-output/i11a0-benchmark/smoke",
     )
+    p_i11a0_review = sub.add_parser(
+        "i11a0-gate2-review-package",
+        help="Assemble the Gate 2 A/B/C review package from calibrated smokes; no generation",
+    )
+    p_i11a0_review.add_argument("--a-dir", required=True)
+    p_i11a0_review.add_argument("--b-dir", required=True)
+    p_i11a0_review.add_argument("--c-dir", required=True)
+    p_i11a0_review.add_argument("--out", required=True)
     p_prove_email_id = sub.add_parser(
         "prove-person-email-identity",
         help="Person communication-identity expansion acceptance (email)",
@@ -1780,6 +1788,18 @@ def main(argv: list[str] | None = None) -> int:
                 flush=True,
             )
             return 2
+        print(json.dumps(payload, indent=2, default=str), flush=True)
+        return 0 if payload.get("ok") else 1
+
+    if args.cmd == "i11a0-gate2-review-package":
+        from memorybox.ask.i11a.i11a0_gate2_review import assemble_gate2_review_package
+
+        payload = assemble_gate2_review_package(
+            a_dir=args.a_dir,
+            b_dir=args.b_dir,
+            c_dir=args.c_dir,
+            out_dir=args.out,
+        )
         print(json.dumps(payload, indent=2, default=str), flush=True)
         return 0 if payload.get("ok") else 1
 

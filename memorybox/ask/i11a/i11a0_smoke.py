@@ -49,7 +49,17 @@ GEMMA_PACKET_SHA256 = "1c24eb2fa792e553cef299653b6c20e186da9685ea4e7ac78763f3d36
 INITIAL_A_EXECUTION_ID = (
     "c1cd10594705ff1f1ac7f89bd8a4325c9a432017553b179abb5c2a2d7ff51b0f"
 )
+INITIAL_B_EXECUTION_ID = (
+    "85644304f430bf48bb07b97e30cbb7336e6aa49fcc365228c064618970f3662b"
+)
 PINNED_A_DIGEST = "19e422b0231392335cfc49cfd172de7034bb1aeabb08aa307cce745c60b272fe"
+PINNED_B_DIGEST = "304bf7349c71ad37a07eec8be67212b3f05b0f243f4a6f7c98e90dd2f3009f48"
+CALIBRATED_A_EXECUTION_ID = (
+    "a1b6b4b2ce743fdb6836381e8b443a501439d80fcd0bc25f72ba827ee5a8c124"
+)
+GEMMA_FLIGHTSIM_EXECUTION_ID = (
+    "b62ec91636cdc3cf9e6a89167e1e78545f5e0ad99014a6a1afce5fa2690c39c6"
+)
 
 
 def require_qwen_smoke_configuration(spec: ModelSpec, row: dict[str, Any]) -> dict[str, Any]:
@@ -97,16 +107,30 @@ def require_qwen_smoke_configuration(spec: ModelSpec, row: dict[str, Any]) -> di
     return metadata
 
 
-def refuse_inherited_num_ctx(config_id: str, configured_num_ctx: int | None) -> None:
-    if config_id == "B" and configured_num_ctx is not None:
+def refuse_inherited_num_ctx(
+    config_id: str,
+    configured_num_ctx: int | None,
+    config_model_ids: tuple[str, ...] = (),
+) -> None:
+    if configured_num_ctx is None:
+        return
+    others = set(config_model_ids) - {config_id}
+    if config_id == "B" and others:
         raise I11A0Error(
             "Configuration B must not reuse Configuration A's calibrated num_ctx; "
             "plan B from the estimator and this model's recorded prompt_eval_count"
         )
 
 
-def write_qwen_a_initial_calibration(run_dir: Path) -> dict[str, Any]:
-    """Record A's +87 calibration beside the first run. Do not rewrite run files."""
+def write_model_specific_calibration(
+    run_dir: Path,
+    *,
+    config_id: str,
+    tag: str,
+    calibrated_num_ctx: int = 6144,
+    extra: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Record tokenizer calibration beside a first smoke. Do not rewrite run files."""
     run_dir = Path(run_dir)
     record = json.loads((run_dir / "run_record.json").read_text(encoding="utf-8"))
     measurement = record.get("measurement") or {}
@@ -118,8 +142,8 @@ def write_qwen_a_initial_calibration(run_dir: Path) -> dict[str, Any]:
     }
     payload = {
         "kind": "model_specific_calibration",
-        "config_id": "A",
-        "tag": "qwen3:30b-a3b-instruct-2507-q4_K_M",
+        "config_id": config_id,
+        "tag": tag,
         "legacy_execution_id": identity,
         "classification": record.get("classification"),
         "pipeline_execution": "passed",
@@ -134,11 +158,11 @@ def write_qwen_a_initial_calibration(run_dir: Path) -> dict[str, Any]:
         "required_context_tokens": measurement.get("required_context_tokens"),
         "configured_num_ctx": measurement.get("configured_num_ctx"),
         "safety_margin_shortfall_tokens": measurement.get("safety_margin_shortfall_tokens"),
-        "calibrated_num_ctx": 6144,
-        "do_not_apply_to_configuration_b": True,
+        "calibrated_num_ctx": calibrated_num_ctx,
         "original_files_unmodified": True,
         "original_artifact_sha256": hashes,
     }
+    payload.update(extra or {})
     dest = run_dir / "model_specific_calibration.json"
     dest.write_text(
         json.dumps(payload, indent=2, sort_keys=True) + "\n",
@@ -146,6 +170,27 @@ def write_qwen_a_initial_calibration(run_dir: Path) -> dict[str, Any]:
         newline="\n",
     )
     return payload
+
+
+def write_qwen_a_initial_calibration(run_dir: Path) -> dict[str, Any]:
+    return write_model_specific_calibration(
+        run_dir,
+        config_id="A",
+        tag="qwen3:30b-a3b-instruct-2507-q4_K_M",
+        extra={"do_not_apply_to_configuration_b": True},
+    )
+
+
+def write_qwen_b_initial_calibration(run_dir: Path) -> dict[str, Any]:
+    return write_model_specific_calibration(
+        run_dir,
+        config_id="B",
+        tag="qwen3:14b-q8_0",
+        extra={
+            "do_not_reuse_configuration_a_error": True,
+            "estimation_error_is_model_specific": True,
+        },
+    )
 
 
 def _select_installed_smoke_models(config_models: tuple[ModelSpec, ...], inventory: dict[str, Any]) -> list[ModelSpec]:
@@ -166,6 +211,12 @@ def _select_installed_smoke_models(config_models: tuple[ModelSpec, ...], invento
             and digest != PINNED_A_DIGEST
         ):
             raise I11A0Error(f"configuration A digest is not the recorded Gate 2 digest: {digest}")
+        if (
+            spec.tag == "qwen3:14b-q8_0"
+            and len(digest) == 64
+            and digest != PINNED_B_DIGEST
+        ):
+            raise I11A0Error(f"configuration B digest is not the recorded Gate 2 digest: {digest}")
         filled = ModelSpec(
             config_id=spec.config_id,
             tag=spec.tag,
@@ -472,7 +523,8 @@ def _smoke_one_model(
     ollama_base_url: str,
     preflight: dict[str, Any],
 ) -> dict[str, Any]:
-    refuse_inherited_num_ctx(chosen.config_id, config.configured_num_ctx)
+    ids = tuple(spec.config_id for spec in config.models)
+    refuse_inherited_num_ctx(chosen.config_id, config.configured_num_ctx, ids)
     metadata = dict(inventory_row.get("metadata") or {})
     if chosen.config_id in {"A", "B"}:
         metadata = require_qwen_smoke_configuration(chosen, inventory_row)
@@ -506,10 +558,11 @@ def _smoke_one_model(
         recorded["last_event"] = events[-1] if events else {}
         return measurement, narration
 
+    inherited_b = chosen.config_id == "B" and set(ids) - {"B"}
     one_config = replace(
         config,
         models=(chosen,),
-        configured_num_ctx=None if chosen.config_id == "B" else config.configured_num_ctx,
+        configured_num_ctx=None if inherited_b else config.configured_num_ctx,
     )
     try:
         payload = run_authorized_stage(

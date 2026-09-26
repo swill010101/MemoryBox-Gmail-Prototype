@@ -1030,11 +1030,15 @@ def run_prove_i11a0_benchmark() -> dict[str, Any]:
     from memorybox.ask.i11a.i11a0_smoke import (
         PINNED_C_DIGEST,
         INITIAL_A_EXECUTION_ID,
+        INITIAL_B_EXECUTION_ID,
+        PINNED_A_DIGEST,
+        PINNED_B_DIGEST,
         _select_installed_smoke_model,
         _select_installed_smoke_models,
         require_qwen_smoke_configuration,
         refuse_inherited_num_ctx,
         write_qwen_a_initial_calibration,
+        write_qwen_b_initial_calibration,
     )
     from memorybox.ask.i11a.i11a0_host import (
         REMOTE_FUNCTIONAL_LABEL,
@@ -1189,12 +1193,49 @@ def run_prove_i11a0_benchmark() -> dict[str, Any]:
     )
     b_pin_blocked = False
     try:
-        refuse_inherited_num_ctx("B", 6144)
+        refuse_inherited_num_ctx("B", 6144, ("A", "B"))
     except I11A0Error as exc:
         b_pin_blocked = "must not reuse Configuration A's calibrated num_ctx" in str(exc)
     _check("qwen_b_cannot_inherit_a_calibrated_num_ctx", b_pin_blocked, checks, problems)
+    refuse_inherited_num_ctx("B", 6144, ("B",))
+    _check("qwen_b_may_use_own_calibrated_num_ctx_6144", True, checks, problems)
     refuse_inherited_num_ctx("A", 6144)
     _check("qwen_a_may_use_calibrated_num_ctx_6144", True, checks, problems)
+    b_first = prompt_safety_assessment(
+        actual_prompt_tokens=1978,
+        estimated_prompt_tokens=1893,
+        configured_num_ctx=5893,
+        output_reserve_tokens=2500,
+        required_safety_margin_tokens=1500,
+        pipeline_execution="passed",
+        generation_completion="passed",
+    )
+    _check(
+        "qwen_b_initial_values_fail_safety_margin_by_85",
+        b_first["estimation_error_tokens"] == 85
+        and b_first["required_context_tokens"] == 5978
+        and b_first["safety_margin_shortfall_tokens"] == 85
+        and b_first["overall_classification"] == "successful_pipeline_safety_margin_failed",
+        checks,
+        problems,
+        b_first,
+    )
+    b_cal = prompt_safety_assessment(
+        actual_prompt_tokens=1978,
+        estimated_prompt_tokens=1893,
+        configured_num_ctx=6144,
+        output_reserve_tokens=2500,
+        required_safety_margin_tokens=1500,
+    )
+    _check(
+        "qwen_b_calibrated_num_ctx_6144_passes_the_equation",
+        b_cal["required_context_tokens"] == 5978
+        and b_cal["final_safety_result"] == "passed"
+        and b_cal["overall_classification"] == "successful_stable",
+        checks,
+        problems,
+        b_cal,
+    )
     with tempfile.TemporaryDirectory() as a_dir:
         a_path = Path(a_dir) / INITIAL_A_EXECUTION_ID
         a_path.mkdir()
@@ -1230,6 +1271,159 @@ def run_prove_i11a0_benchmark() -> dict[str, Any]:
             checks,
             problems,
             recorded,
+        )
+    with tempfile.TemporaryDirectory() as b_dir:
+        b_path = Path(b_dir) / INITIAL_B_EXECUTION_ID
+        b_path.mkdir()
+        (b_path / "run_record.json").write_text(
+            json.dumps(
+                {
+                    "identity": INITIAL_B_EXECUTION_ID,
+                    "execution_id": INITIAL_B_EXECUTION_ID,
+                    "classification": "successful_pipeline_safety_margin_failed",
+                    "measurement": {
+                        "estimated_prompt_tokens": 1893,
+                        "actual_prompt_tokens": 1978,
+                        "estimation_error_tokens": 85,
+                        "required_context_tokens": 5978,
+                        "configured_num_ctx": 5893,
+                        "safety_margin_shortfall_tokens": 85,
+                    },
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        before_b = hashlib.sha256((b_path / "run_record.json").read_bytes()).hexdigest()
+        recorded_b = write_qwen_b_initial_calibration(b_path)
+        after_b = hashlib.sha256((b_path / "run_record.json").read_bytes()).hexdigest()
+        _check(
+            "qwen_b_initial_run_is_preserved_with_plus_85_calibration",
+            before_b == after_b
+            and recorded_b["estimation_error_tokens"] == 85
+            and recorded_b["classification"] == "successful_pipeline_safety_margin_failed"
+            and recorded_b["calibrated_num_ctx"] == 6144
+            and recorded_b["do_not_reuse_configuration_a_error"] is True,
+            checks,
+            problems,
+            recorded_b,
+        )
+    from memorybox.ask.i11a.i11a0_gate2_review import assemble_gate2_review_package
+
+    def _fake_calibrated(folder: Path, *, config_id: str, tag: str, digest: str, actual: int, execution_id: str) -> None:
+        folder.mkdir(parents=True)
+        (folder / "run_record.json").write_text(
+            json.dumps(
+                {
+                    "classification": "successful_stable",
+                    "execution_id": execution_id,
+                    "measurement": {
+                        "estimated_prompt_tokens": 1893,
+                        "actual_prompt_tokens": actual,
+                        "estimation_error_tokens": actual - 1893,
+                        "configured_num_ctx": 6144,
+                        "output_reserve_tokens": 2500,
+                        "required_safety_margin_tokens": 1500,
+                        "elapsed_seconds": 10,
+                        "prompt_tokens_per_second": 100,
+                        "generation_tokens_per_second": 50,
+                        "peak_vram_gb": 20.0,
+                        "gpu_resident": True,
+                    },
+                    "request": {
+                        "model_tag": tag,
+                        "digest": digest,
+                        "num_ctx": 6144,
+                        "evidence_sha256": "packet",
+                        "prompt_sha256": "prompt",
+                    },
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        (folder / "narration.txt").write_text(f"narration {config_id}\n", encoding="utf-8")
+        (folder / "raw_api.jsonl").write_text("{}\n", encoding="utf-8")
+        (folder / "telemetry.jsonl").write_text("{}\n", encoding="utf-8")
+        (folder / "hardware_telemetry.json").write_text(
+            json.dumps(
+                {
+                    "vram_baseline_gb": 2.0,
+                    "vram_peak_gb": 20.0,
+                    "vram_final_gb": 2.0,
+                    "ram_baseline_gb": 20.0,
+                    "ram_peak_gb": 21.0,
+                    "ram_final_gb": 20.0,
+                    "gpu_resident": True,
+                    "cpu_offload": False,
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        (folder / "model_metadata.json").write_text(
+            json.dumps(
+                {
+                    "architecture": "arch-" + config_id,
+                    "quantization": "QTEST",
+                    "tag": tag,
+                    "digest": digest,
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+    with tempfile.TemporaryDirectory() as pkg_dir:
+        base = Path(pkg_dir)
+        a_cal_dir = base / "A"
+        b_cal_dir = base / "B"
+        c_cal_dir = base / "C"
+        _fake_calibrated(
+            a_cal_dir,
+            config_id="A",
+            tag="qwen3:30b-a3b-instruct-2507-q4_K_M",
+            digest=PINNED_A_DIGEST,
+            actual=1980,
+            execution_id="exec-a",
+        )
+        _fake_calibrated(
+            b_cal_dir,
+            config_id="B",
+            tag="qwen3:14b-q8_0",
+            digest=PINNED_B_DIGEST,
+            actual=1978,
+            execution_id="exec-b",
+        )
+        _fake_calibrated(
+            c_cal_dir,
+            config_id="C",
+            tag="gemma4:26b",
+            digest=PINNED_C_DIGEST,
+            actual=2075,
+            execution_id="exec-c",
+        )
+        packaged = assemble_gate2_review_package(
+            a_dir=a_cal_dir,
+            b_dir=b_cal_dir,
+            c_dir=c_cal_dir,
+            out_dir=base / "package",
+        )
+        summary = (base / "package" / "benchmark_summary.md").read_text(encoding="utf-8")
+        identity = json.loads((base / "package" / "sealed" / "identity_map.json").read_text(encoding="utf-8"))
+        _check(
+            "gate2_review_package_is_blinded_and_does_not_name_a_winner",
+            packaged.get("ok") is True
+            and packaged.get("winner_recommendation") is None
+            and "winner_recommendation: none" in summary
+            and "Candidate-1" in summary
+            and identity
+            and (base / "package" / "runs.csv").is_file()
+            and (base / "package" / "runs.jsonl").is_file()
+            and (base / "package" / "quality_score_sheet.md").is_file(),
+            checks,
+            problems,
+            packaged,
         )
     _check("gate2_smoke_is_authorized_flag", GATE2_SMOKE_AUTHORIZED is True, checks, problems)
     rtx_preflight = collect_host_affinity_preflight(
