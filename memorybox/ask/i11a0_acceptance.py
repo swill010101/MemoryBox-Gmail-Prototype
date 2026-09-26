@@ -12,6 +12,7 @@ from memorybox.ask.i11a.i11a0_artifacts import (
     _JsonWorkbook,
     _load_json_workbook,
     append_run_workbook,
+    load_run_workbook,
     write_quality_row,
     write_results_bundle,
 )
@@ -538,9 +539,7 @@ def run_prove_i11a0_benchmark() -> dict[str, Any]:
             },
         )
         append_run_workbook(workbook, {"run_id": "r2", "model": "gemma4:26b", "classification": "successful_stable"})
-        from openpyxl import load_workbook
-
-        book = load_workbook(workbook)
+        book = load_run_workbook(workbook)
         _check(
             "workbook_has_four_sheets_and_appends",
             book.sheetnames == ["Runs", "Quality Review", "Configuration", "Summary"]
@@ -559,7 +558,7 @@ def run_prove_i11a0_benchmark() -> dict[str, Any]:
             workbook,
             {"blind_id": "B1", "comparison_view": "equal_input", "packet_sha256": "abc"},
         )
-        headers = [cell.value for cell in load_workbook(workbook)["Quality Review"][2]]
+        headers = [cell.value for cell in load_run_workbook(workbook)["Quality Review"][2]]
         _check(
             "quality_sheet_columns_have_no_model",
             "model" not in headers and headers[0] == QUALITY_COLUMNS[0],

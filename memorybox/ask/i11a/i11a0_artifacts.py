@@ -71,6 +71,11 @@ def _workbook():
     return Workbook, load_workbook
 
 
+def load_run_workbook(path: Path | str):
+    _Workbook, load_workbook = _workbook()
+    return load_workbook(path)
+
+
 class _JsonCell:
     def __init__(self, value: Any) -> None:
         self.value = value
