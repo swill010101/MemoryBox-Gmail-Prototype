@@ -6,7 +6,7 @@
 **HC-2 ACCEPTED (2026-09-11):** FlightSim SHA `743c76712cb286ccdae3ad1108fb260dbd04770d` on `codex/p2-i13-stage-a` (five-minute Historian Capture tick enabled)  
 **Transition branch:** `transition/p2-i12-codex-handoff`  
 **Do not merge to `main` without explicit founder direction.** `main` is scaffolding only.  
-**Do not start I14** without explicit founder authorization.
+**P2-I14 is closed and accepted** at `b54be38ade9f378f1e25e0738bb9e9963f7dcd88`. Do not reopen I14 behavior. **P2-I15 is postponed until after I11A Redux.** See [docs/prd/p2-i14/I14-ACCEPTED-CODE-STATE.md](docs/prd/p2-i14/I14-ACCEPTED-CODE-STATE.md).
 
 ## Start here
 
@@ -29,7 +29,8 @@ Read in order:
 
 - **P2-I12 is ACCEPTED (2026-09-04).** Do not reopen without explicit founder direction.
 - **P2-I13 is ACCEPTED (2026-09-11).** Do not reopen without explicit founder direction.
-- **HC-2 is ACCEPTED (2026-09-11).** Do not reopen without explicit founder direction.
+- **P2-I14 is ACCEPTED** at `b54be38ade9f378f1e25e0738bb9e9963f7dcd88`. Do not reopen I14 behavior.
+- **P2-I15 is postponed until after I11A Redux.**
 - **No application behavior changes** on preservation/transition branches unless a new increment is authorized.
 - **Never commit secrets:** Gmail OAuth credentials/tokens, `.env`, databases, logs, fake-mail runtime dirs, personal media.
 - **Historian Capture production email** is Namecheap Private Email (`MEMORYBOX_HC_EMAIL_PROVIDER=privateemail`) for `memorybox@marvinbot.net`. Optional Gmail API is not the production path. See [docs/codex-handoff/08-ENVIRONMENT-SETUP.md](docs/codex-handoff/08-ENVIRONMENT-SETUP.md).

@@ -1,6 +1,6 @@
 # Phase C — Communications count hydration (I14 remaining defects)
 
-**Status:** Implemented, not I14-accepted. Prepared v3 unchanged.  
+**Status (historical correction 2026-09-26):** Implemented and included in the final accepted I14 code state `b54be38ade9f378f1e25e0738bb9e9963f7dcd88`. I14 is closed. Do not reopen I14 behavior. See [I14-ACCEPTED-CODE-STATE.md](I14-ACCEPTED-CODE-STATE.md). Prepared v3 unchanged.  
 **Date:** 2026-09-16  
 **Cache:** `explore.js?v=i14-c8`
 

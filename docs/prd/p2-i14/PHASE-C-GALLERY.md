@@ -1,10 +1,11 @@
 # I14 Phase C — Gallery date-bucket integration (review)
 
-**Status:** Corrective implementation on `codex/p2-i14-communications`. **Not accepted.** Feature flag still `MEMORYBOX_I14_GALLERY_COMMS`.  
-**Date:** 2026-09-15  
-**Founder stop:** “Show me Sue Will in 2017” — prior email-browser attach is **not accepted**.  
-**Phase B closeout (accepted):** `6500ef032fa038be6e5a34b6ed312c92160fdf91`  
-**Do not:** reload/activate prepared data, migrate, I11A, SMS/calendar prepared, stamp threads accepted.
+**Status (historical correction 2026-09-26):** This page recorded a 2026-09-15 review state. I14 is now **closed and accepted**. Final accepted I14 code state: `b54be38ade9f378f1e25e0738bb9e9963f7dcd88`. See [I14-ACCEPTED-CODE-STATE.md](I14-ACCEPTED-CODE-STATE.md). I15 is postponed until after I11A Redux. Do not reopen I14 behavior.  
+**Feature flag:** `MEMORYBOX_I14_GALLERY_COMMS`.  
+**Date:** 2026-09-15 (original review note)  
+**Founder stop (historical):** “Show me Sue Will in 2017” — prior email-browser attach is **not accepted**.  
+**Phase B closeout (historically accepted; not the final I14 code state):** `6500ef032fa038be6e5a34b6ed312c92160fdf91`  
+**Do not:** reload/activate prepared data, migrate, reopen I14, or treat this page as the current increment status.
 
 **Open acceptance item (deferred):** Ask wait is ~20–25 s for both “Sue Will” and “Sue Will in 2017”. Year constraint must be faster; photos/video must render before comms hydration. Do not optimize in empty-body recovery. See [PHASE-C-PERFORMANCE-DEFECT.md](PHASE-C-PERFORMANCE-DEFECT.md).
 
