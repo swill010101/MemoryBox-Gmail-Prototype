@@ -722,6 +722,45 @@ def main(argv: list[str] | None = None) -> int:
         "prove-c1t-benchmark",
         help="Safe synthetic C1T inventory/chunker/supervisor/artifact proofs; no model",
     )
+    sub.add_parser(
+        "prove-i11a0-benchmark",
+        help="Offline I11A.0 sweep, stop-rule, workbook, and inventory proofs; no model",
+    )
+    p_i11a0_inventory = sub.add_parser(
+        "i11a0-inventory",
+        help="Inventory Peggy chunks and installed Ollama tags; does not generate or pull",
+    )
+    p_i11a0_inventory.add_argument(
+        "--chunks-root",
+        action="append",
+        dest="chunks_roots",
+        default=None,
+        help="Directory to search for CHUNK_*_MODEL_PASTE.txt; repeatable",
+    )
+    p_i11a0_inventory.add_argument(
+        "--ollama-base-url", default="http://127.0.0.1:11434"
+    )
+    p_i11a0_preflight = sub.add_parser(
+        "i11a0-preflight",
+        help="Write the Gate 2 preflight package; does not generate or pull",
+    )
+    p_i11a0_preflight.add_argument("--out", required=True)
+    p_i11a0_preflight.add_argument(
+        "--chunks-root",
+        action="append",
+        dest="chunks_roots",
+        default=None,
+    )
+    p_i11a0_preflight.add_argument(
+        "--ollama-base-url", default="http://127.0.0.1:11434"
+    )
+    p_i11a0_run = sub.add_parser(
+        "i11a0-benchmark",
+        help="Refuses Ollama generation until Gate 2 is authorized",
+    )
+    p_i11a0_run.add_argument("--config", required=True)
+    p_i11a0_run.add_argument("--stage", default=None)
+    p_i11a0_run.add_argument("--confirm-benchmark", action="store_true")
     p_prove_email_id = sub.add_parser(
         "prove-person-email-identity",
         help="Person communication-identity expansion acceptance (email)",
@@ -1624,6 +1663,77 @@ def main(argv: list[str] | None = None) -> int:
         payload = run_prove_c1t_benchmark()
         print(json.dumps(payload, indent=2, default=str), flush=True)
         return 0 if payload.get("ok") else 1
+
+    if args.cmd == "prove-i11a0-benchmark":
+        from memorybox.ask.i11a0_acceptance import run_prove_i11a0_benchmark
+
+        payload = run_prove_i11a0_benchmark()
+        print(json.dumps(payload, indent=2, default=str), flush=True)
+        return 0 if payload.get("ok") else 1
+
+    if args.cmd == "i11a0-inventory":
+        from memorybox.ask.i11a.i11a0_benchmark import (
+            inventory_installed_models,
+            inventory_peggy_chunks,
+        )
+
+        roots = args.chunks_roots or [
+            "docs/test-output/c1t-benchmark",
+            "docs/test-output/trusted-email-review",
+            "docs/test-output",
+        ]
+        payload = {
+            "chunks": inventory_peggy_chunks(roots),
+            "models": inventory_installed_models(base_url=args.ollama_base_url),
+            "models_called": False,
+            "pull_executed": False,
+        }
+        print(json.dumps(payload, indent=2, default=str), flush=True)
+        return 0 if payload["chunks"].get("ok") else 1
+
+    if args.cmd == "i11a0-preflight":
+        from pathlib import Path
+
+        from memorybox.ask.i11a.i11a0_benchmark import build_preflight_package
+
+        roots = args.chunks_roots or [
+            "docs/test-output/c1t-benchmark",
+            "docs/test-output/trusted-email-review",
+            "docs/test-output",
+        ]
+        payload = build_preflight_package(
+            chunk_roots=roots,
+            ollama_base_url=args.ollama_base_url,
+        )
+        out = Path(args.out)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(payload, indent=2, default=str) + "\n", encoding="utf-8")
+        print(json.dumps({"ok": True, "wrote": str(out), "models_called": False}), flush=True)
+        return 0
+
+    if args.cmd == "i11a0-benchmark":
+        from memorybox.ask.i11a.i11a0_benchmark import InferenceNotAuthorized, refuse_inference_cli
+
+        try:
+            payload = refuse_inference_cli()
+        except InferenceNotAuthorized as exc:
+            print(
+                json.dumps(
+                    {
+                        "ok": False,
+                        "error": "inference_not_authorized",
+                        "detail": str(exc),
+                        "confirm_benchmark": bool(args.confirm_benchmark),
+                        "config": args.config,
+                        "stage": args.stage,
+                        "models_called": False,
+                        "pull_executed": False,
+                    },
+                    indent=2,
+                ),
+                flush=True,
+            )
+            return 2
 
     if args.cmd == "prove-person-email-identity":
         from memorybox.person.comm_identity_acceptance import (

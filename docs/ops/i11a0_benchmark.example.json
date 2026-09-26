@@ -1,0 +1,52 @@
+{
+  "stage": "smoke",
+  "inference_authorized": false,
+  "thinking_mode": "off",
+  "authorize_thinking_comparison": false,
+  "temperature": 0.1,
+  "seed": 42,
+  "start_input_tokens": 8000,
+  "increment_tokens": 1000,
+  "refinement_increment_tokens": 250,
+  "reserved_output_tokens": 2500,
+  "safety_margin_tokens": 1500,
+  "safety_margin_note": "Separate from the 2500 output reserve. evidence + prompt/instructions + output reserve + safety margin <= num_ctx. Production margin is chosen later inside 1000-2000 from measurements.",
+  "maximum_vram_gb": 22.5,
+  "warm_runs_per_size": 2,
+  "cold_runs_per_model": 1,
+  "timeout_seconds": 1800,
+  "regression_prompt_fraction": 0.15,
+  "regression_generation_fraction": 0.15,
+  "regression_elapsed_fraction": 0.25,
+  "regression_run_count": 3,
+  "smoke_evidence_tokens": 1000,
+  "prompt_version": "i11a0-narration-v0.1-draft",
+  "prompt_accepted": false,
+  "models": [
+    {
+      "config_id": "A",
+      "tag": "qwen3:30b-a3b-instruct-2507-q4_K_M",
+      "alias": "qwen3:30b",
+      "quantization": "Q4_K_M",
+      "digest": ""
+    },
+    {
+      "config_id": "B",
+      "tag": "qwen3:14b-q8_0",
+      "alias": "",
+      "quantization": "Q8_0",
+      "digest": ""
+    },
+    {
+      "config_id": "C",
+      "tag": "gemma4:26b",
+      "alias": "",
+      "quantization": "",
+      "digest": ""
+    }
+  ],
+  "founder_gate3_accepted": false,
+  "founder_gate4_accepted": false,
+  "authorize_alternate_quantization": false,
+  "alternate_quantization_tag": null
+}
