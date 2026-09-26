@@ -48,7 +48,7 @@ class Scope(unittest.TestCase):
         )
         self.assertEqual(
             text,
-            "I found 246 photos, 8 videos, 328 text messages, and 10 email threads involving Sue Will during 2017.",
+            "I found 246 photos, 8 videos, 10 email threads, and 328 text messages involving Sue Will during 2017.",
         )
         self.assertTrue(curator_language_ok(text))
         self.assertFalse(curator_language_ok("80 of 1325 reachable email threads"))

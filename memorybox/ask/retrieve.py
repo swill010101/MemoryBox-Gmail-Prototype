@@ -2388,7 +2388,7 @@ def merge_evidence_hits(*groups: list[EvidenceHit], limit: int = 20) -> list[Evi
 
 @_timed_provider("photos_ms")
 def search_photos(
-    plan: QueryPlan, photo: PhotoProvider, *, limit: int = 5000
+    plan: QueryPlan, photo: PhotoProvider, *, limit: int = 25000
 ) -> tuple[list[PhotoHit], dict[str, Any]]:
     """Search photos via PhotoProvider with I6/I7 identity authority rules.
 
@@ -3722,7 +3722,18 @@ def search_stories(plan: QueryPlan, *, limit: int = 12) -> list[StoryHit]:
             ).lower()
             match_n = sum(1 for t in tokens if t.lower() in blob)
             linked = sid in about_ids
-            if match_n == 0 and not linked:
+            name_tokens = {
+                t.lower()
+                for n in (getattr(plan, "person_names", ()) or ())
+                for t in re.findall(r"[A-Za-z][A-Za-z']{2,}", str(n or ""))
+            }
+            topic_tokens = [t for t in tokens if t.lower() not in name_tokens]
+            if person_ids:
+                if not linked:
+                    continue
+                if topic_tokens and not any(t.lower() in blob for t in topic_tokens):
+                    continue
+            elif match_n == 0:
                 continue
             narrator = r["narrator_name"] or "owner"
             body = r["body_text"] or r.get("block_text") or ""

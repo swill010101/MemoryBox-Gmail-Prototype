@@ -244,6 +244,7 @@ def list_person_buckets(
            WHERE t.generation_id = %s
              AND t.gallery_eligibility = 'show_by_default'
              AND m.sent_at IS NOT NULL
+             AND m.sent_at::date IS DISTINCT FROM DATE '1970-01-01'
              AND (%s::date IS NULL OR m.sent_at::date >= %s::date)
              AND (%s::date IS NULL OR m.sent_at::date <= %s::date)
              AND EXISTS (
@@ -308,6 +309,31 @@ def list_person_buckets(
             )
     scoped_threads = sum(int(b["thread_n"]) for b in buckets)
     scoped_msgs = sum(int(b["message_n"]) for b in buckets)
+    undated_row = conn.execute(
+        """
+        SELECT COUNT(*)::int AS n
+          FROM comms_prepared_threads t
+         WHERE t.generation_id = %s
+           AND t.gallery_eligibility = 'show_by_default'
+           AND EXISTS (
+                 SELECT 1
+                   FROM comms_prepared_messages m
+                   JOIN comms_prepared_participants p ON p.message_id = m.id
+                  WHERE m.thread_id = t.id AND p.person_id = %s
+               )
+           AND NOT EXISTS (
+                 SELECT 1
+                   FROM comms_prepared_messages m
+                   JOIN comms_prepared_participants p ON p.message_id = m.id
+                  WHERE m.thread_id = t.id
+                    AND p.person_id = %s
+                    AND m.sent_at IS NOT NULL
+                    AND m.sent_at::date IS DISTINCT FROM DATE '1970-01-01'
+               )
+        """,
+        (gid, person_id, person_id),
+    ).fetchone()
+    undated_n = int((undated_row or {}).get("n") or 0)
     updated = datetime.now(timezone.utc).date().isoformat()
     payload = {
         "ok": True,
@@ -329,7 +355,7 @@ def list_person_buckets(
             "show_by_default": int(excl.get("show_by_default") or 0),
         },
         "person_match": match,
-        "undated_n": 0,
+        "undated_n": undated_n,
         "has_more": False,
         "next_cursor": None,
         "page_size": GALLERY_PAGE_SIZE,
@@ -433,6 +459,7 @@ def list_person_threads(
              WHERE t2.generation_id = %s
                AND t2.gallery_eligibility = 'show_by_default'
                AND m2.sent_at IS NOT NULL
+               AND m2.sent_at::date IS DISTINCT FROM DATE '1970-01-01'
                AND (%s::date IS NULL OR m2.sent_at::date >= %s::date)
                AND (%s::date IS NULL OR m2.sent_at::date <= %s::date)
                AND EXISTS (

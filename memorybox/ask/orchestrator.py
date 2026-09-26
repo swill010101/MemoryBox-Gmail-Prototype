@@ -1428,15 +1428,38 @@ class AskOrchestrator:
             if plan.want_calendar:
                 _stage("Collecting calendar", pause=True)
             if plan.want_communication or plan.want_calendar:
-                if plan.want_communication:
+                defer_raw_comms = False
+                try:
+                    from memorybox.explore.prepared_comms import gallery_comms_enabled
+
+                    defer_raw_comms = (
+                        gallery_comms_enabled()
+                        and bool(plan.person_ids)
+                        and str(getattr(plan, "output_mode", "") or "show") != "tell"
+                        and not R._sms_ask(plan)
+                        and not R._email_ask(plan)
+                        and not plan.want_calendar
+                    )
+                except Exception:  # noqa: BLE001
+                    defer_raw_comms = False
+                if defer_raw_comms:
+                    pg_hits = []
+                    evidence = []
+                    qdrant_status = {
+                        "ok": True,
+                        "detail": "deferred_i14_gallery_comms",
+                    }
+                elif plan.want_communication:
                     _stage("Collecting communications")
-                pg_hits = R.search_evidence_pg(plan)
+                    pg_hits = R.search_evidence_pg(plan)
                 tell_pack = (
                     str((plan.output_mode if hasattr(plan, "output_mode") else "") or "")
                     == "tell"
                     or "tell_multimodal_i11" in (getattr(plan, "notes", ()) or ())
                 )
-                if (
+                if defer_raw_comms:
+                    pass
+                elif (
                     ((R._sms_ask(plan) or R._email_ask(plan)) and plan.want_communication)
                     or tell_pack
                 ):
@@ -1465,7 +1488,7 @@ class AskOrchestrator:
             # parallel calls RST person-library search (0 photos / 1 video).
             if plan.want_still or plan.want_photo:
                 _stage("Collecting photos")
-                photo_limit = 0 if R._bounded_period_tell(plan) else 5000
+                photo_limit = 0 if R._bounded_period_tell(plan) else 25000
                 photos, photo_status = R.search_photos(plan, self.photo, limit=photo_limit)
             spoken_videos: list[R.VideoHit] = []
             if getattr(plan, "want_spoken", False):
@@ -1587,7 +1610,7 @@ class AskOrchestrator:
                 if discovered.needs_refetch and discovered.resolved and not discovered.ambiguous:
                     _stage("Retrieving full trip span")
                     if plan.want_still or plan.want_photo:
-                        photo_limit = 0 if R._bounded_period_tell(plan) else 5000
+                        photo_limit = 0 if R._bounded_period_tell(plan) else 25000
                         photos, photo_status = R.search_photos(
                             plan, self.photo, limit=photo_limit
                         )

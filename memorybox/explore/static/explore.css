@@ -446,6 +446,12 @@ body {
   margin-bottom: 0.55rem;
 }
 
+.mb-hydrate-status {
+  margin: 0.35rem 0 0;
+  color: var(--mb-muted);
+  font-size: 0.92rem;
+}
+
 .mb-explore-filters {
   display: flex;
   flex-wrap: wrap;

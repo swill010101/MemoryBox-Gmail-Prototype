@@ -486,7 +486,7 @@ class ImmichHttpClient:
         self._reset_call_log()
         self._person_membership_missing = False
         self._person_lib_incomplete = False
-        target = max(1, min(int(size), 5000))
+        target = max(1, min(int(size), 25000))
         cache_key = (
             f"{_PERSON_LIB_CACHE_VER}:"
             + ",".join(sorted(str(p).strip() for p in person_ids if str(p).strip()))

@@ -319,6 +319,7 @@ New increments inserted before them:
 The following remain active unless separately closed:
 
 ### Video / identity
+- **Post-I14 visual consistency (I14 closeout deferred):** Multi-Person Ask scoping: “Show me Tom Will with Peggy George” can include videos where Peggy is not visibly apparent. Review AND-versus-OR Person semantics, face evidence, temporal appearance, and card labeling. Do not address during I14 closeout. Record: [I15-POST-I14-VISUAL-CONSISTENCY-BACKLOG.md](../prd/p2-i14/I15-POST-I14-VISUAL-CONSISTENCY-BACKLOG.md). Communications passed; this is visual/Person-evidence, not the I14 count gate.
 - face recognition across video;
 - appearance start/end times;
 - useful searchable moments;
