@@ -9,6 +9,8 @@ from typing import Any
 
 from memorybox.ask.i11a.i11a0_artifacts import (
     QUALITY_COLUMNS,
+    _JsonWorkbook,
+    _load_json_workbook,
     append_run_workbook,
     write_quality_row,
     write_results_bundle,
@@ -564,6 +566,20 @@ def run_prove_i11a0_benchmark() -> dict[str, Any]:
             checks,
             problems,
             headers,
+        )
+        fallback = root / "fallback.json"
+        json_book = _JsonWorkbook()
+        json_book.active.title = "Runs"
+        json_book.active.append(["run_id"])
+        json_book.create_sheet("Quality Review")
+        json_book.save(fallback)
+        loaded_fallback = _load_json_workbook(fallback)
+        _check(
+            "workbook_stdlib_fallback_roundtrip",
+            loaded_fallback.sheetnames == ["Runs", "Quality Review"]
+            and loaded_fallback["Runs"].max_row == 1,
+            checks,
+            problems,
         )
         bundle = write_results_bundle(
             bundle_dir=root / "bundle",

@@ -64,9 +64,73 @@ WEIGHTS = {"quality": 0.60, "evidence_capacity": 0.25, "runtime_stability": 0.15
 
 
 def _workbook():
-    from openpyxl import Workbook, load_workbook
-
+    try:
+        from openpyxl import Workbook, load_workbook
+    except ModuleNotFoundError:
+        return _JsonWorkbook, _load_json_workbook
     return Workbook, load_workbook
+
+
+class _JsonCell:
+    def __init__(self, value: Any) -> None:
+        self.value = value
+
+
+class _JsonSheet:
+    def __init__(self, title: str, rows: list[list[Any]] | None = None) -> None:
+        self.title = title
+        self.rows = rows or []
+
+    @property
+    def max_row(self) -> int:
+        return len(self.rows)
+
+    def append(self, values: list[Any]) -> None:
+        self.rows.append(list(values))
+
+    def __getitem__(self, index: int) -> list[_JsonCell]:
+        return [_JsonCell(value) for value in self.rows[index - 1]]
+
+
+class _JsonWorkbook:
+    def __init__(self) -> None:
+        self._sheets = [_JsonSheet("Sheet")]
+        self.active = self._sheets[0]
+
+    @property
+    def sheetnames(self) -> list[str]:
+        return [sheet.title for sheet in self._sheets]
+
+    def create_sheet(self, title: str) -> _JsonSheet:
+        sheet = _JsonSheet(title)
+        self._sheets.append(sheet)
+        return sheet
+
+    def __getitem__(self, title: str) -> _JsonSheet:
+        for sheet in self._sheets:
+            if sheet.title == title:
+                return sheet
+        raise KeyError(title)
+
+    def save(self, path: Path | str) -> None:
+        payload = {
+            "format": "memorybox-i11a0-workbook-json",
+            "sheets": [{"title": sheet.title, "rows": sheet.rows} for sheet in self._sheets],
+        }
+        target = Path(path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(json.dumps(payload), encoding="utf-8")
+
+
+def _load_json_workbook(path: Path | str) -> _JsonWorkbook:
+    payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    book = _JsonWorkbook()
+    book._sheets = [
+        _JsonSheet(str(item["title"]), [list(row) for row in item.get("rows") or []])
+        for item in payload["sheets"]
+    ]
+    book.active = book._sheets[0]
+    return book
 
 
 def append_run_workbook(path: Path | str, row: dict[str, Any]) -> None:
