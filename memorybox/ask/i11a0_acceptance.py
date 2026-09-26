@@ -37,6 +37,7 @@ from memorybox.ask.i11a.i11a0_benchmark import (
     build_preflight_package,
     classify_measurement,
     compare_i14_successor,
+    evaluate_recorded_prompt_safety,
     inventory_installed_models,
     inventory_peggy_chunks,
     pack_conversation_intact,
@@ -493,6 +494,20 @@ def run_prove_i11a0_benchmark() -> dict[str, Any]:
             checks,
             problems,
             smoke.get("token_accounting"),
+        )
+        gemma_smoke_safety = evaluate_recorded_prompt_safety(
+            actual_prompt_eval_count=2075,
+            estimated_total_prompt_tokens=1893,
+            num_ctx=5893,
+            reserved_output_tokens=2500,
+            safety_margin_tokens=1500,
+        )
+        _check(
+            "recorded_underestimate_within_margin_passes",
+            gemma_smoke_safety == ("passed", None),
+            checks,
+            problems,
+            gemma_smoke_safety,
         )
         try:
             run_authorized_stage(

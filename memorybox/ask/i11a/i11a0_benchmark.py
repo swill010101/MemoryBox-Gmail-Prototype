@@ -376,6 +376,27 @@ def plan_context(
     )
 
 
+def evaluate_recorded_prompt_safety(
+    *,
+    actual_prompt_eval_count: int,
+    estimated_total_prompt_tokens: int,
+    num_ctx: int,
+    reserved_output_tokens: int,
+    safety_margin_tokens: int,
+) -> tuple[str, str | None]:
+    """Post-run check. num_ctx already includes the safety margin."""
+    error = actual_prompt_eval_count - estimated_total_prompt_tokens
+    generation_fits = actual_prompt_eval_count + reserved_output_tokens <= num_ctx
+    underestimated = error > safety_margin_tokens
+    if not generation_fits:
+        return "failed", "context_rejected"
+    if underestimated:
+        return "failed", "estimation_exceeded"
+    if error < -safety_margin_tokens:
+        return "passed_conservative_overestimate", None
+    return "passed", None
+
+
 @dataclass
 class CalibrationBook:
     errors_by_model: dict[str, list[int]] = field(default_factory=dict)
@@ -1556,27 +1577,19 @@ def _execute(
         measurement.token_error_percent = (
             round((error / estimated_total) * 100.0, 4) if estimated_total else None
         )
-        actual_budget_ok = (
-            actual + config.reserved_output_tokens + config.safety_margin_tokens
-            <= plan.num_ctx
+        safety_result, reject_reason = evaluate_recorded_prompt_safety(
+            actual_prompt_eval_count=actual,
+            estimated_total_prompt_tokens=estimated_total,
+            num_ctx=plan.num_ctx,
+            reserved_output_tokens=config.reserved_output_tokens,
+            safety_margin_tokens=config.safety_margin_tokens,
         )
-        underestimate = error > config.safety_margin_tokens
-        if not actual_budget_ok or underestimate:
-            measurement.final_safety_result = "failed"
-            observation = RunObservation(
-                request,
-                measurement,
-                "context_rejected" if not actual_budget_ok else "estimation_exceeded",
-                narration,
-            )
+        measurement.final_safety_result = safety_result
+        if reject_reason:
+            observation = RunObservation(request, measurement, reject_reason, narration)
             _persist_run(results_dir, observation)
             completed.add(identity)
             return observation
-        measurement.final_safety_result = (
-            "passed_conservative_overestimate"
-            if error < -config.safety_margin_tokens
-            else "passed"
-        )
     elif smoke:
         measurement.final_safety_result = "failed_missing_prompt_eval_count"
         observation = RunObservation(request, measurement, "context_rejected", narration)
