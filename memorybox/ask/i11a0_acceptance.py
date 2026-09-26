@@ -485,6 +485,15 @@ def run_prove_i11a0_benchmark() -> dict[str, Any]:
             problems,
             smoke,
         )
+        _check(
+            "conservative_overestimate_is_not_a_safety_failure",
+            smoke["ok"] is True
+            and (smoke.get("token_accounting") or {}).get("final_safety_result")
+            in {"passed", "passed_conservative_overestimate"},
+            checks,
+            problems,
+            smoke.get("token_accounting"),
+        )
         try:
             run_authorized_stage(
                 config=_config(thinking_mode="on", authorize_thinking_comparison=False),

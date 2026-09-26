@@ -1560,8 +1560,8 @@ def _execute(
             actual + config.reserved_output_tokens + config.safety_margin_tokens
             <= plan.num_ctx
         )
-        error_ok = abs(error) <= config.safety_margin_tokens
-        if not actual_budget_ok or not error_ok:
+        underestimate = error > config.safety_margin_tokens
+        if not actual_budget_ok or underestimate:
             measurement.final_safety_result = "failed"
             observation = RunObservation(
                 request,
@@ -1572,7 +1572,11 @@ def _execute(
             _persist_run(results_dir, observation)
             completed.add(identity)
             return observation
-        measurement.final_safety_result = "passed"
+        measurement.final_safety_result = (
+            "passed_conservative_overestimate"
+            if error < -config.safety_margin_tokens
+            else "passed"
+        )
     elif smoke:
         measurement.final_safety_result = "failed_missing_prompt_eval_count"
         observation = RunObservation(request, measurement, "context_rejected", narration)
