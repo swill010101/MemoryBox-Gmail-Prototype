@@ -100,6 +100,30 @@ def _nvidia_used_gb() -> float | None:
         return None
 
 
+def _ollama_vram_gb(base_url: str, tag: str) -> float | None:
+    try:
+        with urllib.request.urlopen(f"{base_url.rstrip('/')}/api/ps", timeout=2) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, json.JSONDecodeError):
+        return None
+    peak = None
+    for model in payload.get("models") or []:
+        name = str(model.get("name") or model.get("model") or "")
+        if tag not in name:
+            continue
+        size = model.get("size_vram")
+        if size is None:
+            continue
+        gb = float(size) / (1024 ** 3)
+        peak = gb if peak is None else max(peak, gb)
+    return peak
+
+
+def _peak_vram_gb(base_url: str, tag: str, current: float | None) -> float | None:
+    samples = [value for value in (current, _nvidia_used_gb(), _ollama_vram_gb(base_url, tag)) if value is not None]
+    return max(samples) if samples else None
+
+
 def _unload(base_url: str, tag: str) -> None:
     payload = json.dumps({"model": tag, "keep_alive": 0}).encode("utf-8")
     request = urllib.request.Request(
@@ -152,13 +176,14 @@ def _chat(request: RunRequest, *, base_url: str, timeout: int) -> tuple[Measurem
     events: list[dict[str, Any]] = []
     last: dict[str, Any] = {}
     started = time.monotonic()
-    peak = _nvidia_used_gb()
+    peak = _peak_vram_gb(base_url, request.model_tag, None)
+    samples = 0
     try:
         with urllib.request.urlopen(http, timeout=timeout) as response:
             for raw in response:
-                sample = _nvidia_used_gb()
-                if sample is not None:
-                    peak = sample if peak is None else max(peak, sample)
+                samples += 1
+                if samples == 1 or samples % 25 == 0:
+                    peak = _peak_vram_gb(base_url, request.model_tag, peak)
                 line = raw.decode("utf-8", errors="replace").strip()
                 if not line:
                     continue
@@ -170,6 +195,7 @@ def _chat(request: RunRequest, *, base_url: str, timeout: int) -> tuple[Measurem
                 if piece:
                     chunks.append(str(piece))
                 if event.get("done"):
+                    peak = _peak_vram_gb(base_url, request.model_tag, peak)
                     break
     except urllib.error.HTTPError as exc:
         measurement = Measurement(
