@@ -17,6 +17,7 @@ from memorybox.ask.i11a.i11a0_artifacts import (
     write_results_bundle,
 )
 from memorybox.ask.i11a.i11a0_benchmark import (
+    GATE2_SMOKE_AUTHORIZED,
     APPROVED_MODELS,
     DiagnosticTokenCounter,
     EvidencePiece,
@@ -809,8 +810,40 @@ def run_prove_i11a0_benchmark() -> dict[str, Any]:
         refuse_inference_cli()
         inference_blocked = False
     except Exception as exc:
-        inference_blocked = "Gate 2" in str(exc)
-    _check("cli_refuses_inference_before_gate_2", inference_blocked, checks, problems)
+        inference_blocked = "confirm-benchmark" in str(exc)
+    _check("cli_refuses_inference_without_smoke_confirm", inference_blocked, checks, problems)
+    from memorybox.ask.i11a.i11a0_smoke import PINNED_C_DIGEST, _select_installed_smoke_model
+
+    selected = _select_installed_smoke_model(
+        (
+            ModelSpec("A", "qwen3:30b-a3b-instruct-2507-q4_K_M", "Q4_K_M", "missing"),
+            ModelSpec("C", "gemma4:26b", "Q4_K_M", PINNED_C_DIGEST),
+        ),
+        {
+            "approved": [
+                {
+                    "tag": "qwen3:30b-a3b-instruct-2507-q4_K_M",
+                    "status": "missing",
+                    "accepted_for_screen": False,
+                },
+                {
+                    "tag": "gemma4:26b",
+                    "status": "installed",
+                    "accepted_for_screen": True,
+                    "digest": PINNED_C_DIGEST,
+                    "quantization": "Q4_K_M",
+                },
+            ]
+        },
+    )
+    _check(
+        "gate2_smoke_selects_installed_configuration_c",
+        selected.tag == "gemma4:26b" and selected.digest == PINNED_C_DIGEST,
+        checks,
+        problems,
+        selected,
+    )
+    _check("gate2_smoke_is_authorized_flag", GATE2_SMOKE_AUTHORIZED is True, checks, problems)
     _check(
         "approved_screen_is_the_three_named_tags",
         [row["tag"] for row in APPROVED_MODELS]
@@ -828,7 +861,8 @@ def run_prove_i11a0_benchmark() -> dict[str, Any]:
         preflight["inference_authorized"] is False
         and preflight["prompt_sha256"] == prompt_hash
         and preflight["models_called"] is False
-        and preflight["smoke_command_status"] == "not_authorized_until_gate_2",
+        and preflight["gate2_smoke_authorized"] is True
+        and preflight["smoke_command_status"] == "gate2_smoke_authorized_confirm_required",
         checks,
         problems,
         preflight["smoke_command_status"],

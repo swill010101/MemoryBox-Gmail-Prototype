@@ -756,11 +756,20 @@ def main(argv: list[str] | None = None) -> int:
     )
     p_i11a0_run = sub.add_parser(
         "i11a0-benchmark",
-        help="Refuses Ollama generation until Gate 2 is authorized",
+        help="Gate 2 smoke with --stage smoke --confirm-benchmark; Stage 1 still refused",
     )
     p_i11a0_run.add_argument("--config", required=True)
     p_i11a0_run.add_argument("--stage", default=None)
     p_i11a0_run.add_argument("--confirm-benchmark", action="store_true")
+    p_i11a0_run.add_argument(
+        "--chunks-root",
+        default="docs/test-output/trusted-email-review/REVIEW_20260831T120929Z",
+    )
+    p_i11a0_run.add_argument("--ollama-base-url", default="http://127.0.0.1:11434")
+    p_i11a0_run.add_argument(
+        "--out",
+        default="docs/test-output/i11a0-benchmark/smoke",
+    )
     p_prove_email_id = sub.add_parser(
         "prove-person-email-identity",
         help="Person communication-identity expansion acceptance (email)",
@@ -1716,20 +1725,53 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.cmd == "i11a0-benchmark":
-        from memorybox.ask.i11a.i11a0_benchmark import InferenceNotAuthorized, refuse_inference_cli
+        from memorybox.ask.i11a.i11a0_benchmark import (
+            GateNotAuthorized,
+            I11A0Error,
+            InferenceNotAuthorized,
+            UncertainTokenCount,
+        )
+        from memorybox.ask.i11a.i11a0_smoke import run_gate2_smoke
 
+        if not args.confirm_benchmark or (args.stage or "smoke") != "smoke":
+            try:
+                from memorybox.ask.i11a.i11a0_benchmark import refuse_inference_cli
+
+                refuse_inference_cli()
+            except InferenceNotAuthorized as exc:
+                print(
+                    json.dumps(
+                        {
+                            "ok": False,
+                            "error": "inference_not_authorized",
+                            "detail": str(exc),
+                            "confirm_benchmark": bool(args.confirm_benchmark),
+                            "config": args.config,
+                            "stage": args.stage,
+                            "models_called": False,
+                            "pull_executed": False,
+                        },
+                        indent=2,
+                    ),
+                    flush=True,
+                )
+                return 2
         try:
-            payload = refuse_inference_cli()
-        except InferenceNotAuthorized as exc:
+            payload = run_gate2_smoke(
+                config_path=args.config,
+                chunks_root=args.chunks_root,
+                results_dir=args.out,
+                ollama_base_url=args.ollama_base_url,
+                confirm_benchmark=bool(args.confirm_benchmark),
+                stage=args.stage or "smoke",
+            )
+        except (InferenceNotAuthorized, GateNotAuthorized, UncertainTokenCount, I11A0Error) as exc:
             print(
                 json.dumps(
                     {
                         "ok": False,
-                        "error": "inference_not_authorized",
+                        "error": type(exc).__name__,
                         "detail": str(exc),
-                        "confirm_benchmark": bool(args.confirm_benchmark),
-                        "config": args.config,
-                        "stage": args.stage,
                         "models_called": False,
                         "pull_executed": False,
                     },
@@ -1738,6 +1780,8 @@ def main(argv: list[str] | None = None) -> int:
                 flush=True,
             )
             return 2
+        print(json.dumps(payload, indent=2, default=str), flush=True)
+        return 0 if payload.get("ok") else 1
 
     if args.cmd == "prove-person-email-identity":
         from memorybox.person.comm_identity_acceptance import (

@@ -1,0 +1,29 @@
+{
+  "stage": "smoke",
+  "inference_authorized": true,
+  "thinking_mode": "off",
+  "authorize_thinking_comparison": false,
+  "temperature": 0.1,
+  "seed": 42,
+  "reserved_output_tokens": 2500,
+  "safety_margin_tokens": 1500,
+  "maximum_vram_gb": 22.5,
+  "timeout_seconds": 1800,
+  "smoke_evidence_tokens": 1000,
+  "prompt_version": "i11a0-narration-v0.2-draft",
+  "prompt_accepted": false,
+  "models": [
+    {
+      "config_id": "C",
+      "tag": "gemma4:26b",
+      "alias": "",
+      "quantization": "Q4_K_M",
+      "digest": "08ae7ec1744bd7f451c4a530afb39d2673ad9d07a8369b8a33a3613b41212a68"
+    }
+  ],
+  "founder_gate3_accepted": false,
+  "founder_gate4_accepted": false,
+  "authorize_alternate_quantization": false,
+  "alternate_quantization_tag": null,
+  "gate2_note": "One smoke run on the installed Gate 1 configuration C. A and B stay unpulled. Stage 1 remains unauthorized."
+}

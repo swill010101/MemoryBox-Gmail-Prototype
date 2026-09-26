@@ -1,7 +1,7 @@
 """Draft benchmark narration prompt for P2-I11A.0.
 
-This is not the production narrator. Founder acceptance of the exact text is
-still required before any Gate 2 model execution.
+This is not the production narrator. Founder accepted Gate 2 smoke with this draft
+text; Gate 5 still has to accept a production prompt.
 """
 from __future__ import annotations
 

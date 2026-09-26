@@ -26,6 +26,7 @@ from memorybox.ask.i11a.i11a0_prompt import (
 
 I11A0_VERSION = "0.1-offline"
 INFERENCE_AUTHORIZED = False
+GATE2_SMOKE_AUTHORIZED = True
 VRAM_CEILING_GB = 22.5
 OUTPUT_RESERVE_TOKENS = 2500
 SAFETY_MARGIN_TOKENS = 1500
@@ -1266,6 +1267,11 @@ class RunRequest:
     num_ctx: int
     reserved_output_tokens: int
     prompt_sha256: str
+    time_start: str = ""
+    time_end: str = ""
+    partial_context: bool = False
+    partial_boundary_note: str = "none"
+    evidence_ids: tuple[str, ...] = ()
 
 
 @dataclass
@@ -1321,7 +1327,7 @@ def _persist_run(results_dir: Path, observation: RunObservation) -> None:
         "identity": identity,
         "classification": observation.classification,
         "skipped": observation.skipped,
-        "request": asdict(observation.request),
+        "request": {key: value for key, value in asdict(observation.request).items() if key != "evidence_text"},
         "measurement": asdict(observation.measurement),
         "narration_sha256": _sha256_text(observation.narration_text),
     }
@@ -1459,6 +1465,11 @@ def _execute(
         num_ctx=plan.num_ctx,
         reserved_output_tokens=config.reserved_output_tokens,
         prompt_sha256=prompt_sha256(),
+        time_start=evidence.time_start,
+        time_end=evidence.time_end,
+        partial_context=evidence.partial_context,
+        partial_boundary_note=evidence.partial_boundary_note,
+        evidence_ids=evidence.evidence_ids,
     )
     measurement, narration = runner(request)
     measurement.evidence_tokens = measurement.evidence_tokens or requested_tokens
@@ -1827,10 +1838,9 @@ def _refine(
 
 
 def refuse_inference_cli() -> dict[str, Any]:
-    if INFERENCE_AUTHORIZED:
-        raise InferenceNotAuthorized("authorization flag drifted; refusing anyway")
     raise InferenceNotAuthorized(
-        "Gate 2 has not been accepted. No Ollama generation, tokenize, or pull was attempted."
+        "Capacity sweep and model pulls are not authorized. Gate 2 smoke requires "
+        "--stage smoke --confirm-benchmark on an installed model."
     )
 
 
@@ -1851,6 +1861,7 @@ def build_preflight_package(
     return {
         "ok": True,
         "inference_authorized": INFERENCE_AUTHORIZED,
+        "gate2_smoke_authorized": GATE2_SMOKE_AUTHORIZED,
         "prompt_accepted": PROMPT_ACCEPTED,
         "prompt_version": PROMPT_VERSION,
         "prompt_sha256": prompt_sha256(),
@@ -1867,5 +1878,5 @@ def build_preflight_package(
             "python -m memorybox i11a0-benchmark --config docs/ops/i11a0_benchmark.example.json "
             "--stage smoke --confirm-benchmark"
         ),
-        "smoke_command_status": "not_authorized_until_gate_2",
+        "smoke_command_status": "gate2_smoke_authorized_confirm_required",
     }
