@@ -23,9 +23,17 @@ from memorybox.ask.i11a.i11a0_benchmark import (
     inventory_installed_models,
     new_execution_id,
 )
-from memorybox.ask.i11a.i11a0_gate3_progress import atomic_replace_text
+from memorybox.ask.i11a.i11a0_control_telemetry import (
+    FIRST_A_EXECUTION_ID,
+    IndependentRequestSampler,
+    classify_in_request_placement,
+    find_aborted_a_folder,
+    http_chat_post,
+    invoke_post,
+    write_aborted_a_sidecar,
+)
+from memorybox.ask.i11a.i11a0_gate3_progress import Gate3Progress, atomic_replace_text
 from memorybox.ask.i11a.i11a0_host import (
-    HardwareSampler,
     VRAM_CEILING_GB,
     collect_host_affinity_preflight,
     read_nvidia_snapshot,
@@ -33,7 +41,7 @@ from memorybox.ask.i11a.i11a0_host import (
     require_literal_loopback_ollama_url,
 )
 from memorybox.ask.i11a.i11a0_i14_source import verify_pinned_i14_export
-from memorybox.ask.i11a.i11a0_placement import interpret_ollama_placement, read_ollama_ps
+from memorybox.ask.i11a.i11a0_placement import read_ollama_ps
 from memorybox.ask.i11a.i11a0_prompt import (
     PROMPT_VERSION,
     SYSTEM_PROMPT,
@@ -42,12 +50,14 @@ from memorybox.ask.i11a.i11a0_prompt import (
 )
 from memorybox.ask.i11a.i11a0_smoke import PINNED_B_DIGEST, REPO_ROOT, _unload, require_qwen_smoke_configuration
 
-EXPERIMENT_ID = "i11a0_prompt_accounting_control_v1"
+EXPERIMENT_ID = "i11a0_prompt_accounting_control_v1_telemetry_retry"
+PRIOR_EXPERIMENT_ID = "i11a0_prompt_accounting_control_v1"
 B_TAG = "qwen3:14b-q8_0"
 PACKET_A_SHA256 = "ae0fcbb738dd956282aef23188fd53e703adefed7ba2ee1630a0a653b6ce20d7"
 PACKET_BC_SHA256 = "9807caf061f57b4f949e837774a158f6dfbc142de2e88a252a62eba540d9f0b6"
-FIXED_NUM_CTX = {"A": 30720, "B": 30720, "C": 32768}
-IDENTITY_EXPECTATION = {"A": 15362, "B": 15362, "C": 16386}
+FIXED_NUM_CTX = {"A2": 30720, "B": 30720, "C": 32768}
+IDENTITY_EXPECTATION = {"A2": 15362, "B": 15362, "C": 16386}
+MATRIX_ORDER = ("A2", "B", "C")
 PACKET_ROLE = "prompt_accounting_control"
 PACKET_ID_A = "control-v1-packet-27054"
 PACKET_ID_BC = "control-v1-packet-42019"
@@ -102,14 +112,14 @@ def refuse_planner_num_ctx(run_id: str, num_ctx: int) -> int:
 
 
 def matrix_spec(run_id: str) -> dict[str, Any]:
-    packet_sha = PACKET_A_SHA256 if run_id == "A" else PACKET_BC_SHA256
-    packet_id = PACKET_ID_A if run_id == "A" else PACKET_ID_BC
+    packet_sha = PACKET_A_SHA256 if run_id == "A2" else PACKET_BC_SHA256
+    packet_id = PACKET_ID_A if run_id == "A2" else PACKET_ID_BC
     return {
         "run_id": run_id,
         "packet_sha256": packet_sha,
         "num_ctx": FIXED_NUM_CTX[run_id],
         "packet_id": packet_id,
-        "estimated_evidence_tokens": 27054 if run_id == "A" else 42019,
+        "estimated_evidence_tokens": 27054 if run_id == "A2" else 42019,
     }
 
 
@@ -332,7 +342,7 @@ def interpret_counts(rows: list[dict[str, Any]]) -> dict[str, Any]:
         for run_id in FIXED_NUM_CTX
         if run_id in by_id and by_id.get(run_id) is not None
     }
-    a = by_id.get("A")
+    a = by_id.get("A2")
     b = by_id.get("B")
     c = by_id.get("C")
     a_eq_b = a is not None and b is not None and a == b
@@ -357,23 +367,8 @@ def interpret_counts(rows: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def _http_chat_post(body: bytes, base_url: str, timeout: int) -> list[dict[str, Any]]:
-    http = urllib.request.Request(
-        f"{base_url.rstrip('/')}/api/chat",
-        data=body,
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    events: list[dict[str, Any]] = []
-    with urllib.request.urlopen(http, timeout=timeout) as response:
-        for raw in response:
-            line = raw.decode("utf-8", errors="replace").strip()
-            if not line:
-                continue
-            events.append(json.loads(line))
-            if events[-1].get("done"):
-                break
-    return events
+def _http_chat_post(body: bytes, base_url: str, timeout: int, cancel=None, on_first_token=None) -> list[dict[str, Any]]:
+    return http_chat_post(body, base_url, timeout, cancel=cancel, on_first_token=on_first_token)
 
 
 def run_one(
@@ -390,7 +385,8 @@ def run_one(
     unload_fn: UnloadFn,
     ps_fn: PsFn,
     nvidia_fn: NvidiaFn,
-    sampler_factory: Callable[[], Any],
+    progress: Gate3Progress | None = None,
+    telemetry_interval: float = 1.5,
 ) -> dict[str, Any]:
     spec = matrix_spec(run_id)
     num_ctx = refuse_planner_num_ctx(run_id, spec["num_ctx"])
@@ -403,7 +399,14 @@ def run_one(
     )
     test_case_id = f"{EXPERIMENT_ID}-{run_id}"
     folder.mkdir(parents=True, exist_ok=True)
+    if progress is not None:
+        progress.begin_execution()
+        progress.emit("Waiting for idle baseline", phase="preflight", run_id=run_id)
+    baseline_nv = nvidia_fn()
+    baseline = baseline_nv.get("memory_used_gb")
     payload = build_chat_payload(packet=packet, packet_id=spec["packet_id"], num_ctx=num_ctx)
+    if progress is not None:
+        progress.emit("Capturing exact request JSON", phase="capture")
     body = persist_pre_post_artifacts(
         folder,
         payload=payload,
@@ -418,29 +421,68 @@ def run_one(
     capture_hash = _sha256_bytes((folder / "request_capture.json").read_bytes())
     if outgoing_hash != capture_hash:
         raise PromptAccountingProofError("outgoing HTTP body hash != captured request hash")
+    if progress is not None:
+        progress.emit("Exact request captured; independent telemetry starting", phase="telemetry_start")
 
-    sampler = sampler_factory()
-    sampler.capture("baseline")
-    baseline = sampler.samples[-1].get("vram_used_gb") if sampler.samples else None
-    sampler.capture("generate_start")
-    events = post_fn(body, base_url, TIMEOUT_SECONDS)
-    peak_abort = None
-    for sample in list(getattr(sampler, "samples", []) or []):
-        used = sample.get("vram_used_gb")
-        if isinstance(used, (int, float)) and float(used) >= VRAM_CEILING_GB:
-            peak_abort = float(used)
-            break
-    sampler.capture("generate_done")
-    in_run = [float(v) for v in sampler.vram_used_values() if v is not None]
-    current_peak = max(in_run) if in_run else None
-    if current_peak is not None and current_peak >= VRAM_CEILING_GB:
-        peak_abort = current_peak
-    loaded_ps = ps_fn(base_url)
-    placement = interpret_ollama_placement(
-        loaded_ps, tag=B_TAG, digest=digest, queried_while_loaded=True
+    telemetry = IndependentRequestSampler(
+        telemetry_path=folder / "in_request_telemetry.jsonl",
+        base_url=base_url,
+        experiment_id=EXPERIMENT_ID,
+        run_id=run_id,
+        execution_id=execution_id,
+        digest=digest,
+        nvidia_fn=nvidia_fn,
+        ps_fn=ps_fn,
+        interval_seconds=telemetry_interval,
+        heartbeat_seconds=15.0,
+        progress=progress,
     )
-    sampler.capture("pre_unload")
+    telemetry.start("request_active")
+    if progress is not None:
+        progress.emit("Independent telemetry started; POST submitted", phase="generation")
+
+    def on_first_token() -> None:
+        telemetry.set_phase("first_token")
+        if progress is not None:
+            progress.emit("First streamed token", phase="first_token")
+        telemetry.set_phase("streaming")
+
+    try:
+        events = invoke_post(post_fn, body, base_url, TIMEOUT_SECONDS, telemetry.cancel, on_first_token)
+    finally:
+        telemetry.set_phase("stream_complete")
+    if progress is not None:
+        progress.emit("Final event received", phase="stream_complete")
+    telemetry.set_phase("pre_unload")
+    in_request = telemetry.in_request_samples()
+    in_request_vram = telemetry.vram_for_phases({"request_active", "first_token", "streaming"})
+    in_request_peak = max(in_request_vram) if in_request_vram else None
+    pre_final = None
+    if in_request:
+        last_in = in_request[-1].get("gpu_vram_used_gb")
+        if isinstance(last_in, (int, float)):
+            pre_final = float(last_in)
+    post_response = nvidia_fn().get("memory_used_gb")
+    placement = classify_in_request_placement(
+        telemetry.samples,
+        tag=B_TAG,
+        digest=digest,
+        baseline_vram_gb=baseline if isinstance(baseline, (int, float)) else None,
+    )
+    safety_stop = telemetry.cancel_reason
+    if safety_stop is None and in_request_peak is not None and in_request_peak >= VRAM_CEILING_GB:
+        safety_stop = "vram_ceiling"
+    if safety_stop is None and placement.get("safety_label"):
+        safety_stop = placement["safety_label"]
+
+    if progress is not None:
+        progress.emit(
+            f"Placement classification: {placement.get('placement_status')} ({placement.get('reason')})",
+            phase="placement",
+        )
+        progress.emit("Unload started", phase="unload")
     unload_s = unload_fn(base_url, B_TAG)
+    telemetry.set_phase("unloading")
     settled = wait_unloaded(
         ps_fn=ps_fn,
         nvidia_fn=nvidia_fn,
@@ -449,24 +491,24 @@ def run_one(
         digest=digest,
         idle_vram_gb=idle_vram_gb if isinstance(idle_vram_gb, (int, float)) else baseline,
     )
-    sampler.capture("after_unload_settled")
+    telemetry.set_phase("after_unload_settled")
+    settled_vram = nvidia_fn().get("memory_used_gb")
+    telemetry.stop()
+    if progress is not None:
+        progress.emit("Model absent from /api/ps; VRAM returned to baseline" if settled.get("unloaded") else "Unload verification incomplete", phase="unloaded")
+
     final_event = last_event(events)
     raw_count = final_event.get("prompt_eval_count")
     narration = "".join(str((ev.get("message") or {}).get("content") or "") for ev in events)
     done_reason = final_event.get("done_reason")
-    safety_stop = None
-    if peak_abort is not None:
-        safety_stop = "vram_ceiling"
-    elif placement.get("status") == "cpu_offload" or placement.get("cpu_offload"):
-        safety_stop = "cpu_offload"
-    elif placement.get("gpu_resident") is False:
-        safety_stop = "gpu_residency_lost"
-    elif done_reason == "length":
+    if done_reason == "length" and safety_stop is None:
         safety_stop = "context_or_length"
-    elif not events:
+    if not events and safety_stop is None:
         safety_stop = "generation_failed"
     if not settled.get("unloaded"):
         safety_stop = safety_stop or "unload_failure"
+    if progress is not None:
+        progress.emit(f"Prompt count reported: {raw_count}", phase="accounted")
 
     extra_fields = {
         key: final_event.get(key)
@@ -491,6 +533,7 @@ def run_one(
     raw_text = "".join(json.dumps(event) + "\n" for event in events)
     atomic_replace_text(folder / "raw_api.jsonl", raw_text)
     atomic_replace_text(folder / "narration.txt", narration)
+    identity = json.loads((folder / "request_identity.json").read_text(encoding="utf-8"))
     record = {
         "experiment_id": EXPERIMENT_ID,
         "run_id": run_id,
@@ -515,26 +558,38 @@ def run_one(
         "final_event_sha256": _sha256_text(json.dumps(final_event, sort_keys=True, default=str)),
         "narration_sha256": _sha256_text(narration),
         "vram_baseline_gb": baseline,
-        "vram_peak_gb": current_peak,
-        "vram_final_gb": (sampler.samples[-1].get("vram_used_gb") if sampler.samples else None),
+        "vram_in_request_peak_gb": in_request_peak,
+        "vram_pre_final_event_gb": pre_final,
+        "vram_immediate_post_response_gb": post_response,
+        "vram_settled_post_unload_gb": settled_vram,
+        "vram_peak_gb": in_request_peak,
         "series_peak_not_used": True,
-        "placement_status": placement.get("status"),
+        "placement_status": placement.get("placement_status"),
         "gpu_resident": placement.get("gpu_resident"),
         "cpu_offload": placement.get("cpu_offload"),
+        "gpu_residency_lost": placement.get("gpu_residency_lost"),
+        "gpu_presence_observed": placement.get("gpu_presence_observed"),
+        "placement_reason": placement.get("reason"),
+        "placement_evidence": placement.get("evidence"),
+        "in_request_sample_count": placement.get("in_request_sample_count"),
         "unload_seconds": unload_s,
         "unload": settled,
         "safety_stop": safety_stop,
         "request_options": payload["options"],
-        "user_sha256": json.loads((folder / "request_identity.json").read_text(encoding="utf-8"))["user_sha256"],
-        "system_sha256": json.loads((folder / "request_identity.json").read_text(encoding="utf-8"))["system_sha256"],
-        "messages_sha256": json.loads((folder / "request_identity.json").read_text(encoding="utf-8"))["messages_sha256"],
+        "user_sha256": identity["user_sha256"],
+        "system_sha256": identity["system_sha256"],
+        "messages_sha256": identity["messages_sha256"],
+        "first_a_execution_excluded": FIRST_A_EXECUTION_ID,
     }
     atomic_replace_text(folder / "run_record.json", json.dumps(record, indent=2, sort_keys=True, default=str) + "\n")
     atomic_replace_text(
-        folder / "hardware_telemetry.json",
-        json.dumps({"samples": sampler.samples, "summary": sampler.summary()}, indent=2, default=str) + "\n",
+        folder / "placement_proof.json",
+        json.dumps(placement, indent=2, sort_keys=True, default=str) + "\n",
     )
     atomic_replace_text(folder / "COMPLETE", "ok\n")
+    if progress is not None:
+        nxt = "next matrix member" if safety_stop is None else f"stop: {safety_stop}"
+        progress.emit(f"Run {run_id} complete; {nxt}", phase="complete")
     return record
 
 
@@ -551,13 +606,14 @@ def run_prompt_accounting_control(
     results_dir: Path | str,
     ollama_base_url: str,
     i14_export: Path | str,
+    prior_attempt: Path | str | None = None,
     post_fn: PostFn | None = None,
     unload_fn: UnloadFn | None = None,
     ps_fn: PsFn | None = None,
     nvidia_fn: NvidiaFn | None = None,
-    sampler_factory: Callable[[], Any] | None = None,
     require_host: bool = True,
     models_called: bool = True,
+    telemetry_interval: float = 1.5,
 ) -> dict[str, Any]:
     if not confirm_benchmark:
         raise InferenceNotAuthorized("prompt-accounting control requires --confirm-benchmark")
@@ -615,17 +671,17 @@ def run_prompt_accounting_control(
             idle_vram_gb=idle if isinstance(idle, (int, float)) else None,
         )
         post_fn = post_fn or _http_chat_post
-        sampler_factory = sampler_factory or HardwareSampler
         preflight["i14"] = i14_proof
         preflight["idle_vram_gb"] = idle
         preflight["experiment_id"] = EXPERIMENT_ID
         preflight["not_a_capacity_ladder"] = True
+        preflight["prior_experiment_id"] = PRIOR_EXPERIMENT_ID
+        preflight["excluded_first_a_execution_id"] = FIRST_A_EXECUTION_ID
     else:
-        nvidia_fn = nvidia_fn or (lambda: {"memory_used_gb": 2.6})
+        nvidia_fn = nvidia_fn or (lambda: {"memory_used_gb": 2.6, "memory_total_gb": 24.0, "name": "NVIDIA GeForce RTX 4090", "utilization_gpu_percent": 0})
         unload_fn = unload_fn or (lambda _url, _tag: 0.0)
         ps_fn = ps_fn or (lambda _url: {"available": True, "models": []})
-        post_fn = post_fn or (lambda _body, _url, _timeout: [{"done": True, "prompt_eval_count": 1, "done_reason": "stop"}])
-        sampler_factory = sampler_factory or HardwareSampler
+        post_fn = post_fn or (lambda _body, _url, _timeout, **_kw: [{"done": True, "prompt_eval_count": 1, "done_reason": "stop"}])
         idle = 2.6
         preflight = {
             "require_host": False,
@@ -633,21 +689,56 @@ def run_prompt_accounting_control(
             "i14": i14_proof,
             "idle_vram_gb": idle,
             "not_a_capacity_ladder": True,
+            "excluded_first_a_execution_id": FIRST_A_EXECUTION_ID,
         }
 
-    packets = {"A": packet_a, "B": packet_b, "C": packet_b}
+    aborted_sidecar = None
+    prior_path = Path(prior_attempt) if prior_attempt else None
+    if prior_path:
+        found = find_aborted_a_folder(prior_path)
+        if found is not None:
+            aborted_sidecar = write_aborted_a_sidecar(found)
+
+    class _NullStream:
+        def write(self, text: str) -> int:
+            return len(text)
+
+        def flush(self) -> None:
+            return None
+
+    progress = Gate3Progress(
+        results,
+        timeout_seconds=TIMEOUT_SECONDS,
+        controller_id=EXPERIMENT_ID,
+        heartbeat_seconds=15.0,
+        stream=None if require_host else _NullStream(),
+    )
+    packets = {"A2": packet_a, "B": packet_b, "C": packet_b}
     rows: list[dict[str, Any]] = []
     blocked_reason = None
-    for run_id in ("A", "B", "C"):
+    for run_id in MATRIX_ORDER:
         if blocked_reason:
             break
+        if run_id == "B" and rows:
+            a2 = rows[0]
+            if a2.get("placement_status") != "gpu_resident" or a2.get("gpu_resident") is not True:
+                blocked_reason = f"a2_placement_not_affirmative:{a2.get('placement_status')}"
+                progress.emit(f"Not continuing to B: {blocked_reason}", phase="stop")
+                break
+            if a2.get("safety_stop"):
+                blocked_reason = f"prior_safety_stop:{a2.get('safety_stop')}"
+                break
         if run_id == "C" and rows:
             peaks = [r.get("vram_peak_gb") for r in rows if isinstance(r.get("vram_peak_gb"), (int, float))]
             if peaks and max(peaks) >= C_UNSAFE_PEAK_GB:
                 blocked_reason = "c_predicted_unsafe_from_ab_vram"
+                progress.emit(blocked_reason, phase="stop")
                 break
             if any(r.get("safety_stop") for r in rows):
                 blocked_reason = f"prior_safety_stop:{rows[-1].get('safety_stop')}"
+                break
+            if rows[-1].get("placement_status") != "gpu_resident":
+                blocked_reason = "b_placement_not_affirmative"
                 break
         folder = results / "runs" / run_id
         row = run_one(
@@ -663,11 +754,13 @@ def run_prompt_accounting_control(
             unload_fn=unload_fn,
             ps_fn=ps_fn,
             nvidia_fn=nvidia_fn,
-            sampler_factory=sampler_factory,
+            progress=progress,
+            telemetry_interval=telemetry_interval,
         )
         rows.append(row)
         if row.get("safety_stop"):
             blocked_reason = row["safety_stop"]
+            progress.emit(f"Stop remaining matrix: {blocked_reason}", phase="stop")
             break
 
     hashes_after = hash_tree_marker(source / "HASHES.txt")
@@ -709,6 +802,9 @@ def run_prompt_accounting_control(
         "source_series_unchanged": hashes_before == hashes_after,
         "results_dir": str(results),
         "not_an_operating_point_test": True,
+        "aborted_first_a": aborted_sidecar,
+        "valid_matrix_slots": list(MATRIX_ORDER),
+        "first_a_not_a_matrix_member": FIRST_A_EXECUTION_ID,
     }
     atomic_replace_text(results / "control_summary.json", json.dumps(summary, indent=2, sort_keys=True, default=str) + "\n")
     return summary
@@ -725,7 +821,7 @@ def prove_prompt_accounting_control_offline() -> dict[str, Any]:
         if not cond:
             problems.append(f"{name}: {detail}")
 
-    ok("fixed_num_ctx_a", FIXED_NUM_CTX["A"] == 30720, FIXED_NUM_CTX)
+    ok("fixed_num_ctx_a2", FIXED_NUM_CTX["A2"] == 30720, FIXED_NUM_CTX)
     ok("fixed_num_ctx_not_planner", refuse_planner_num_ctx("B", 30720) == 30720, None)
     planner_blocked = False
     try:
@@ -733,7 +829,31 @@ def prove_prompt_accounting_control_offline() -> dict[str, Any]:
     except PromptAccountingProofError:
         planner_blocked = True
     ok("planner_cannot_change_num_ctx", planner_blocked, None)
-    ok("exactly_three_matrix_slots", list(FIXED_NUM_CTX) == ["A", "B", "C"], None)
+    ok("exactly_three_matrix_slots", list(FIXED_NUM_CTX) == ["A2", "B", "C"], None)
+    ok("first_a_excluded_from_matrix", "A" not in FIXED_NUM_CTX and FIRST_A_EXECUTION_ID, None)
+
+    missing = classify_in_request_placement([], baseline_vram_gb=2.6)
+    ok("missing_samples_are_unknown", missing["placement_status"] == "unknown" and missing["gpu_resident"] is None, missing)
+    ok("missing_samples_not_residency_lost", missing["gpu_residency_lost"] is False and missing["safety_label"] == "placement_unproven", missing)
+
+    idle_only = classify_in_request_placement(
+        [{"request_phase": "after_unload_settled", "gpu_vram_used_gb": 2.6, "placement_status": None}],
+        baseline_vram_gb=2.6,
+    )
+    ok("post_unload_idle_not_in_request_placement", idle_only["placement_status"] == "unknown", idle_only)
+
+    resident = classify_in_request_placement(
+        [
+            {
+                "request_phase": "request_active",
+                "gpu_vram_used_gb": 18.0,
+                "placement_status": "gpu_resident",
+                "ps_model_listed": True,
+            }
+        ],
+        baseline_vram_gb=2.6,
+    )
+    ok("ps_loaded_is_gpu_resident", resident["placement_status"] == "gpu_resident" and resident["gpu_resident"] is True, resident)
 
     with tempfile.TemporaryDirectory() as tmp:
         src = Path(tmp) / "gate3-b-i14" / "runs"
@@ -778,9 +898,13 @@ def prove_prompt_accounting_control_offline() -> dict[str, Any]:
         posted: list[bytes] = []
         loaded = {"on": False}
 
-        def fake_post(body: bytes, _url: str, _timeout: int) -> list[dict[str, Any]]:
+        def fake_post(body: bytes, _url: str, _timeout: int, cancel=None, on_first_token=None) -> list[dict[str, Any]]:
             posted.append(body)
             loaded["on"] = True
+            time.sleep(0.35)
+            if on_first_token is not None:
+                on_first_token()
+            time.sleep(0.15)
             idx = len(posted)
             count = {1: 15362, 2: 15362, 3: 16386}.get(idx, 15362)
             return [
@@ -816,20 +940,21 @@ def prove_prompt_accounting_control_offline() -> dict[str, Any]:
                 }
             return {"available": True, "models": []}
 
-        class FakeSampler:
-            def __init__(self) -> None:
-                self.samples = []
+        def nvidia_ok() -> dict[str, Any]:
+            return {
+                "name": "NVIDIA GeForce RTX 4090",
+                "memory_used_gb": 18.0 if loaded["on"] else 2.6,
+                "memory_total_gb": 24.0,
+                "utilization_gpu_percent": 40 if loaded["on"] else 0,
+            }
 
-            def capture(self, phase: str) -> dict[str, Any]:
-                sample = {"phase": phase, "vram_used_gb": 18.0 if phase != "after_unload_settled" else 2.7}
-                self.samples.append(sample)
-                return sample
-
-            def vram_used_values(self) -> list[float]:
-                return [float(s["vram_used_gb"]) for s in self.samples]
-
-            def summary(self) -> dict[str, Any]:
-                return {"vram_peak_gb": max(self.vram_used_values()), "vram_baseline_gb": 18.0}
+        def nvidia_hot() -> dict[str, Any]:
+            return {
+                "name": "NVIDIA GeForce RTX 4090",
+                "memory_used_gb": 22.6 if loaded["on"] else 2.6,
+                "memory_total_gb": 24.0,
+                "utilization_gpu_percent": 90 if loaded["on"] else 0,
+            }
 
         original_a = PACKET_A_SHA256
         original_bc = PACKET_BC_SHA256
@@ -857,24 +982,38 @@ def prove_prompt_accounting_control_offline() -> dict[str, Any]:
                 }
 
             proof_mod.verify_pinned_i14_export = fake_i14  # type: ignore[assignment]
+            prior = Path(tmp) / "prior-attempt" / "runs" / "A"
+            prior.mkdir(parents=True)
+            original_capture = b'{"model":"qwen3:14b-q8_0"}'
+            (prior / "request_capture.json").write_bytes(original_capture)
+            (prior / "raw_api.jsonl").write_text("{}\n", encoding="utf-8")
+            (prior / "narration.txt").write_text("kept\n", encoding="utf-8")
+            (prior / "run_record.json").write_text(
+                json.dumps({"execution_id": FIRST_A_EXECUTION_ID, "run_id": "A"}) + "\n",
+                encoding="utf-8",
+            )
+            (prior / "COMPLETE").write_text("ok\n", encoding="utf-8")
+            before_capture = (prior / "request_capture.json").read_bytes()
+            before_complete = (prior / "COMPLETE").read_bytes()
             payload = proof_mod.run_prompt_accounting_control(
                 confirm_benchmark=True,
                 source_series=Path(tmp) / "gate3-b-i14",
                 results_dir=out,
                 ollama_base_url="http://127.0.0.1:11434",
                 i14_export=i14,
+                prior_attempt=Path(tmp) / "prior-attempt",
                 post_fn=fake_post,
                 unload_fn=fake_unload,
                 ps_fn=fake_ps,
-                nvidia_fn=lambda: {"memory_used_gb": 2.6},
-                sampler_factory=FakeSampler,
+                nvidia_fn=nvidia_ok,
                 require_host=False,
                 models_called=False,
+                telemetry_interval=0.05,
             )
             ok("exactly_three_runs", payload.get("run_count") == 3, payload.get("run_count"))
             ok("models_not_called_in_offline_harness", payload.get("models_called") is False, payload.get("models_called"))
             ok("capture_before_post_count", len(posted) == 3, len(posted))
-            for run_id, body in zip(("A", "B", "C"), posted):
+            for run_id, body in zip(("A2", "B", "C"), posted):
                 disk = (out / "runs" / run_id / "request_capture.json").read_bytes()
                 ok(f"captured_equals_outgoing_{run_id}", disk == body, (len(disk), len(body)))
             b_cap = json.loads((out / "runs" / "B" / "request_capture.json").read_text(encoding="utf-8"))
@@ -888,21 +1027,22 @@ def prove_prompt_accounting_control_offline() -> dict[str, Any]:
                 all(row.get("series_peak_not_used") is True for row in payload["runs"]),
                 None,
             )
+            a2 = payload["runs"][0]
+            ok("in_request_samples_during_blocked_post", int(a2.get("in_request_sample_count") or 0) >= 2, a2.get("in_request_sample_count"))
+            ok("ps_loaded_retained_before_unload", a2.get("placement_status") == "gpu_resident", a2.get("placement_status"))
+            ok("in_request_peak_not_post_unload", a2.get("vram_peak_gb") == 18.0, a2.get("vram_peak_gb"))
+            ok("a2_num_ctx_30720", a2.get("num_ctx") == 30720, a2.get("num_ctx"))
             hashes_after = (Path(tmp) / "gate3-b-i14" / "HASHES.txt").read_bytes()
             ok("series_hashes_unchanged", hashes_before == hashes_after, None)
             ok("complete_markers_untouched", (src / "exec-a" / "COMPLETE").read_text(encoding="utf-8") == "ok\n", None)
+            ok("first_a_request_capture_unchanged", (prior / "request_capture.json").read_bytes() == before_capture, None)
+            ok("first_a_complete_unchanged", (prior / "COMPLETE").read_bytes() == before_complete, None)
+            sidecar = json.loads((prior / "classification_sidecar.json").read_text(encoding="utf-8"))
+            ok("first_a_sidecar_aborted_role", sidecar.get("experiment_role") == "aborted_control_attempt", sidecar)
+            ok("first_a_not_valid_matrix_slot", sidecar.get("eligible_for_a_b_c_conclusion") is False, sidecar)
 
             posted.clear()
-
-            class HotSampler(FakeSampler):
-                def capture(self, phase: str) -> dict[str, Any]:
-                    sample = {"phase": phase, "vram_used_gb": 22.6 if phase != "after_unload_settled" else 2.7}
-                    self.samples.append(sample)
-                    return sample
-
-                def vram_used_values(self) -> list[float]:
-                    return [float(s["vram_used_gb"]) for s in self.samples]
-
+            loaded["on"] = False
             out2 = Path(tmp) / "proof-stop"
             stopped = proof_mod.run_prompt_accounting_control(
                 confirm_benchmark=True,
@@ -913,12 +1053,16 @@ def prove_prompt_accounting_control_offline() -> dict[str, Any]:
                 post_fn=fake_post,
                 unload_fn=fake_unload,
                 ps_fn=fake_ps,
-                nvidia_fn=lambda: {"memory_used_gb": 2.6},
-                sampler_factory=HotSampler,
+                nvidia_fn=nvidia_hot,
                 require_host=False,
                 models_called=False,
+                telemetry_interval=0.05,
             )
-            ok("safety_failure_blocks_remaining", stopped.get("run_count") == 1 and stopped.get("blocked_reason") == "vram_ceiling", stopped)
+            ok(
+                "safety_failure_blocks_remaining",
+                stopped.get("run_count") == 1 and stopped.get("blocked_reason") == "vram_ceiling",
+                stopped,
+            )
         finally:
             import memorybox.ask.i11a.i11a0_prompt_accounting_proof as mod
 

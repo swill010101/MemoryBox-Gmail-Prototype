@@ -810,7 +810,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     p_control.add_argument(
         "--out",
+        default="docs/test-output/i11a0-benchmark/prompt-accounting-proof-telemetry-retry",
+    )
+    p_control.add_argument(
+        "--prior-attempt",
         default="docs/test-output/i11a0-benchmark/prompt-accounting-proof",
+        help="First aborted A attempt; sidecar only, originals not rewritten",
     )
     p_control.add_argument(
         "--i14-export",
@@ -1989,6 +1994,7 @@ def main(argv: list[str] | None = None) -> int:
                 results_dir=args.out,
                 ollama_base_url=args.ollama_base_url,
                 i14_export=args.i14_export,
+                prior_attempt=getattr(args, "prior_attempt", None),
                 require_host=True,
                 models_called=True,
             )
