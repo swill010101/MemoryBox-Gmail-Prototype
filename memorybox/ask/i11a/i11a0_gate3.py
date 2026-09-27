@@ -84,6 +84,22 @@ from memorybox.ask.i11a.i11a0_smoke import (
     _vram_released,
     require_qwen_smoke_configuration,
 )
+from memorybox.ask.i11a.i11a0_context_planner_v2 import (
+    BYTES_DIV4_PLANNER_ID,
+    PLANNER_ID as I14_CONTEXT_PLANNER_V2,
+    CleanedI14ContextPlanner,
+    annotate_historical_row,
+    current_planner_identity,
+    identity_mismatch,
+    is_v2_config,
+    packet_identity_ids,
+    persist_planner,
+    planner_artifact_dir,
+    prove_context_planner_v2_offline,
+    seed_planner_from_runs,
+    write_preservation_manifest,
+    write_supersession_sidecar,
+)
 
 GATE3_START_EVIDENCE_TOKENS = 2000
 GATE3_COARSE_INCREMENT_TOKENS = 1000
@@ -190,6 +206,7 @@ class Gate3Config:
     source: str = LEGACY_CHUNK_SOURCE_LABEL
     verified_max_num_ctx: int = QWEN_B_VERIFIED_MAX_CTX
     experiment_phase: str = "legacy_reviewed_chunks"
+    planner_id: str = ""
 
 
 def load_gate3_config(path: Path | str | None) -> Gate3Config:
@@ -357,6 +374,8 @@ def should_run_final_repeats(stop_reason: str) -> bool:
         "unload_vram_not_released",
         "timed_out",
         "evidence_exhausted",
+        "prediction_envelope_exceeded",
+        "calibration_identity_invalid",
     }
 
 
@@ -853,8 +872,14 @@ def hard_stop_reason(row: dict[str, Any], *, ceiling_gb: float = VRAM_CEILING_GB
         return "host_affinity"
     if row.get("model_identity_changed"):
         return "model_identity_changed"
+    if row.get("calibration_identity_invalid") or row.get("classification") == "calibration_identity_invalid":
+        return "calibration_identity_invalid"
+    if row.get("prediction_envelope_exceeded") or row.get("classification") == "prediction_envelope_exceeded":
+        return "prediction_envelope_exceeded"
     if row.get("planned_ctx_exceeds_model_limit") or row.get("classification") == "planned_ctx_exceeds_model_limit":
         return "planned_ctx_exceeds_model_limit"
+    if row.get("superseded_as_planning_model_stop"):
+        return None
     if row.get("predicted_vram_ceiling") or row.get("classification") == "predicted_vram_ceiling":
         return "predicted_vram_ceiling"
     peak = row.get("vram_peak_gb")
@@ -893,6 +918,8 @@ def classify_boundary_kind(stop_reason: str) -> str:
         return "performance_knee"
     if stop_reason in {"vram_ceiling", "predicted_vram_ceiling"}:
         return "vram_boundary"
+    if stop_reason in {"prediction_envelope_exceeded", "calibration_identity_invalid"}:
+        return "planning_failure"
     if stop_reason in {"planned_ctx_exceeds_model_limit", "context_overflow"}:
         return "model_context_boundary"
     if stop_reason == "evidence_exhausted":
@@ -907,12 +934,17 @@ def project_vram_for_next_packet(
     *,
     next_estimated_tokens: int,
     ceiling_gb: float = VRAM_CEILING_GB,
+    planner_id: str | None = None,
 ) -> dict[str, Any]:
     stables = [
         row
         for row in prior_rows
         if counts_as_stable_ladder_rung(row, ceiling_gb=ceiling_gb)
         and row.get("vram_peak_gb") is not None
+        and (
+            planner_id is None
+            or row.get("planner_id") == planner_id
+        )
     ]
     if len(stables) < 2:
         return {
@@ -995,14 +1027,22 @@ def publish_completed_run(results_dir: Path, row: dict[str, Any]) -> Path:
     write_gate3_run_artifacts(staging, row)
     (staging / "COMPLETE").write_text("ok\n", encoding="utf-8", newline="\n")
     dest.parent.mkdir(parents=True, exist_ok=True)
+    if dest.exists() and (dest / "COMPLETE").is_file():
+        shutil.rmtree(staging, ignore_errors=True)
+        raise I11A0Error(f"refusing to replace preserved COMPLETE run {dest}")
     if dest.exists():
         shutil.rmtree(dest)
     os.replace(staging, dest)
     return dest
 
 
-def rewrite_run_tables(results_dir: Path, runs: list[dict[str, Any]]) -> None:
-    results_dir = Path(results_dir)
+def rewrite_run_tables(
+    results_dir: Path,
+    runs: list[dict[str, Any]],
+    *,
+    dest_dir: Path | None = None,
+) -> None:
+    results_dir = Path(dest_dir or results_dir)
     import io
 
     buf = io.StringIO()
@@ -1033,10 +1073,12 @@ def _hash_tree(root: Path) -> list[tuple[str, str]]:
 
 
 def analyze_gate3(runs: list[dict[str, Any]], *, stop_reason: str, config: Gate3Config) -> dict[str, Any]:
+    v2 = is_v2_config(config)
     stable = [
         row
         for row in runs
         if counts_as_stable_ladder_rung(row, ceiling_gb=config.maximum_vram_gb)
+        and (not v2 or row.get("planner_id") == I14_CONTEXT_PLANNER_V2)
     ]
     last_stable = stable[-1] if stable else None
     first_capacity = None
@@ -1048,6 +1090,10 @@ def analyze_gate3(runs: list[dict[str, Any]], *, stop_reason: str, config: Gate3
         if row.get("hardware_classification_superseded"):
             continue
         if row.get("not_ladder_progression"):
+            continue
+        if v2 and row.get("superseded_as_planning_model_stop"):
+            continue
+        if v2 and row.get("planner_id") == BYTES_DIV4_PLANNER_ID:
             continue
         reason = hard_stop_reason(row, ceiling_gb=config.maximum_vram_gb)
         if reason in {None, "estimator_recalibration_required"}:
@@ -1080,9 +1126,32 @@ def analyze_gate3(runs: list[dict[str, Any]], *, stop_reason: str, config: Gate3
     ram["do_not_mix_with_other_experiment_phases"] = True
     abs_max = None
     for row in runs:
+        if v2 and row.get("planner_id") != I14_CONTEXT_PLANNER_V2:
+            continue
         if row.get("final_safety_result") == "passed" and hard_stop_reason(row, ceiling_gb=config.maximum_vram_gb) is None:
             abs_max = row
     proposed = last_stable
+    reason_margin = None
+    if v2 and proposed and proposed.get("vram_peak_gb") is not None:
+        headroom = config.maximum_vram_gb - float(proposed.get("vram_peak_gb") or 0)
+        if headroom < 0.5:
+            with_margin = [
+                row
+                for row in stable
+                if row.get("vram_peak_gb") is not None
+                and (config.maximum_vram_gb - float(row["vram_peak_gb"])) >= 0.5
+            ]
+            if with_margin:
+                proposed = with_margin[-1]
+                reason_margin = (
+                    "Not the largest run below 22.5 GB. Recommended production operating point "
+                    "keeps at least 0.5 GB VRAM headroom under the observed boundary."
+                )
+            else:
+                reason_margin = (
+                    "No v2 run yet has 0.5 GB VRAM headroom; last fully stable v2 run is "
+                    "reported for founder review and is not auto-accepted."
+                )
     next_larger = None
     if proposed:
         for row in runs:
@@ -1116,6 +1185,10 @@ def analyze_gate3(runs: list[dict[str, Any]], *, stop_reason: str, config: Gate3
             f"no genuine performance knee was observed; coarse growth stopped for {stop_reason} "
             f"({boundary_kind}). The recommended point is the last fully stable safety-passing run below that stop."
         )
+    if reason_margin:
+        reason = reason_margin
+    rec_manifest = ((proposed or {}).get("packet_manifest") or {})
+    rec_plan = ((proposed or {}).get("calibration_plan") or {})
     return {
         "stop_reason": stop_reason,
         "boundary_kind": boundary_kind,
@@ -1135,11 +1208,31 @@ def analyze_gate3(runs: list[dict[str, Any]], *, stop_reason: str, config: Gate3
         },
         "recommended": {
             "evidence_token_target": (proposed or {}).get("requested_evidence_tokens"),
+            "estimated_evidence_tokens": (proposed or {}).get("estimated_evidence_tokens"),
             "actual_evidence_tokens": (proposed or {}).get("estimated_evidence_tokens"),
+            "evidence_bytes": rec_manifest.get("evidence_bytes"),
+            "evidence_characters": rec_manifest.get("evidence_characters"),
+            "message_count": rec_manifest.get("message_count"),
+            "conversation_count": rec_manifest.get("conversation_count"),
             "actual_complete_prompt_tokens": (proposed or {}).get("actual_prompt_tokens"),
+            "output_reserve_tokens": OUTPUT_RESERVE_TOKENS,
+            "required_safety_margin_tokens": SAFETY_MARGIN_TOKENS,
             "configured_num_ctx": (proposed or {}).get("configured_num_ctx"),
+            "unused_context_tokens": (
+                None
+                if not proposed or proposed.get("configured_num_ctx") is None or proposed.get("actual_prompt_tokens") is None
+                else int(proposed["configured_num_ctx"]) - int(proposed["actual_prompt_tokens"])
+            ),
+            "planner_id": (proposed or {}).get("planner_id") or rec_plan.get("planner_id"),
+            "predicted_complete_prompt_tokens": rec_plan.get("predicted_complete_prompt_tokens"),
+            "prediction_error_tokens": (
+                None
+                if not proposed or proposed.get("actual_prompt_tokens") is None or rec_plan.get("predicted_complete_prompt_tokens") is None
+                else int(proposed["actual_prompt_tokens"]) - int(rec_plan["predicted_complete_prompt_tokens"])
+            ),
             "execution_id": (proposed or {}).get("execution_id"),
             "reason_below_maximum": reason,
+            "do_not_auto_recommend_largest_below_22_5": True,
             "remaining_vram_headroom_gb": (
                 None
                 if not proposed or proposed.get("vram_peak_gb") is None
@@ -1175,6 +1268,8 @@ def analyze_gate3(runs: list[dict[str, Any]], *, stop_reason: str, config: Gate3
         "configurations_a_and_c_ran": False,
         "i11a1_started": False,
         "ram_pressure": ram,
+        "planner_id": getattr(config, "planner_id", "") or None,
+        "do_not_mix_v1_and_v2_vram_projection": True,
         "estimator_calibration_shortfalls_excluded_from_knee": True,
         "required_safety_margin_tokens": SAFETY_MARGIN_TOKENS,
     }
@@ -1189,6 +1284,8 @@ def write_gate3_package(
     preflight: dict[str, Any],
 ) -> dict[str, Any]:
     results_dir.mkdir(parents=True, exist_ok=True)
+    package_root = planner_artifact_dir(results_dir) if is_v2_config(config) else results_dir
+    package_root.mkdir(parents=True, exist_ok=True)
     snapshot = {
         "config": asdict(config),
         "prompt_status": PROMPT_STATUS,
@@ -1220,21 +1317,21 @@ def write_gate3_package(
         "timeout_seconds": config.timeout_seconds,
         "full_context_ladder_blocked_for_a_and_c": True,
     }
-    (results_dir / "gate3_config.json").write_text(
+    (package_root / "gate3_config.json").write_text(
         json.dumps(snapshot, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n"
     )
-    (results_dir / "stop_decision.json").write_text(
+    (package_root / "stop_decision.json").write_text(
         json.dumps(analysis, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n"
     )
-    (results_dir / "recommended_operating_point.json").write_text(
+    (package_root / "recommended_operating_point.json").write_text(
         json.dumps(analysis.get("recommended") or {}, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
         newline="\n",
     )
-    (results_dir / "host_affinity_preflight.json").write_text(
+    (package_root / "host_affinity_preflight.json").write_text(
         json.dumps(preflight, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n"
     )
-    rewrite_run_tables(results_dir, runs)
+    rewrite_run_tables(results_dir, runs, dest_dir=package_root)
     rec = analysis.get("recommended") or {}
     md = [
         "# Gate 3 Configuration B context-capacity review",
@@ -1258,10 +1355,14 @@ def write_gate3_package(
         "",
         "## Recommended operating point",
         "",
-        f"- Evidence-token target: {rec.get('evidence_token_target')}",
-        f"- Actual evidence size (estimator, labeled estimated): {rec.get('actual_evidence_tokens')}",
+        f"- Requested evidence target: {rec.get('evidence_token_target')}",
+        f"- Estimated evidence tokens (bytes÷4 diagnostic): {rec.get('estimated_evidence_tokens')}",
+        f"- Evidence bytes / characters: {rec.get('evidence_bytes')} / {rec.get('evidence_characters')}",
+        f"- Messages / threads: {rec.get('message_count')} / {rec.get('conversation_count')}",
         f"- Actual complete prompt (`prompt_eval_count`): {rec.get('actual_complete_prompt_tokens')}",
-        f"- Configured `num_ctx`: {rec.get('configured_num_ctx')}",
+        f"- Output reserve / safety margin: {rec.get('output_reserve_tokens')} / {rec.get('required_safety_margin_tokens')}",
+        f"- Configured `num_ctx` / unused context: {rec.get('configured_num_ctx')} / {rec.get('unused_context_tokens')}",
+        f"- Planner: {rec.get('planner_id')} predicted={rec.get('predicted_complete_prompt_tokens')} error={rec.get('prediction_error_tokens')}",
         f"- Remaining VRAM headroom (GB vs 22.5): {rec.get('remaining_vram_headroom_gb')}",
         f"- Remaining context safety headroom (tokens): {rec.get('remaining_context_headroom_tokens')}",
         f"- Why this is below the absolute maximum: {rec.get('reason_below_maximum')}",
@@ -1293,10 +1394,10 @@ def write_gate3_package(
             )
         )
     md.append("")
-    (results_dir / "gate3_summary.md").write_text("\n".join(md) + "\n", encoding="utf-8", newline="\n")
-    (results_dir / "prompt.txt").write_text(prompt_canonical_text() + "\n\n" + SYSTEM_PROMPT, encoding="utf-8")
-    hashes = _hash_tree(results_dir)
-    (results_dir / "HASHES.txt").write_text(
+    (package_root / "gate3_summary.md").write_text("\n".join(md) + "\n", encoding="utf-8", newline="\n")
+    (package_root / "prompt.txt").write_text(prompt_canonical_text() + "\n\n" + SYSTEM_PROMPT, encoding="utf-8")
+    hashes = _hash_tree(package_root)
+    (package_root / "HASHES.txt").write_text(
         "\n".join(f"{digest}  {name}" for name, digest in hashes) + "\n",
         encoding="utf-8",
         newline="\n",
@@ -1365,6 +1466,7 @@ def _build_row(
         "estimation_error_tokens": None if actual is None else int(actual) - estimated_prompt,
         "configured_num_ctx": request.num_ctx,
         "calibration_plan": calibration_plan,
+        "planner_id": (calibration_plan or {}).get("planner_id"),
         "calibration_error_used_for_planning": (calibration_plan or {}).get(
             "max_positive_additive_error_tokens"
         ),
@@ -1505,13 +1607,18 @@ def run_gate3(
     corrected_existing: list[dict[str, Any]] = []
     for prior in existing:
         row = dict(prior)
+        if is_v2_config(config):
+            row = annotate_historical_row(row)
         if (
+            not is_v2_config(config)
+            and (
             row.get("execution_id") == PRESERVED_FALSE_OFFLOAD_EXECUTION_ID
             or (
                 row.get("cpu_offload")
                 and (row.get("vram_peak_gb") or 0) < 4
                 and heartbeat_vram
                 and max(heartbeat_vram) >= 10
+            )
             )
         ):
             correction = correct_false_cpu_offload_row(row, heartbeat_vram=heartbeat_vram)
@@ -1523,9 +1630,39 @@ def run_gate3(
             row["not_a_knee"] = True
             row["not_evidence_exhaustion"] = True
         corrected_existing.append(row)
-    write_same_packet_repeat_sidecar(root, corrected_existing)
+    if not is_v2_config(config):
+        write_same_packet_repeat_sidecar(root, corrected_existing)
+    v2 = is_v2_config(config)
+    if v2:
+        live_identity = current_planner_identity(
+            ollama_version=str((preflight or {}).get("ollama_version") or "0.34.1"),
+            digest=config.digest,
+            require_ollama_family=bool(models_called),
+        )
+        write_preservation_manifest(root)
+        write_supersession_sidecar(root)
+        i14_cal = seed_planner_from_runs(corrected_existing, identity=live_identity)
+        stored = planner_artifact_dir(root) / "planner_state.json"
+        if stored.is_file():
+            prior_state = json.loads(stored.read_text(encoding="utf-8"))
+            mismatch = identity_mismatch(prior_state.get("identity") or {}, live_identity)
+            if mismatch:
+                progress.emit(
+                    f"Planner calibration identity invalid: {mismatch}",
+                    warning="calibration_identity_invalid",
+                    stop_reason="calibration_identity_invalid",
+                )
+                return {
+                    "ok": False,
+                    "gate": "3",
+                    "stop_reason": "calibration_identity_invalid",
+                    "models_called": models_called,
+                    "identity_mismatch": mismatch,
+                }
+        persist_planner(root, i14_cal)
     qwen_cal = seed_qwen_b_calibration_from_runs(corrected_existing)
-    persist_qwen_b_calibration(root, qwen_cal)
+    if not v2:
+        persist_qwen_b_calibration(root, qwen_cal)
     runs: list[dict[str, Any]] = list(corrected_existing)
     last_stable: dict[str, Any] | None = None
     confirmed_streak = 0
@@ -1537,8 +1674,8 @@ def run_gate3(
         elif counts_as_stable_ladder_rung(prior, ceiling_gb=config.maximum_vram_gb):
             confirmed_streak = 0
             last_stable = prior
-            last_packet_ids = tuple((prior.get("packet_manifest") or {}).get("conversation_ids") or ())
-        if is_estimator_calibration_shortfall(prior):
+            last_packet_ids = packet_identity_ids(prior)
+        if not is_v2_config(config) and is_estimator_calibration_shortfall(prior):
             write_preserved_rung_sidecar(
                 root,
                 prior,
@@ -1583,15 +1720,21 @@ def run_gate3(
             evidence_text=packet.text,
         )
         estimated_prompt = estimate_tokens(SYSTEM_PROMPT + "\n" + user)
-        planned = plan_gate3_num_ctx(
-            estimated_prompt_tokens=estimated_prompt,
-            reserved_output_tokens=config.reserved_output_tokens,
-            safety_margin_tokens=config.safety_margin_tokens,
-            calibration=qwen_cal,
-            pin_num_ctx=pin_num_ctx,
-        )
-        if int(planned["num_ctx"]) < estimated_prompt + OUTPUT_RESERVE_TOKENS + SAFETY_MARGIN_TOKENS:
-            raise I11A0Error("planned num_ctx dropped below the 1,500-token safety margin")
+        if v2:
+            planned = i14_cal.snapshot_for_estimate(estimated_prompt)
+            predicted_prompt = int(planned["predicted_complete_prompt_tokens"])
+            if int(planned["num_ctx"]) < predicted_prompt + OUTPUT_RESERVE_TOKENS + SAFETY_MARGIN_TOKENS:
+                raise I11A0Error("planned num_ctx dropped below the 1,500-token safety margin")
+        else:
+            planned = plan_gate3_num_ctx(
+                estimated_prompt_tokens=estimated_prompt,
+                reserved_output_tokens=config.reserved_output_tokens,
+                safety_margin_tokens=config.safety_margin_tokens,
+                calibration=qwen_cal,
+                pin_num_ctx=pin_num_ctx,
+            )
+            if int(planned["num_ctx"]) < estimated_prompt + OUTPUT_RESERVE_TOKENS + SAFETY_MARGIN_TOKENS:
+                raise I11A0Error("planned num_ctx dropped below the 1,500-token safety margin")
         num_ctx = int(planned["num_ctx"])
         request = RunRequest(
             model_tag=spec.tag,
@@ -1692,7 +1835,9 @@ def run_gate3(
                 "classification is a pre-inference planning stop; not a successful_stable rung"
             )
             folder = publish_completed_run(root, row)
-            rewrite_run_tables(root, list(runs) + [row])
+            rewrite_run_tables(
+                root, list(runs) + [row], dest_dir=planner_artifact_dir(root) if v2 else root
+            )
             progress.emit(
                 "Rung skipped before inference because planned context exceeded the verified model limit",
                 phase="artifact_finalization",
@@ -1705,6 +1850,7 @@ def run_gate3(
             runs,
             next_estimated_tokens=packet.estimated_evidence_tokens,
             ceiling_gb=config.maximum_vram_gb,
+            planner_id=I14_CONTEXT_PLANNER_V2 if v2 else None,
         )
         if vram_projection.get("clearly_unsafe"):
             progress.emit(
@@ -1756,7 +1902,9 @@ def run_gate3(
             row["classification"] = "predicted_vram_ceiling"
             row["stable_ladder_rung"] = False
             folder = publish_completed_run(root, row)
-            rewrite_run_tables(root, list(runs) + [row])
+            rewrite_run_tables(
+                root, list(runs) + [row], dest_dir=planner_artifact_dir(root) if v2 else root
+            )
             progress.emit(
                 "Rung skipped before inference because predicted VRAM was clearly unsafe",
                 phase="artifact_finalization",
@@ -1828,8 +1976,19 @@ def run_gate3(
         row["packet_progress_reason"] = extras.get("packet_progress_reason")
         row["calibrated_same_packet_rerun"] = calibrated_same_packet_rerun
         row["supersedes_execution_id"] = supersedes_execution_id
+        if v2:
+            row["planner_id"] = I14_CONTEXT_PLANNER_V2
+            row["experiment_phase"] = I14_CONTEXT_PLANNER_V2
         if phase in {"repeat_proposed", "repeat_next_larger"}:
             row["repeat_kind"] = "operating_point_repeat"
+        if (
+            v2
+            and row.get("actual_prompt_tokens") is not None
+            and planned.get("predicted_complete_prompt_tokens") is not None
+            and int(row["actual_prompt_tokens"]) > int(planned["predicted_complete_prompt_tokens"])
+        ):
+            row["prediction_envelope_exceeded"] = True
+            row["classification"] = "prediction_envelope_exceeded"
         row["stable_ladder_rung"] = counts_as_stable_ladder_rung(
             row, ceiling_gb=config.maximum_vram_gb
         )
@@ -1841,13 +2000,21 @@ def run_gate3(
             "while stable_ladder_rung is false because they are validation copies, not new rungs."
         )
         if row.get("actual_prompt_tokens") is not None:
-            qwen_cal.add_observation(
-                execution_id=str(row["execution_id"]),
-                estimated_complete_prompt_tokens=int(estimated_prompt),
-                actual_complete_prompt_tokens=int(row["actual_prompt_tokens"]),
-                tag=B_TAG,
-            )
-            persist_qwen_b_calibration(root, qwen_cal, planned)
+            if v2:
+                i14_cal.add_observation(
+                    execution_id=str(row["execution_id"]),
+                    diagnostic_complete_prompt_tokens=int(estimated_prompt),
+                    actual_complete_prompt_tokens=int(row["actual_prompt_tokens"]),
+                )
+                persist_planner(root, i14_cal, planned)
+            else:
+                qwen_cal.add_observation(
+                    execution_id=str(row["execution_id"]),
+                    estimated_complete_prompt_tokens=int(estimated_prompt),
+                    actual_complete_prompt_tokens=int(row["actual_prompt_tokens"]),
+                    tag=B_TAG,
+                )
+                persist_qwen_b_calibration(root, qwen_cal, planned)
         folder = publish_completed_run(root, row)
         progress.emit(
             f"Run COMPLETE marker published at {folder}",
@@ -1855,7 +2022,7 @@ def run_gate3(
             most_recent_artifact_directory=str(folder),
         )
         runs_so_far = list(runs) + [row]
-        rewrite_run_tables(root, runs_so_far)
+        rewrite_run_tables(root, runs_so_far, dest_dir=planner_artifact_dir(root) if v2 else root)
         progress.emit(
             (
                 f"Actual prompt tokens={row.get('actual_prompt_tokens')} "
@@ -1896,6 +2063,9 @@ def run_gate3(
             int(last_stable.get("estimated_evidence_tokens") or last_stable.get("requested_evidence_tokens") or 0),
             increment=config.coarse_increment_tokens,
         )
+    if v2:
+        rerun_source = None
+        placement_source = None
     if rerun_source is None and placement_source is not None:
         rerun_source = placement_source
     if rerun_source is not None:
@@ -1931,7 +2101,7 @@ def run_gate3(
         if row.get("packet_sha256") != rerun_source.get("packet_sha256"):
             raise I11A0Error("calibrated rerun packet hash changed")
         runs.append(row)
-        last_packet_ids = packet.evidence_ids
+        last_packet_ids = packet_identity_ids(packet)
         hard = hard_stop_reason(row, ceiling_gb=config.maximum_vram_gb)
         if hard:
             stop_reason = hard
@@ -1969,10 +2139,21 @@ def run_gate3(
         if progress_reason == "evidence_exhausted" and last_packet_ids is not None:
             stop_reason = "evidence_exhausted"
             break
+        inferred_shas = {
+            row.get("packet_sha256")
+            for row in runs
+            if row.get("actual_prompt_tokens") not in {None, ""}
+        }
+        if packet.sha256 in inferred_shas:
+            last_packet_ids = packet_identity_ids(packet)
+            target = next_coarse_grid_target(
+                packet.estimated_evidence_tokens, increment=config.coarse_increment_tokens
+            )
+            continue
         row = measure(packet, phase="coarse", target=target, repetition=1, confirmation=False)
         row["packet_progress_reason"] = packet_row_reason
         runs.append(row)
-        last_packet_ids = packet.evidence_ids
+        last_packet_ids = packet_identity_ids(packet)
         hard = hard_stop_reason(row, ceiling_gb=config.maximum_vram_gb)
         if hard:
             stop_reason = hard
@@ -2028,19 +2209,42 @@ def run_gate3(
         if stop_reason == "three_confirmed_regressions":
             high = int(runs[-1]["requested_evidence_tokens"])
         size = low + config.refinement_increment_tokens
-        last_ref_ids = tuple(last_stable.get("packet_manifest", {}).get("conversation_ids") or ())
+        last_ref_ids = packet_identity_ids(last_stable)
         proposed_row = last_stable
         next_larger_packet = None
+        refinement_gap_note = None
         while size < high:
             packet = packer.packet_for_target(size)
-            if packet.conversation_ids == last_ref_ids:
-                break
+            if packet_identity_ids(packet) == last_ref_ids:
+                size += config.refinement_increment_tokens
+                continue
+            jump = int(packet.estimated_evidence_tokens) - int(
+                last_stable.get("estimated_evidence_tokens") or 0
+            )
+            if jump > config.refinement_increment_tokens:
+                refinement_gap_note = {
+                    "requested_intermediate_tokens": size,
+                    "next_distinct_estimated_evidence_tokens": packet.estimated_evidence_tokens,
+                    "gap_estimated_tokens": jump,
+                    "reason": (
+                        "No distinct nested complete-message packet exists at the 250-token "
+                        "refinement step; the next intact message crosses that gap."
+                    ),
+                }
+                if is_v2_config(config):
+                    gap_path = planner_artifact_dir(root) / "refinement_gap.json"
+                    gap_path.write_text(
+                        json.dumps(refinement_gap_note, indent=2, sort_keys=True) + "\n",
+                        encoding="utf-8",
+                        newline="\n",
+                    )
             row = measure(packet, phase="refinement", target=size, repetition=1, confirmation=False)
             runs.append(row)
-            last_ref_ids = packet.conversation_ids
+            last_ref_ids = packet_identity_ids(packet)
             hard = hard_stop_reason(row, ceiling_gb=config.maximum_vram_gb)
             if hard:
                 stop_reason = hard
+                next_larger_packet = packet
                 break
             verdict = material_regression(row, proposed_row, fraction=config.regression_fraction)
             row["regression_eval"] = verdict
@@ -2050,6 +2254,8 @@ def run_gate3(
             proposed_row = row
             next_larger_packet = None
             size += config.refinement_increment_tokens
+        if refinement_gap_note and next_larger_packet is None:
+            next_larger_packet = packer.packet_for_target(high)
         proposed_packet = packer.packet_for_target(int(proposed_row["requested_evidence_tokens"]))
         progress.emit("Repeat validation started", stage="repeat_validation")
         for rep in range(1, config.repeat_count + 1):
@@ -2068,7 +2274,7 @@ def run_gate3(
         else:
             larger_target = int(proposed_row["requested_evidence_tokens"]) + config.refinement_increment_tokens
             larger_packet = next_larger_packet or packer.packet_for_target(larger_target)
-            if larger_packet.conversation_ids != proposed_packet.conversation_ids:
+            if packet_identity_ids(larger_packet) != packet_identity_ids(proposed_packet):
                 for rep in range(1, config.repeat_count + 1):
                     row = measure(
                         larger_packet,
@@ -2082,6 +2288,12 @@ def run_gate3(
                     if hard:
                         stop_reason = hard
                         break
+            elif refinement_gap_note:
+                progress.emit(
+                    refinement_gap_note["reason"],
+                    warning="no_distinct_intermediate_packet",
+                    stage="refinement",
+                )
 
     analysis = analyze_gate3(runs, stop_reason=stop_reason, config=config)
     progress.emit("Assembling review package", stage="package", phase="package")
@@ -2092,7 +2304,8 @@ def run_gate3(
         config=config,
         preflight=preflight,
     )
-    write_same_packet_repeat_sidecar(root, runs)
+    if not is_v2_config(config):
+        write_same_packet_repeat_sidecar(root, runs)
     final_status = "completed" if stop_reason in {"stage_complete", "evidence_exhausted"} else "stopped"
     progress.emit("Review package completed", stage="package", status=final_status, stop_reason=stop_reason)
     progress.emit(
@@ -2143,7 +2356,8 @@ def run_gate3_live(
     results = Path(results_dir)
     results.mkdir(parents=True, exist_ok=True)
     host_state = capture_clean_ladder_host_state()
-    (results / "host_state_at_start.json").write_text(
+    host_dest = planner_artifact_dir(results) if is_v2_config(config) else results
+    (host_dest / "host_state_at_start.json").write_text(
         json.dumps(host_state, indent=2, sort_keys=True, default=str) + "\n",
         encoding="utf-8",
         newline="\n",
@@ -3385,10 +3599,21 @@ def prove_gate3_offline() -> dict[str, Any]:
         a_blocked = True
     ok("refuses_configuration_a", a_blocked)
 
+    i14_planner = prove_context_planner_v2_offline()
+    ok("i14_context_planner_v2_offline", i14_planner.get("ok") is True, i14_planner.get("problems"))
+    ok("i14_context_planner_v2_models_not_called", i14_planner.get("models_called") is False, None)
+    ok("v2_27k_num_ctx_below_old", (i14_planner.get("plan_27054_packet") or {}).get("num_ctx", 0) < 32768, i14_planner.get("plan_27054_packet"))
+    ok("v2_28k_num_ctx_below_old", (i14_planner.get("plan_28758_packet") or {}).get("num_ctx", 0) < 34560, i14_planner.get("plan_28758_packet"))
+
     return {
         "ok": not problems,
         "checks": checks,
         "problems": problems,
         "models_called": False,
         "gate3_capacity_authorized": GATE3_CAPACITY_AUTHORIZED,
+        "i14_context_planner_v2": {
+            "ok": i14_planner.get("ok"),
+            "plan_27054_num_ctx": (i14_planner.get("plan_27054_packet") or {}).get("num_ctx"),
+            "plan_28758_num_ctx": (i14_planner.get("plan_28758_packet") or {}).get("num_ctx"),
+        },
     }
