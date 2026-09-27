@@ -406,6 +406,11 @@ class HardwareSampler:
             for row in self.samples
             if isinstance(row.get("gpu_utilization_percent"), (int, float))
         ]
+        ram_totals = [
+            float(row["system_ram_total_gb"])
+            for row in self.samples
+            if isinstance(row.get("system_ram_total_gb"), (int, float))
+        ]
         peak_vram = max(vram) if vram else None
         baseline_vram = vram[0] if vram else None
         return {
@@ -416,6 +421,7 @@ class HardwareSampler:
             "ram_baseline_gb": ram[0] if ram else None,
             "ram_peak_gb": max(ram) if ram else None,
             "ram_final_gb": ram[-1] if ram else None,
+            "ram_total_gb": ram_totals[-1] if ram_totals else None,
             "gpu_utilization_peak_percent": max(utils) if utils else None,
             "exceeds_vram_ceiling": bool(peak_vram is not None and peak_vram >= VRAM_CEILING_GB),
             "gpu_resident": bool(

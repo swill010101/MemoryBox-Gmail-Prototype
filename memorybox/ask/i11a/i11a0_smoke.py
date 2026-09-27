@@ -298,6 +298,7 @@ def _chat(
     timeout: int,
     sampler: HardwareSampler,
     packet_role: str = "smoke",
+    on_stream_phase: Any = None,
 ) -> tuple[Measurement, str, list[dict[str, Any]]]:
     user = render_user_message(
         packet_id=f"{request.model_tag}-{request.requested_evidence_tokens}-{request.warm_or_cold}-{request.repetition}",
@@ -338,6 +339,7 @@ def _chat(
     started = time.monotonic()
     sampler.capture("generate_start")
     samples = 0
+    announced_generation = False
     try:
         with urllib.request.urlopen(http, timeout=timeout) as response:
             for raw in response:
@@ -354,6 +356,9 @@ def _chat(
                 piece = message.get("content")
                 if piece:
                     chunks.append(str(piece))
+                    if on_stream_phase is not None and not announced_generation:
+                        announced_generation = True
+                        on_stream_phase("generation")
                 if event.get("done"):
                     sampler.capture("generate_done")
                     break
