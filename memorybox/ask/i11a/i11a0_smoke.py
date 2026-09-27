@@ -297,10 +297,11 @@ def _chat(
     base_url: str,
     timeout: int,
     sampler: HardwareSampler,
-) -> tuple[Measurement, str]:
+    packet_role: str = "smoke",
+) -> tuple[Measurement, str, list[dict[str, Any]]]:
     user = render_user_message(
         packet_id=f"{request.model_tag}-{request.requested_evidence_tokens}-{request.warm_or_cold}-{request.repetition}",
-        packet_role="smoke",
+        packet_role=packet_role,
         time_start=request.time_start,
         time_end=request.time_end,
         partial_context=request.partial_context,

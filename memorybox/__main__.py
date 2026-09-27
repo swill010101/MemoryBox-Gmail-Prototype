@@ -778,6 +778,21 @@ def main(argv: list[str] | None = None) -> int:
     p_i11a0_review.add_argument("--b-dir", required=True)
     p_i11a0_review.add_argument("--c-dir", required=True)
     p_i11a0_review.add_argument("--out", required=True)
+    p_i11a0_gate3 = sub.add_parser(
+        "i11a0-gate3",
+        help="Gate 3 Configuration B context ladder; requires --confirm-benchmark on FlightSim",
+    )
+    p_i11a0_gate3.add_argument("--config", default="docs/ops/i11a0_gate3.b.json")
+    p_i11a0_gate3.add_argument("--confirm-benchmark", action="store_true")
+    p_i11a0_gate3.add_argument(
+        "--chunks-root",
+        default="docs/test-output/trusted-email-review/REVIEW_20260831T120929Z",
+    )
+    p_i11a0_gate3.add_argument("--ollama-base-url", default="http://127.0.0.1:11434")
+    p_i11a0_gate3.add_argument(
+        "--out",
+        default="docs/test-output/i11a0-benchmark/gate3-b",
+    )
     p_prove_email_id = sub.add_parser(
         "prove-person-email-identity",
         help="Person communication-identity expansion acceptance (email)",
@@ -1800,6 +1815,40 @@ def main(argv: list[str] | None = None) -> int:
             c_dir=args.c_dir,
             out_dir=args.out,
         )
+        print(json.dumps(payload, indent=2, default=str), flush=True)
+        return 0 if payload.get("ok") else 1
+
+    if args.cmd == "i11a0-gate3":
+        from memorybox.ask.i11a.i11a0_benchmark import (
+            GateNotAuthorized,
+            I11A0Error,
+            InferenceNotAuthorized,
+        )
+        from memorybox.ask.i11a.i11a0_gate3 import run_gate3_live
+
+        try:
+            payload = run_gate3_live(
+                config_path=args.config,
+                chunks_root=args.chunks_root,
+                results_dir=args.out,
+                ollama_base_url=args.ollama_base_url,
+                confirm_benchmark=bool(args.confirm_benchmark),
+            )
+        except (InferenceNotAuthorized, GateNotAuthorized, I11A0Error) as exc:
+            print(
+                json.dumps(
+                    {
+                        "ok": False,
+                        "error": type(exc).__name__,
+                        "detail": str(exc),
+                        "models_called": False,
+                        "pull_executed": False,
+                    },
+                    indent=2,
+                ),
+                flush=True,
+            )
+            return 2
         print(json.dumps(payload, indent=2, default=str), flush=True)
         return 0 if payload.get("ok") else 1
 

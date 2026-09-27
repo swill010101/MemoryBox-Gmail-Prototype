@@ -32,6 +32,7 @@ from memorybox.ask.i11a.i11a0_prompt import (
 I11A0_VERSION = "0.1-offline"
 INFERENCE_AUTHORIZED = False
 GATE2_SMOKE_AUTHORIZED = True
+GATE3_CAPACITY_AUTHORIZED = True
 TOKEN_ESTIMATOR_ID = "utf8_bytes_plus_3_div_4"
 TOKEN_ESTIMATOR_FORMULA = "max(1, (len(text.encode('utf-8')) + 3) // 4)"
 TOKEN_ESTIMATOR_LABEL = "estimated"
