@@ -7,6 +7,8 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
+import os
+import shutil
 import socket
 import time
 from dataclasses import asdict, dataclass
@@ -41,6 +43,8 @@ from memorybox.ask.i11a.i11a0_benchmark import (
 from memorybox.ask.i11a.i11a0_host import (
     HardwareSampler,
     collect_host_affinity_preflight,
+    read_nvidia_snapshot,
+    read_system_ram,
     require_flightsim_host_affinity,
 )
 from memorybox.ask.i11a.i11a0_prompt import (
@@ -51,6 +55,11 @@ from memorybox.ask.i11a.i11a0_prompt import (
     prompt_canonical_text,
     prompt_sha256,
     render_user_message,
+)
+from memorybox.ask.i11a.i11a0_gate3_progress import (
+    Gate3Progress,
+    atomic_replace_text,
+    format_target,
 )
 from memorybox.ask.i11a.i11a0_smoke import (
     PINNED_B_DIGEST,
@@ -77,6 +86,31 @@ SOURCE_LIMITATION = (
 )
 B_TAG = "qwen3:14b-q8_0"
 B_QUANT = "Q8_0"
+GATE3_CSV_FIELDS = [
+    "execution_id",
+    "test_case_id",
+    "phase",
+    "requested_evidence_tokens",
+    "estimated_evidence_tokens",
+    "actual_prompt_tokens",
+    "estimation_error_tokens",
+    "configured_num_ctx",
+    "final_safety_result",
+    "classification",
+    "elapsed_seconds",
+    "load_seconds",
+    "prompt_eval_seconds",
+    "eval_seconds",
+    "prompt_tokens_per_second",
+    "generation_tokens_per_second",
+    "vram_peak_gb",
+    "ram_peak_gb",
+    "gpu_resident",
+    "cpu_offload",
+    "confirmed_regression",
+    "packet_sha256",
+    "narration_relpath",
+]
 
 
 @dataclass(frozen=True)
@@ -355,6 +389,42 @@ def write_gate3_run_artifacts(folder: Path, row: dict[str, Any]) -> None:
     )
 
 
+def publish_completed_run(results_dir: Path, row: dict[str, Any]) -> Path:
+    dest = Path(results_dir) / "runs" / str(row["execution_id"])
+    staging = dest.with_name(dest.name + ".writing")
+    if staging.exists():
+        shutil.rmtree(staging)
+    write_gate3_run_artifacts(staging, row)
+    (staging / "COMPLETE").write_text("ok\n", encoding="utf-8", newline="\n")
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    if dest.exists():
+        shutil.rmtree(dest)
+    os.replace(staging, dest)
+    return dest
+
+
+def rewrite_run_tables(results_dir: Path, runs: list[dict[str, Any]]) -> None:
+    results_dir = Path(results_dir)
+    import io
+
+    buf = io.StringIO()
+    writer = csv.DictWriter(buf, fieldnames=GATE3_CSV_FIELDS, extrasaction="ignore")
+    writer.writeheader()
+    jsonl_lines: list[str] = []
+    for row in runs:
+        writer.writerow({key: row.get(key) for key in GATE3_CSV_FIELDS})
+        slim = {k: v for k, v in row.items() if k not in {"evidence_text", "narration", "raw_api"}}
+        jsonl_lines.append(json.dumps(slim, sort_keys=True, default=str))
+    csv_text = buf.getvalue()
+    if not csv_text.endswith("\n"):
+        csv_text += "\n"
+    atomic_replace_text(results_dir / "gate3_runs.csv", csv_text)
+    atomic_replace_text(
+        results_dir / "gate3_runs.jsonl",
+        ("\n".join(jsonl_lines) + "\n") if jsonl_lines else "",
+    )
+
+
 def _hash_tree(root: Path) -> list[tuple[str, str]]:
     rows: list[tuple[str, str]] = []
     for path in sorted(item for item in root.rglob("*") if item.is_file()):
@@ -503,40 +573,7 @@ def write_gate3_package(
     (results_dir / "host_affinity_preflight.json").write_text(
         json.dumps(preflight, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n"
     )
-    fieldnames = [
-        "execution_id",
-        "test_case_id",
-        "phase",
-        "requested_evidence_tokens",
-        "estimated_evidence_tokens",
-        "actual_prompt_tokens",
-        "estimation_error_tokens",
-        "configured_num_ctx",
-        "final_safety_result",
-        "classification",
-        "elapsed_seconds",
-        "load_seconds",
-        "prompt_eval_seconds",
-        "eval_seconds",
-        "prompt_tokens_per_second",
-        "generation_tokens_per_second",
-        "vram_peak_gb",
-        "ram_peak_gb",
-        "gpu_resident",
-        "cpu_offload",
-        "confirmed_regression",
-        "packet_sha256",
-        "narration_relpath",
-    ]
-    with (results_dir / "gate3_runs.csv").open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fieldnames, extrasaction="ignore")
-        writer.writeheader()
-        for row in runs:
-            writer.writerow({key: row.get(key) for key in fieldnames})
-    with (results_dir / "gate3_runs.jsonl").open("w", encoding="utf-8", newline="\n") as handle:
-        for row in runs:
-            slim = {k: v for k, v in row.items() if k not in {"evidence_text", "narration", "raw_api"}}
-            handle.write(json.dumps(slim, sort_keys=True, default=str) + "\n")
+    rewrite_run_tables(results_dir, runs)
     rec = analysis.get("recommended") or {}
     md = [
         "# Gate 3 Configuration B context-capacity review",
@@ -727,6 +764,7 @@ def run_gate3(
     metadata: dict[str, Any],
     preflight: dict[str, Any],
     models_called: bool,
+    progress: Gate3Progress | None = None,
 ) -> dict[str, Any]:
     if not GATE3_CAPACITY_AUTHORIZED:
         raise GateNotAuthorized("Gate 3 capacity is not authorized")
@@ -740,6 +778,23 @@ def run_gate3(
         raise I11A0Error("production narrator is not accepted for Gate 3")
     root = Path(results_dir)
     root.mkdir(parents=True, exist_ok=True)
+    if progress is None:
+        import io
+
+        progress = Gate3Progress(
+            root,
+            timeout_seconds=config.timeout_seconds,
+            controller_id="offline-gate3",
+            snapshot=lambda: {},
+            stream=None if models_called else io.StringIO(),
+        )
+    progress.emit(
+        "Gate 3 started",
+        status="starting",
+        stage="preflight",
+        phase="starting",
+        expected_next_action="build_packets",
+    )
     packer = NestedEmailPacker(pieces)
     calibration = CalibrationBook()
     calibration.add(config.tag, config.seed_calibration_error_tokens)
@@ -750,6 +805,19 @@ def run_gate3(
     last_packet_ids: tuple[str, ...] | None = None
 
     def measure(packet: Gate3Packet, *, phase: str, target: int, repetition: int, confirmation: bool) -> dict[str, Any]:
+        progress.emit(
+            f"Building approximately {format_target(target)}-token evidence packet",
+            status="running",
+            stage="confirmation" if confirmation else (
+                "repeat_validation" if phase.startswith("repeat") else (
+                    "refinement" if phase == "refinement" else "coarse"
+                )
+            ),
+            phase="packet_build",
+            current_target_evidence_tokens=target,
+            current_repetition=repetition,
+            expected_next_action="submit_prompt",
+        )
         user = render_user_message(
             packet_id=f"B-{target}-{phase}-{repetition}",
             packet_role="capacity",
@@ -786,8 +854,63 @@ def run_gate3(
             time_end=packet.time_end,
             evidence_ids=packet.evidence_ids,
         )
-        measurement, narration, extras = generate(request, packet)
-        unload_s, unload_info = unload(spec.tag)
+        progress.emit(
+            (
+                f"Packet built: estimated evidence tokens={packet.estimated_evidence_tokens}, "
+                f"bytes={packet.evidence_bytes}, conversations={len(packet.conversation_ids)}, "
+                f"date range={packet.time_start} to {packet.time_end}, planned num_ctx={num_ctx}"
+            ),
+            phase="packet_build",
+            current_estimated_evidence_tokens=packet.estimated_evidence_tokens,
+            current_target_evidence_tokens=target,
+        )
+        if confirmation:
+            progress.emit("Confirmation run started", stage="confirmation", phase="generation")
+        elif phase == "refinement":
+            progress.emit(
+                f"Beginning {format_target(target)} refinement rung",
+                stage="refinement",
+                phase="generation",
+            )
+        elif phase.startswith("repeat"):
+            progress.emit(
+                f"Repeat validation run {repetition} at {format_target(target)}",
+                stage="repeat_validation",
+                phase="generation",
+            )
+        else:
+            progress.emit(
+                f"Beginning {format_target(target)} coarse rung",
+                stage="coarse",
+                phase="generation",
+            )
+        progress.emit("Prompt submitted", phase="generation")
+        progress.start_heartbeat()
+        try:
+            measurement, narration, extras = generate(request, packet)
+        except Exception as exc:
+            progress.fail(str(exc), stop_reason="generation_failed")
+            raise
+        finally:
+            progress.stop_heartbeat()
+        if measurement.timed_out:
+            progress.emit(
+                "Generation timed out after the 1,800-second generation timeout",
+                warning="timed_out",
+                phase="generation",
+                timeout_remaining_seconds=0,
+            )
+        else:
+            progress.emit("Generation completed", phase="generation")
+        progress.emit("Unloading model", phase="unload")
+        progress.start_heartbeat()
+        try:
+            unload_s, unload_info = unload(spec.tag)
+        except Exception as exc:
+            progress.fail(str(exc), stop_reason="unload_failed")
+            raise
+        finally:
+            progress.stop_heartbeat()
         extras = dict(extras)
         extras["unload_seconds"] = unload_s
         extras["unload_recorded"] = unload_info.get("unload_recorded", True)
@@ -814,8 +937,39 @@ def run_gate3(
         )
         if row.get("estimation_error_tokens") is not None:
             calibration.add(config.tag, int(row["estimation_error_tokens"]))
-        folder = root / "runs" / row["execution_id"]
-        write_gate3_run_artifacts(folder, row)
+        folder = publish_completed_run(root, row)
+        runs_so_far = list(runs) + [row]
+        rewrite_run_tables(root, runs_so_far)
+        progress.emit(
+            (
+                f"Actual prompt tokens={row.get('actual_prompt_tokens')} "
+                f"durations load={row.get('load_seconds')} prompt={row.get('prompt_eval_seconds')} "
+                f"gen={row.get('eval_seconds')} elapsed={row.get('elapsed_seconds')} "
+                f"throughput prompt_tps={row.get('prompt_tokens_per_second')} "
+                f"gen_tps={row.get('generation_tokens_per_second')} "
+                f"peak VRAM={row.get('vram_peak_gb')}"
+            ),
+            phase="artifact_finalization",
+            most_recent_classification=row.get("classification"),
+            last_completed_execution_id=row.get("execution_id"),
+            most_recent_artifact_directory=str(folder),
+            completed_run_count=len(runs_so_far),
+        )
+        if row.get("final_safety_result") == "passed":
+            progress.emit("Safety check passed", phase="artifact_finalization")
+        else:
+            progress.emit(
+                f"Safety check failed: {row.get('final_safety_result')}",
+                phase="artifact_finalization",
+                warning=str(row.get("final_safety_result")),
+            )
+        if row.get("vram_released"):
+            progress.emit("VRAM returned to baseline", phase="unload")
+        else:
+            progress.emit("VRAM not returned to baseline", phase="unload", warning="vram_not_released")
+        progress.emit("Rung artifacts finalized", phase="artifact_finalization")
+        if confirmation:
+            progress.emit("Confirmation run completed", stage="confirmation")
         return row
 
     target = config.start_evidence_tokens
@@ -834,6 +988,7 @@ def run_gate3(
         verdict = material_regression(row, last_stable, fraction=config.regression_fraction)
         row["regression_eval"] = verdict
         if verdict["regressed"] and last_stable is not None:
+            progress.emit("Possible regression detected", warning="possible_regression")
             confirm = measure(packet, phase="coarse", target=target, repetition=2, confirmation=True)
             runs.append(confirm)
             hard = hard_stop_reason(confirm, ceiling_gb=config.maximum_vram_gb)
@@ -860,7 +1015,14 @@ def run_gate3(
             break
         target += config.coarse_increment_tokens
 
+    progress.emit(
+        f"Coarse ladder stopped and reason: {stop_reason}",
+        stage="analysis",
+        stop_reason=stop_reason,
+        expected_next_action="refinement_or_repeats",
+    )
     if last_stable and stop_reason != "host_affinity":
+        progress.emit("Refinement started", stage="refinement", phase="packet_build")
         low = int(last_stable["requested_evidence_tokens"])
         high = target if stop_reason != "evidence_exhausted" else low + config.refinement_increment_tokens
         if stop_reason == "three_confirmed_regressions":
@@ -889,6 +1051,7 @@ def run_gate3(
             next_larger_packet = None
             size += config.refinement_increment_tokens
         proposed_packet = packer.packet_for_target(int(proposed_row["requested_evidence_tokens"]))
+        progress.emit("Repeat validation started", stage="repeat_validation")
         for rep in range(1, config.repeat_count + 1):
             row = measure(
                 proposed_packet,
@@ -921,12 +1084,23 @@ def run_gate3(
                         break
 
     analysis = analyze_gate3(runs, stop_reason=stop_reason, config=config)
+    progress.emit("Assembling review package", stage="package", phase="package")
     package = write_gate3_package(
         results_dir=root,
         runs=runs,
         analysis=analysis,
         config=config,
         preflight=preflight,
+    )
+    final_status = "completed" if stop_reason in {"stage_complete", "evidence_exhausted"} else "stopped"
+    progress.emit("Review package completed", stage="package", status=final_status, stop_reason=stop_reason)
+    progress.emit(
+        "Gate 3 stopped for founder review",
+        status=final_status,
+        stage="package",
+        phase="stopped",
+        stop_reason=stop_reason,
+        expected_next_action="founder_review",
     )
     return {
         "ok": True,
@@ -964,29 +1138,61 @@ def run_gate3_live(
         raise InferenceNotAuthorized("Gate 3 requires --confirm-benchmark")
     config = load_gate3_config(config_path)
     results = Path(results_dir)
-    preflight = collect_host_affinity_preflight(
-        ollama_base_url=ollama_base_url,
-        output_path=results,
-        chunks_path=chunks_root,
-        repo=REPO_ROOT,
+    results.mkdir(parents=True, exist_ok=True)
+
+    def live_snapshot() -> dict[str, Any]:
+        nv = read_nvidia_snapshot()
+        ram = read_system_ram()
+        return {
+            "vram_gb": nv.get("memory_used_gb"),
+            "gpu_util": nv.get("utilization_gpu_percent"),
+            "ram_gb": ram.get("used_gb"),
+        }
+
+    controller_id = new_execution_id(
+        test_case="gate3-controller",
+        hostname=socket.gethostname(),
+        started_at_utc=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
     )
-    require_flightsim_host_affinity(preflight)
-    inventory = inventory_installed_models(base_url=ollama_base_url)
-    if inventory.get("pull_executed"):
-        raise I11A0Error("inventory reported a pull")
-    spec = ModelSpec("B", config.tag, config.quantization, config.digest)
-    by_tag = {row["tag"]: row for row in inventory.get("approved") or []}
-    row = by_tag.get(spec.tag) or {}
-    digest = str(row.get("digest") or spec.digest)
-    if digest != PINNED_B_DIGEST:
-        raise I11A0Error(f"installed B digest is not the Gate 2 digest: {digest}")
-    spec = ModelSpec("B", spec.tag, spec.quantization, digest)
-    metadata = require_qwen_smoke_configuration(spec, row)
-    pieces = _pieces_from_review(Path(chunks_root))
+    progress = Gate3Progress(
+        results,
+        timeout_seconds=config.timeout_seconds,
+        controller_id=controller_id,
+        snapshot=live_snapshot,
+    )
+    progress.emit("Gate 3 started", status="starting", stage="preflight", phase="starting")
+    try:
+        progress.emit("Preflight started", stage="preflight", phase="preflight")
+        preflight = collect_host_affinity_preflight(
+            ollama_base_url=ollama_base_url,
+            output_path=results,
+            chunks_path=chunks_root,
+            repo=REPO_ROOT,
+        )
+        require_flightsim_host_affinity(preflight)
+        progress.emit("Preflight passed", stage="preflight", phase="preflight")
+        inventory = inventory_installed_models(base_url=ollama_base_url)
+        if inventory.get("pull_executed"):
+            raise I11A0Error("inventory reported a pull")
+        spec = ModelSpec("B", config.tag, config.quantization, config.digest)
+        by_tag = {row["tag"]: row for row in inventory.get("approved") or []}
+        row = by_tag.get(spec.tag) or {}
+        digest = str(row.get("digest") or spec.digest)
+        if digest != PINNED_B_DIGEST:
+            raise I11A0Error(f"installed B digest is not the Gate 2 digest: {digest}")
+        spec = ModelSpec("B", spec.tag, spec.quantization, digest)
+        progress.emit("Verifying Qwen B", phase="model_verify")
+        metadata = require_qwen_smoke_configuration(spec, row)
+        pieces = _pieces_from_review(Path(chunks_root))
+    except Exception as exc:
+        progress.fail(str(exc), stop_reason="preflight")
+        raise
 
     def generate(request: RunRequest, packet: Gate3Packet) -> tuple[Measurement, str, dict[str, Any]]:
         sampler = HardwareSampler()
+        progress.emit("Waiting for VRAM baseline", phase="baseline_wait")
         sampler.capture("baseline")
+        progress.emit("Loading model", phase="model_load")
         measurement, narration, events = _chat(
             request,
             base_url=ollama_base_url,
@@ -1020,17 +1226,22 @@ def run_gate3_live(
             "ram_final_gb": hardware.get("ram_final_gb"),
         }
 
-    return run_gate3(
-        config=config,
-        pieces=pieces,
-        results_dir=results,
-        generate=generate,
-        unload=unload,
-        spec=spec,
-        metadata=metadata,
-        preflight=preflight,
-        models_called=True,
-    )
+    try:
+        return run_gate3(
+            config=config,
+            pieces=pieces,
+            results_dir=results,
+            generate=generate,
+            unload=unload,
+            spec=spec,
+            metadata=metadata,
+            preflight=preflight,
+            models_called=True,
+            progress=progress,
+        )
+    except Exception as exc:
+        progress.fail(str(exc), stop_reason="failed")
+        raise
 
 
 def _piece(piece_id: str, chars: int, stamp: str = "2009-01-01T00:00:00Z") -> EvidencePiece:
@@ -1045,6 +1256,7 @@ def _piece(piece_id: str, chars: int, stamp: str = "2009-01-01T00:00:00Z") -> Ev
 def prove_gate3_offline() -> dict[str, Any]:
     """Controller proofs with a scripted generate. Does not call a model."""
     from memorybox.ask.i11a.i11a0_host import HostAffinityError
+    import tempfile
 
     checks: list[str] = []
     problems: list[str] = []
@@ -1053,6 +1265,52 @@ def prove_gate3_offline() -> dict[str, Any]:
         checks.append(name)
         if not condition:
             problems.append(f"{name}: {detail}")
+
+    from memorybox.ask.i11a.i11a0_gate3_progress import Gate3Progress, atomic_replace_text
+
+    class _CountStream:
+        def __init__(self) -> None:
+            self.chunks: list[str] = []
+            self.flushes = 0
+
+        def write(self, text: str) -> int:
+            self.chunks.append(text)
+            return len(text)
+
+        def flush(self) -> None:
+            self.flushes += 1
+
+    with tempfile.TemporaryDirectory() as tmp:
+        stream = _CountStream()
+        beats = {"n": 0}
+
+        def snap() -> dict[str, Any]:
+            beats["n"] += 1
+            return {"vram_gb": 11.0, "ram_gb": 20.0, "gpu_util": 40.0}
+
+        prog = Gate3Progress(
+            tmp,
+            timeout_seconds=1800,
+            controller_id="ctrl-test",
+            stream=stream,
+            snapshot=snap,
+            heartbeat_seconds=0.05,
+        )
+        first = prog.emit("Gate 3 started", status="starting", stage="preflight", phase="starting")
+        ok("progress_json_atomic_replace", (Path(tmp) / "gate3_progress.json").is_file() and not (Path(tmp) / "gate3_progress.json.tmp").exists(), None)
+        ok("progress_state_transitions", first["status"] == "starting" and first["stage"] == "preflight", first)
+        ok("progress_flushes_immediately", stream.flushes >= 1 and stream.chunks, stream.flushes)
+        prog.emit("Preflight passed", status="running", stage="preflight", phase="preflight")
+        prog.start_heartbeat()
+        time.sleep(0.18)
+        prog.stop_heartbeat()
+        text = "".join(stream.chunks) + (Path(tmp) / "gate3_progress.log").read_text(encoding="utf-8")
+        ok("heartbeat_emitted_during_wait", "HEARTBEAT" in text and "vram_gb=11" in text, text[-400:])
+        prog.fail("simulated timeout", stop_reason="timed_out")
+        failed = json.loads((Path(tmp) / "gate3_progress.json").read_text(encoding="utf-8"))
+        ok("timeout_failure_updates_progress_files", failed["status"] == "failed" and "failed" in (Path(tmp) / "gate3_progress.log").read_text(encoding="utf-8").lower(), failed)
+        atomic_replace_text(Path(tmp) / "atom.json", '{"ok": true}\n')
+        ok("atomic_status_file_has_no_tmp_left", json.loads((Path(tmp) / "atom.json").read_text(encoding="utf-8"))["ok"] is True and not (Path(tmp) / "atom.json.tmp").exists(), None)
 
     pieces = [_piece(str(i), 3200, f"2009-01-0{i}T00:00:00Z") for i in range(1, 8)]
     packer = NestedEmailPacker(pieces)
@@ -1229,6 +1487,16 @@ def prove_gate3_offline() -> dict[str, Any]:
         ok("no_peggy_scenario", payload["peggy_scenario_started"] is False, None)
         ok("models_not_called_in_offline_prove", payload["models_called"] is False, None)
         ok("summary_mentions_email_only", "SMS" in (Path(tmp) / "exhausted" / "gate3_summary.md").read_text(encoding="utf-8"), None)
+        first_run_dir = next((Path(tmp) / "exhausted" / "runs").iterdir())
+        ok(
+            "completed_run_published_without_writing_suffix",
+            first_run_dir.is_dir()
+            and not str(first_run_dir).endswith(".writing")
+            and (first_run_dir / "COMPLETE").is_file()
+            and (Path(tmp) / "exhausted" / "gate3_runs.csv").is_file()
+            and (Path(tmp) / "exhausted" / "gate3_progress.log").is_file(),
+            first_run_dir,
+        )
         phases = set()
         with (Path(tmp) / "exhausted" / "gate3_runs.jsonl").open(encoding="utf-8") as handle:
             for line in handle:
