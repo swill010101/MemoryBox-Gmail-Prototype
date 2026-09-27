@@ -68,6 +68,7 @@ class Gate3Progress:
         self._thread: threading.Thread | None = None
         self._phase_started = self.monotonic()
         self._peak_vram: float | None = None
+        self.vram_history: list[float] = []
         self.flushes = 0
         self.lines: list[str] = []
         self.state: dict[str, Any] = {
@@ -150,6 +151,7 @@ class Gate3Progress:
             vram = sample.get("vram_gb")
             if vram is not None:
                 self.state["current_vram_gb"] = vram
+                self.vram_history.append(float(vram))
                 peak = self._peak_vram
                 self._peak_vram = vram if peak is None else max(float(peak), float(vram))
                 self.state["peak_vram_gb"] = self._peak_vram

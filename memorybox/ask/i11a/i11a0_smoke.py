@@ -299,6 +299,8 @@ def _chat(
     sampler: HardwareSampler,
     packet_role: str = "smoke",
     on_stream_phase: Any = None,
+    on_first_token: Any = None,
+    keep_alive: Any = 0,
 ) -> tuple[Measurement, str, list[dict[str, Any]]]:
     user = render_user_message(
         packet_id=f"{request.model_tag}-{request.requested_evidence_tokens}-{request.warm_or_cold}-{request.repetition}",
@@ -318,7 +320,7 @@ def _chat(
         ],
         "stream": True,
         "think": False,
-        "keep_alive": "0",
+        "keep_alive": keep_alive,
         "options": {
             "num_ctx": request.num_ctx,
             "num_predict": request.reserved_output_tokens,
@@ -344,8 +346,6 @@ def _chat(
         with urllib.request.urlopen(http, timeout=timeout) as response:
             for raw in response:
                 samples += 1
-                if samples == 1 or samples % 25 == 0:
-                    sampler.capture("generate")
                 line = raw.decode("utf-8", errors="replace").strip()
                 if not line:
                     continue
@@ -356,9 +356,12 @@ def _chat(
                 piece = message.get("content")
                 if piece:
                     chunks.append(str(piece))
-                    if on_stream_phase is not None and not announced_generation:
+                    if not announced_generation:
                         announced_generation = True
-                        on_stream_phase("generation")
+                        if on_stream_phase is not None:
+                            on_stream_phase("generation")
+                        if on_first_token is not None:
+                            on_first_token()
                 if event.get("done"):
                     sampler.capture("generate_done")
                     break

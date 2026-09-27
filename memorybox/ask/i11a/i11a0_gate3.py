@@ -55,6 +55,18 @@ from memorybox.ask.i11a.i11a0_prompt import (
     prompt_sha256,
     render_user_message,
 )
+from memorybox.ask.i11a.i11a0_placement import (
+    FAULTY_CPU_OFFLOAD_EXPRESSION,
+    PRESERVED_FALSE_OFFLOAD_EXECUTION_ID,
+    apply_hardware_correction,
+    correct_false_cpu_offload_row,
+    finalize_hardware,
+    interpret_ollama_placement,
+    needs_gpu_placement_validation,
+    parse_heartbeat_vram,
+    read_ollama_ps,
+    write_hardware_sidecar,
+)
 from memorybox.ask.i11a.i11a0_gate3_progress import (
     Gate3Progress,
     atomic_replace_text,
@@ -329,6 +341,12 @@ def is_estimator_calibration_shortfall(row: dict[str, Any]) -> bool:
 def counts_as_stable_ladder_rung(row: dict[str, Any], *, ceiling_gb: float = VRAM_CEILING_GB) -> bool:
     if is_estimator_calibration_shortfall(row):
         return False
+    if row.get("hardware_classification_superseded"):
+        return False
+    if row.get("placement_status") in {"unknown", "cpu_offload"}:
+        return False
+    if row.get("cpu_offload") or row.get("cpu_spill"):
+        return False
     if row.get("final_safety_result") != "passed":
         return False
     if row.get("confirmed_regression"):
@@ -336,6 +354,8 @@ def counts_as_stable_ladder_rung(row: dict[str, Any], *, ceiling_gb: float = VRA
     if row.get("phase") not in {"coarse", "refinement", "calibrated_rerun"}:
         return False
     if hard_stop_reason(row, ceiling_gb=ceiling_gb) is not None:
+        return False
+    if row.get("placement_status") not in {None, "gpu_resident"}:
         return False
     return True
 
@@ -653,10 +673,19 @@ def hard_stop_reason(row: dict[str, Any], *, ceiling_gb: float = VRAM_CEILING_GB
         return "generation_failed"
     if row.get("context_overflow"):
         return "context_overflow"
-    if row.get("cpu_offload") or row.get("cpu_spill"):
+    placement_status = row.get("placement_status")
+    if placement_status == "unknown":
+        return "placement_unknown"
+    if placement_status == "cpu_offload" or (
+        (row.get("cpu_offload") or row.get("cpu_spill")) and placement_status != "gpu_resident"
+    ):
+        if placement_status != "cpu_offload":
+            return "placement_unknown"
         return "cpu_offload"
-    if row.get("gpu_resident") is False:
+    if row.get("gpu_resident") is False and placement_status not in {"gpu_resident", None}:
         return "gpu_residency_lost"
+    if row.get("gpu_resident") is False and placement_status is None and not row.get("hardware_classification_superseded"):
+        return "placement_unknown"
     peak = row.get("vram_peak_gb")
     if peak is not None and float(peak) >= ceiling_gb:
         return "vram_ceiling"
@@ -1049,6 +1078,10 @@ def _build_row(
         "ram_final_gb": hardware.get("ram_final_gb"),
         "gpu_resident": hardware.get("gpu_resident", measurement.gpu_resident),
         "cpu_offload": hardware.get("cpu_offload", measurement.cpu_spill),
+        "placement_status": hardware.get("placement_status") or extras.get("placement_status"),
+        "placement_reason": hardware.get("placement_reason") or extras.get("placement_reason"),
+        "vram_pre_unload_gb": hardware.get("vram_pre_unload_gb"),
+        "vram_post_unload_gb": hardware.get("vram_post_unload_gb"),
         "cpu_spill": measurement.cpu_spill,
         "timed_out": measurement.timed_out,
         "infrastructure_failure": measurement.infrastructure_failure,
@@ -1142,14 +1175,35 @@ def run_gate3(
     )
     packer = NestedEmailPacker(pieces)
     existing = load_existing_gate3_runs(root)
-    qwen_cal = seed_qwen_b_calibration_from_runs(existing)
+    log_text = ""
+    log_path = root / "gate3_progress.log"
+    if log_path.is_file():
+        log_text = log_path.read_text(encoding="utf-8", errors="replace")
+    heartbeat_vram = parse_heartbeat_vram(log_text)
+    corrected_existing: list[dict[str, Any]] = []
+    for prior in existing:
+        row = dict(prior)
+        if (
+            row.get("execution_id") == PRESERVED_FALSE_OFFLOAD_EXECUTION_ID
+            or (
+                row.get("cpu_offload")
+                and (row.get("vram_peak_gb") or 0) < 4
+                and heartbeat_vram
+                and max(heartbeat_vram) >= 10
+            )
+        ):
+            correction = correct_false_cpu_offload_row(row, heartbeat_vram=heartbeat_vram)
+            write_hardware_sidecar(root, row, correction)
+            row = apply_hardware_correction(row, correction)
+        corrected_existing.append(row)
+    qwen_cal = seed_qwen_b_calibration_from_runs(corrected_existing)
     persist_qwen_b_calibration(root, qwen_cal)
-    runs: list[dict[str, Any]] = list(existing)
+    runs: list[dict[str, Any]] = list(corrected_existing)
     last_stable: dict[str, Any] | None = None
     confirmed_streak = 0
     stop_reason = "stage_complete"
     last_packet_ids: tuple[str, ...] | None = None
-    for prior in existing:
+    for prior in corrected_existing:
         if counts_toward_regression_stop(prior):
             confirmed_streak += 1
         elif counts_as_stable_ladder_rung(prior, ceiling_gb=config.maximum_vram_gb):
@@ -1294,7 +1348,13 @@ def run_gate3(
         extras["unload_recorded"] = unload_info.get("unload_recorded", True)
         extras["vram_released"] = unload_info.get("vram_released")
         hardware = dict(extras.get("hardware") or {})
-        hardware.update({k: v for k, v in unload_info.items() if k.startswith("vram") or k.startswith("ram")})
+        if unload_info.get("vram_final_gb") is not None:
+            hardware["vram_post_unload_gb"] = unload_info.get("vram_final_gb")
+            hardware["vram_final_gb"] = unload_info.get("vram_final_gb")
+        if unload_info.get("vram_pre_unload_gb") is not None:
+            hardware["vram_pre_unload_gb"] = unload_info.get("vram_pre_unload_gb")
+        if unload_info.get("ram_final_gb") is not None:
+            hardware["ram_final_gb"] = unload_info.get("ram_final_gb")
         extras["hardware"] = hardware
         if extras.get("vram_released") is None:
             extras["vram_released"] = _vram_released(
@@ -1362,16 +1422,27 @@ def run_gate3(
         return row
 
     rerun_source = needs_identical_packet_rerun(runs)
+    placement_source = needs_gpu_placement_validation(runs)
     target = config.start_evidence_tokens
     if last_stable is not None:
         target = int(last_stable["requested_evidence_tokens"]) + config.coarse_increment_tokens
+    if rerun_source is None and placement_source is not None:
+        rerun_source = placement_source
     if rerun_source is not None:
-        progress.emit(
-            "Calibrated identical-packet rerun required; original safety-margin-failed run is retained",
-            stage="coarse",
-            phase="calibration",
-            last_completed_execution_id=rerun_source.get("execution_id"),
-        )
+        if rerun_source is placement_source:
+            progress.emit(
+                "Identical-packet GPU-placement validation required at num_ctx=8448; prior executions are retained",
+                stage="coarse",
+                phase="calibration",
+                last_completed_execution_id=rerun_source.get("execution_id"),
+            )
+        else:
+            progress.emit(
+                "Calibrated identical-packet rerun required; original safety-margin-failed run is retained",
+                stage="coarse",
+                phase="calibration",
+                last_completed_execution_id=rerun_source.get("execution_id"),
+            )
         packet = packet_from_saved_row(rerun_source)
         if not packet.text:
             packet = packer.packet_for_target(int(rerun_source.get("requested_evidence_tokens") or target))
@@ -1454,7 +1525,12 @@ def run_gate3(
         stop_reason=stop_reason,
         expected_next_action="refinement_or_repeats",
     )
-    if last_stable and stop_reason not in {"host_affinity", "estimator_recalibration_required"}:
+    if last_stable and stop_reason not in {
+        "host_affinity",
+        "estimator_recalibration_required",
+        "placement_unknown",
+        "cpu_offload",
+    }:
         progress.emit("Refinement started", stage="refinement", phase="packet_build")
         low = int(last_stable["requested_evidence_tokens"])
         high = target if stop_reason != "evidence_exhausted" else low + config.refinement_increment_tokens
@@ -1638,6 +1714,17 @@ def run_gate3_live(
                     phase="generation",
                 )
 
+        loaded_ps: dict[str, Any] = {}
+
+        def on_first_token() -> None:
+            loaded_ps["payload"] = read_ollama_ps(ollama_base_url)
+            loaded_ps["interpreted"] = interpret_ollama_placement(
+                loaded_ps["payload"],
+                tag=spec.tag,
+                digest=spec.digest,
+                queried_while_loaded=True,
+            )
+
         measurement, narration, events = _chat(
             request,
             base_url=ollama_base_url,
@@ -1645,14 +1732,32 @@ def run_gate3_live(
             sampler=sampler,
             packet_role="capacity",
             on_stream_phase=on_stream_phase,
+            on_first_token=on_first_token,
+            keep_alive="2m",
         )
-        hardware = sampler.summary()
+        if "interpreted" not in loaded_ps:
+            loaded_ps["payload"] = read_ollama_ps(ollama_base_url)
+            loaded_ps["interpreted"] = interpret_ollama_placement(
+                loaded_ps["payload"],
+                tag=spec.tag,
+                digest=spec.digest,
+                queried_while_loaded=True,
+            )
+        sampler.capture("pre_unload")
+        pre_unload = sampler.samples[-1].get("vram_used_gb") if sampler.samples else None
+        hardware = finalize_hardware(
+            sampler_hardware=sampler.summary(),
+            heartbeat_vram=list(progress.vram_history),
+            placement=loaded_ps["interpreted"],
+            pre_unload_vram_gb=pre_unload,
+        )
         last = events[-1] if events else {}
         return measurement, narration, {
             "hardware": hardware,
             "last_event": last,
             "raw_api": "".join(json.dumps(event) + "\n" for event in events),
             "telemetry": "".join(json.dumps(sample) + "\n" for sample in hardware.get("samples") or []),
+            "placement_raw": loaded_ps.get("payload"),
         }
 
     def unload(tag: str) -> tuple[float, dict[str, Any]]:
@@ -1665,7 +1770,7 @@ def run_gate3_live(
         return seconds, {
             "unload_recorded": True,
             "vram_final_gb": hardware.get("vram_final_gb"),
-            "vram_baseline_gb": hardware.get("vram_baseline_gb"),
+            "vram_pre_unload_gb": hardware.get("vram_baseline_gb"),
             "vram_released": _vram_released(
                 hardware.get("vram_baseline_gb"), hardware.get("vram_final_gb")
             ),
@@ -1786,9 +1891,27 @@ def prove_gate3_offline() -> dict[str, Any]:
     )
     ok("token_safety_equation_can_fail_a_completed_generation", fail["final_safety_result"] == "failed", fail)
 
-    vram_row = {"vram_peak_gb": 22.5, "final_safety_result": "passed", "gpu_resident": True, "unload_recorded": True, "vram_released": True}
+    vram_row = {
+        "vram_peak_gb": 22.5,
+        "final_safety_result": "passed",
+        "gpu_resident": True,
+        "unload_recorded": True,
+        "vram_released": True,
+        "placement_status": "gpu_resident",
+    }
     ok("vram_ceiling_stops", hard_stop_reason(vram_row) == "vram_ceiling", None)
-    ok("cpu_offload_stops", hard_stop_reason({**vram_row, "vram_peak_gb": 10, "cpu_offload": True}) == "cpu_offload", None)
+    ok(
+        "cpu_offload_stops",
+        hard_stop_reason({**vram_row, "vram_peak_gb": 10, "cpu_offload": True, "placement_status": "cpu_offload"})
+        == "cpu_offload",
+        None,
+    )
+    ok(
+        "unknown_placement_does_not_silently_proceed",
+        hard_stop_reason({**vram_row, "vram_peak_gb": 10, "gpu_resident": False, "cpu_offload": False, "placement_status": "unknown"})
+        == "placement_unknown",
+        None,
+    )
 
     prior = {
         "actual_prompt_tokens": 4000,
@@ -1850,6 +1973,10 @@ def prove_gate3_offline() -> dict[str, Any]:
                 "ram_final_gb": 20.0,
                 "gpu_resident": script.get("gpu_resident", True),
                 "cpu_offload": script.get("cpu_offload", False),
+                "placement_status": script.get("placement_status", "gpu_resident"),
+                "placement_reason": script.get(
+                    "placement_reason", "scripted_full_gpu_assignment"
+                ),
                 "samples": [],
             }
             return measurement, f"narration {request.requested_evidence_tokens}", {
@@ -2160,6 +2287,7 @@ def prove_gate3_offline() -> dict[str, Any]:
                 "ram_total_gb": 31.2,
                 "gpu_resident": True,
                 "cpu_offload": False,
+                "placement_status": "gpu_resident",
                 "samples": [],
             }
             return measurement, f"narration {request.requested_evidence_tokens}", {
@@ -2209,6 +2337,231 @@ def prove_gate3_offline() -> dict[str, Any]:
         ok("calibration_sidecar_written", cal_path.is_file() and (root / "calibration" / f"{PRESERVED_GATE3_EXECUTION_ID}.supersession.json").is_file(), None)
         cal = json.loads(cal_path.read_text(encoding="utf-8"))
         ok("persisted_calibration_is_qwen_b_only", cal.get("uses_configuration_a_or_c") is False and cal.get("tag") == B_TAG, cal)
+
+    from memorybox.ask.i11a.i11a0_placement import (
+        FAULTY_CPU_OFFLOAD_EXPRESSION,
+        PRESERVED_FALSE_OFFLOAD_EXECUTION_ID,
+        aggregate_vram,
+        interpret_ollama_placement,
+    )
+
+    mixed = aggregate_vram(
+        sampler_samples=[
+            {"phase": "baseline", "vram_used_gb": 2.8506},
+            {"phase": "generate_done", "vram_used_gb": 2.8506},
+        ],
+        heartbeat_vram=[17.7549],
+        post_unload_vram_gb=2.8506,
+    )
+    ok("heartbeat_17_75_cannot_become_peak_2_85", abs(float(mixed["vram_peak_gb"]) - 17.7549) < 0.0001, mixed)
+    ok("post_unload_baseline_does_not_replace_in_run_peak", mixed["vram_peak_gb"] != mixed["vram_post_unload_gb"], mixed)
+
+    missing = interpret_ollama_placement({"available": True, "models": []}, tag=B_TAG, queried_while_loaded=False)
+    ok("missing_post_unload_ps_is_not_cpu_offload", missing["cpu_offload"] is False and missing["status"] == "unknown", missing)
+    ram_only = interpret_ollama_placement(None, tag=B_TAG, queried_while_loaded=False)
+    ok("high_system_ram_alone_is_not_cpu_offload", ram_only["cpu_offload"] is False and ram_only["high_system_ram_is_not_cpu_offload"] is True, ram_only)
+    partial = interpret_ollama_placement(
+        {"available": True, "models": [{"name": B_TAG, "size": 16_000_000_000, "size_vram": 4_000_000_000}]},
+        tag=B_TAG,
+        queried_while_loaded=True,
+    )
+    ok("affirmative_partial_placement_is_cpu_offload", partial["cpu_offload"] is True and partial["status"] == "cpu_offload", partial)
+    contradict = interpret_ollama_placement({"available": False, "reason": "timeout"}, tag=B_TAG, queried_while_loaded=True)
+    ok("contradictory_or_missing_placement_is_unknown", contradict["status"] == "unknown" and contradict["cpu_offload"] is False, contradict)
+    ok("faulty_expression_documented", "< 4.0" in FAULTY_CPU_OFFLOAD_EXPRESSION, FAULTY_CPU_OFFLOAD_EXPRESSION)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp) / "placement"
+        root.mkdir()
+        packet = packer.packet_for_target(2000)
+        planted_id = PRESERVED_FALSE_OFFLOAD_EXECUTION_ID
+        planted = {
+            "execution_id": planted_id,
+            "test_case_id": "planted-offload",
+            "phase": "coarse",
+            "requested_evidence_tokens": 2000,
+            "estimated_evidence_tokens": packet.estimated_evidence_tokens,
+            "actual_prompt_tokens": 4391,
+            "estimated_prompt_tokens": 4048,
+            "configured_num_ctx": 8448,
+            "final_safety_result": "passed",
+            "remaining_safety_margin_tokens": 1557,
+            "classification": "successful_stable",
+            "vram_peak_gb": 2.8506,
+            "ram_peak_gb": 28.29,
+            "gpu_resident": False,
+            "cpu_offload": True,
+            "cpu_spill": True,
+            "confirmed_regression": False,
+            "packet_sha256": packet.sha256,
+            "prompt_sha256": prompt_sha256(),
+            "unload_recorded": True,
+            "vram_released": True,
+            "evidence_text": packet.text,
+            "narration": "placement run",
+            "raw_api": "{}\n",
+            "telemetry": "",
+            "hardware": {
+                "vram_peak_gb": 2.8506,
+                "vram_baseline_gb": 2.8506,
+                "cpu_offload": True,
+                "gpu_resident": False,
+                "samples": [
+                    {"phase": "baseline", "vram_used_gb": 2.8506},
+                    {"phase": "generate_done", "vram_used_gb": 2.8506},
+                ],
+            },
+            "host_identity": {"system_ram_total_gb": 31.16},
+            "model_identity": metadata,
+            "packet_manifest": {
+                "conversation_ids": list(packet.conversation_ids),
+                "evidence_ids": list(packet.evidence_ids),
+                "time_start": packet.time_start,
+                "time_end": packet.time_end,
+                "estimated_evidence_tokens": packet.estimated_evidence_tokens,
+                "overshoot": packet.overshoot,
+                "exhausted": packet.exhausted,
+                "evidence_bytes": packet.evidence_bytes,
+                "evidence_characters": packet.evidence_characters,
+                "packet_sha256": packet.sha256,
+            },
+            "token_accounting": {"configured_num_ctx": 8448, "actual_prompt_eval_count": 4391},
+        }
+        dest = root / "runs" / planted_id
+        dest.mkdir(parents=True)
+        (dest / "run_record.json").write_text(json.dumps(planted, indent=2) + "\n", encoding="utf-8")
+        (dest / "telemetry.jsonl").write_text(
+            '{"phase": "baseline", "vram_used_gb": 2.8506}\n{"phase": "generate_done", "vram_used_gb": 2.8506}\n',
+            encoding="utf-8",
+        )
+        (dest / "evidence_packet.txt").write_text(packet.text, encoding="utf-8", newline="\n")
+        (dest / "COMPLETE").write_text("ok\n", encoding="utf-8")
+        (root / "gate3_progress.log").write_text(
+            "2026-09-27T13:51:44Z | HEARTBEAT | phase=ollama_request vram_gb=17.7549 peak_vram_gb=17.7549 gpu_util=0.0 ram_gb=28.29\n",
+            encoding="utf-8",
+        )
+        original_record = (dest / "run_record.json").read_bytes()
+        original_telemetry = (dest / "telemetry.jsonl").read_bytes()
+        captured: list[RunRequest] = []
+
+        def generate_unknown(request: RunRequest, resume_packet: Gate3Packet):
+            captured.append(request)
+            measurement = Measurement(
+                prompt_tokens_per_second=355.0,
+                generation_tokens_per_second=47.0,
+                elapsed_seconds=40.0,
+                peak_vram_gb=17.75,
+                gpu_resident=False,
+                cpu_spill=False,
+                prompt_eval_count=4391,
+            )
+            hardware = {
+                "vram_baseline_gb": 2.85,
+                "vram_peak_gb": 17.75,
+                "vram_final_gb": 2.85,
+                "gpu_resident": False,
+                "cpu_offload": False,
+                "placement_status": "unknown",
+                "placement_reason": "scripted_unknown",
+                "samples": [],
+            }
+            return measurement, "narration", {"hardware": hardware, "last_event": {}, "raw_api": "", "telemetry": ""}
+
+        payload = run_gate3(
+            config=Gate3Config(start_evidence_tokens=2000, coarse_increment_tokens=1000, repeat_count=1),
+            pieces=pieces,
+            results_dir=root,
+            generate=generate_unknown,
+            unload=unload,
+            spec=spec,
+            metadata=metadata,
+            preflight=preflight_ok,
+            models_called=False,
+        )
+        ok("unknown_placement_stops_controller", payload["stop_reason"] == "placement_unknown", payload["stop_reason"])
+        ok("prior_false_offload_artifacts_unmodified", (dest / "run_record.json").read_bytes() == original_record and (dest / "telemetry.jsonl").read_bytes() == original_telemetry, None)
+        ok("hardware_sidecar_written", (root / "calibration" / f"{planted_id}.hardware_supersession.json").is_file(), None)
+        ok("validation_rerun_uses_num_ctx_8448", captured and captured[0].num_ctx == 8448, [req.num_ctx for req in captured])
+        sidecar = json.loads((root / "calibration" / f"{planted_id}.hardware_supersession.json").read_text(encoding="utf-8"))
+        ok("sidecar_does_not_rewrite_original", sidecar.get("original_files_rewritten") is False and sidecar.get("corrected_cpu_offload") is False, sidecar)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp) / "gpuok"
+        root.mkdir()
+        packet = packer.packet_for_target(2000)
+        planted_id = PRESERVED_FALSE_OFFLOAD_EXECUTION_ID
+        dest = root / "runs" / planted_id
+        dest.mkdir(parents=True)
+        planted = {
+            "execution_id": planted_id,
+            "test_case_id": "planted-offload-gpuok",
+            "phase": "coarse",
+            "requested_evidence_tokens": 2000,
+            "estimated_evidence_tokens": packet.estimated_evidence_tokens,
+            "actual_prompt_tokens": 4391,
+            "configured_num_ctx": 8448,
+            "final_safety_result": "passed",
+            "classification": "successful_stable",
+            "vram_peak_gb": 2.8506,
+            "gpu_resident": False,
+            "cpu_offload": True,
+            "packet_sha256": packet.sha256,
+            "unload_recorded": True,
+            "vram_released": True,
+            "evidence_text": packet.text,
+            "hardware": {"vram_peak_gb": 2.8506, "cpu_offload": True, "samples": [{"phase": "baseline", "vram_used_gb": 2.8506}]},
+            "model_identity": metadata,
+            "packet_manifest": {
+                "conversation_ids": list(packet.conversation_ids),
+                "evidence_ids": list(packet.evidence_ids),
+                "time_start": packet.time_start,
+                "time_end": packet.time_end,
+                "estimated_evidence_tokens": packet.estimated_evidence_tokens,
+                "packet_sha256": packet.sha256,
+            },
+        }
+        (dest / "run_record.json").write_text(json.dumps(planted) + "\n", encoding="utf-8")
+        (dest / "evidence_packet.txt").write_text(packet.text, encoding="utf-8")
+        (root / "gate3_progress.log").write_text("HEARTBEAT | vram_gb=17.7549 peak_vram_gb=17.7549\n", encoding="utf-8")
+        captured: list[RunRequest] = []
+
+        def generate_gpu(request: RunRequest, resume_packet: Gate3Packet):
+            captured.append(request)
+            actual = 4391 if request.num_ctx == 8448 else int(estimate_tokens(SYSTEM_PROMPT + resume_packet.text) + 80)
+            measurement = Measurement(
+                prompt_tokens_per_second=300.0,
+                generation_tokens_per_second=45.0,
+                elapsed_seconds=40.0,
+                peak_vram_gb=17.75,
+                gpu_resident=True,
+                cpu_spill=False,
+                prompt_eval_count=actual,
+            )
+            hardware = {
+                "vram_baseline_gb": 2.85,
+                "vram_peak_gb": 17.75,
+                "vram_final_gb": 2.85,
+                "gpu_resident": True,
+                "cpu_offload": False,
+                "placement_status": "gpu_resident",
+                "placement_reason": "size_vram_matches_model_size_while_loaded",
+                "samples": [],
+            }
+            return measurement, "ok", {"hardware": hardware, "last_event": {}, "raw_api": "", "telemetry": ""}
+
+        payload = run_gate3(
+            config=Gate3Config(start_evidence_tokens=2000, coarse_increment_tokens=1000, repeat_count=1),
+            pieces=pieces,
+            results_dir=root,
+            generate=generate_gpu,
+            unload=unload,
+            spec=spec,
+            metadata=metadata,
+            preflight=preflight_ok,
+            models_called=False,
+        )
+        ok("gpu_resident_validation_may_continue_ladder", payload["stop_reason"] in {"evidence_exhausted", "stage_complete"}, payload["stop_reason"])
+        ok("gpu_resident_validation_is_new_execution", planted_id in payload["execution_ids"] and any(eid != planted_id for eid in payload["execution_ids"]), payload["execution_ids"])
 
     a_blocked = False
     try:
