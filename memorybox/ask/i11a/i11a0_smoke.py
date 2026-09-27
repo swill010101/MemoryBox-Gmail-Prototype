@@ -41,6 +41,7 @@ from memorybox.ask.i11a.i11a0_host import (
     require_flightsim_host_affinity,
 )
 from memorybox.ask.i11a.i11a0_prompt import SYSTEM_PROMPT, prompt_acceptance_fields, render_user_message
+from memorybox.ask.i11a.i11a0_prompt_accounting_audit import request_capture_payload
 
 PINNED_C_DIGEST = "08ae7ec1744bd7f451c4a530afb39d2673ad9d07a8369b8a33a3613b41212a68"
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -301,7 +302,7 @@ def _chat(
     on_stream_phase: Any = None,
     on_first_token: Any = None,
     keep_alive: Any = 0,
-) -> tuple[Measurement, str, list[dict[str, Any]]]:
+) -> tuple[Measurement, str, list[dict[str, Any]], dict[str, Any]]:
     user = render_user_message(
         packet_id=f"{request.model_tag}-{request.requested_evidence_tokens}-{request.warm_or_cold}-{request.repetition}",
         packet_role=packet_role,
@@ -328,7 +329,22 @@ def _chat(
             "seed": request.seed,
         },
     }
-    encoded = json.dumps(payload).encode("utf-8")
+    capture = request_capture_payload(
+        system_text=SYSTEM_PROMPT,
+        user_text=user,
+        evidence_text=request.evidence_text or "",
+        options=payload["options"],
+        model_tag=request.model_tag,
+        digest=request.digest,
+        execution_id=str(getattr(request, "execution_id", "") or ""),
+        test_case_id=str(getattr(request, "test_case_id", "") or ""),
+        keep_alive=keep_alive,
+    )
+    capture["request_json"] = payload
+    encoded = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    capture["request_body_sha256"] = hashlib.sha256(encoded).hexdigest()
+    capture["request_body_bytes"] = len(encoded)
+    capture["request_body_contains_full_evidence"] = (request.evidence_text or "") in user
     http = urllib.request.Request(
         f"{base_url.rstrip('/')}/api/chat",
         data=encoded,
@@ -371,7 +387,7 @@ def _chat(
             infrastructure_failure=True,
             peak_vram_gb=sampler.summary().get("vram_peak_gb"),
         )
-        return measurement, f"HTTP {exc.code}", events
+        return measurement, f"HTTP {exc.code}", events, capture
     except (urllib.error.URLError, TimeoutError) as exc:
         measurement = Measurement(
             elapsed_seconds=time.monotonic() - started,
@@ -379,7 +395,7 @@ def _chat(
             timed_out=True,
             peak_vram_gb=sampler.summary().get("vram_peak_gb"),
         )
-        return measurement, str(exc), events
+        return measurement, str(exc), events, capture
     elapsed = time.monotonic() - started
     prompt_n = int(last.get("prompt_eval_count") or 0)
     gen_n = int(last.get("eval_count") or 0)
@@ -403,7 +419,7 @@ def _chat(
         prompt_eval_count=prompt_n or None,
         truncated=bool(last.get("done_reason") == "length"),
     )
-    return measurement, "".join(chunks), events
+    return measurement, "".join(chunks), events, capture
 
 
 def _pieces_from_review(root: Path) -> list[EvidencePiece]:
@@ -556,7 +572,7 @@ def _smoke_one_model(
     }
 
     def runner(request: RunRequest) -> tuple[Measurement, str]:
-        measurement, narration, events = _chat(
+        measurement, narration, events, _capture = _chat(
             request,
             base_url=ollama_base_url,
             timeout=config.timeout_seconds,

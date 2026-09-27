@@ -1,0 +1,50 @@
+{
+  "packet_sha256": "29c9b427c5c897ea5bbac810965b47416131f677cc047b0792d8a812cf2bf848",
+  "executions": [
+    {
+      "execution_id": "1f68131fde8ffadba2224873115fe6a56cfecf7f0898eaebb1e3aea95ea1c783",
+      "requested_target": 46000,
+      "recorded_phase": "refinement",
+      "corrected_role": "refinement_same_packet_cannot_be_next_larger",
+      "packet_sha256": "29c9b427c5c897ea5bbac810965b47416131f677cc047b0792d8a812cf2bf848",
+      "estimated_evidence_tokens": 47164,
+      "num_ctx": 33792,
+      "actual_prompt_eval_count": 16898,
+      "per_execution_vram_peak_gb": 22.4296875,
+      "recorded_vram_peak_gb": 22.544921875,
+      "safety": "passed",
+      "placement": "gpu_resident",
+      "cannot_be_both_proposed_and_next_larger": true
+    },
+    {
+      "execution_id": "9142b07d5abe5eba85ffa83787084a894b35027d475a71154c04d5ce6ba24300",
+      "requested_target": 46000,
+      "recorded_phase": "coarse",
+      "corrected_role": "coarse_or_confirm_same_packet_not_a_distinct_size",
+      "packet_sha256": "29c9b427c5c897ea5bbac810965b47416131f677cc047b0792d8a812cf2bf848",
+      "estimated_evidence_tokens": 47164,
+      "num_ctx": 33792,
+      "actual_prompt_eval_count": 16898,
+      "per_execution_vram_peak_gb": 22.4296875,
+      "recorded_vram_peak_gb": 22.4296875,
+      "safety": "passed",
+      "placement": "gpu_resident",
+      "cannot_be_both_proposed_and_next_larger": true
+    },
+    {
+      "execution_id": "ae771364baa0c10af8ebf38a6ec35c7e746423ba457a06dec9441f8a5cab64f6",
+      "requested_target": 46000,
+      "recorded_phase": "coarse",
+      "corrected_role": "coarse_or_confirm_same_packet_not_a_distinct_size",
+      "packet_sha256": "29c9b427c5c897ea5bbac810965b47416131f677cc047b0792d8a812cf2bf848",
+      "estimated_evidence_tokens": 47164,
+      "num_ctx": 33792,
+      "actual_prompt_eval_count": 16898,
+      "per_execution_vram_peak_gb": 22.439453125,
+      "recorded_vram_peak_gb": 22.439453125,
+      "safety": "passed",
+      "placement": "gpu_resident",
+      "cannot_be_both_proposed_and_next_larger": true
+    }
+  ]
+}

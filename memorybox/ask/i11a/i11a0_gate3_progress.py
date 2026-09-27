@@ -69,6 +69,8 @@ class Gate3Progress:
         self._phase_started = self.monotonic()
         self._peak_vram: float | None = None
         self.vram_history: list[float] = []
+        self.series_vram_history: list[float] = []
+        self._series_peak_vram: float | None = None
         self.flushes = 0
         self.lines: list[str] = []
         self.state: dict[str, Any] = {
@@ -89,6 +91,7 @@ class Gate3Progress:
             "timeout_remaining_seconds": timeout_seconds,
             "current_vram_gb": None,
             "peak_vram_gb": None,
+            "series_peak_vram_gb": None,
             "current_system_ram_gb": None,
             "gpu_utilization_percent": None,
             "most_recent_classification": None,
@@ -100,6 +103,13 @@ class Gate3Progress:
             "heartbeat": False,
             "message": "",
         }
+
+    def begin_execution(self) -> None:
+        """Reset per-execution VRAM. Series-wide peak is retained separately."""
+        with self._lock:
+            self.vram_history = []
+            self._peak_vram = None
+            self.state["peak_vram_gb"] = None
 
     def _write_line(self, line: str) -> None:
         self.lines.append(line)
@@ -152,9 +162,13 @@ class Gate3Progress:
             if vram is not None:
                 self.state["current_vram_gb"] = vram
                 self.vram_history.append(float(vram))
+                self.series_vram_history.append(float(vram))
                 peak = self._peak_vram
                 self._peak_vram = vram if peak is None else max(float(peak), float(vram))
                 self.state["peak_vram_gb"] = self._peak_vram
+                series_peak = self._series_peak_vram
+                self._series_peak_vram = vram if series_peak is None else max(float(series_peak), float(vram))
+                self.state["series_peak_vram_gb"] = self._series_peak_vram
             if sample.get("ram_gb") is not None:
                 self.state["current_system_ram_gb"] = sample.get("ram_gb")
             if sample.get("gpu_util") is not None:

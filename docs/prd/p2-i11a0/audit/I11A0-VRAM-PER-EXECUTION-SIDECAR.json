@@ -1,0 +1,318 @@
+{
+  "audit_id": "prompt_accounting_audit_v1",
+  "recommendation_status": "provisional_invalidated_pending_prompt_accounting_audit",
+  "originals_rewritten": false,
+  "series_wide_maximum_gb": 22.544921875,
+  "corrections": [
+    {
+      "execution_id": "7247d899dcfd99da3211a6409f00247fa8d585c0ba892570c2f1d71ba785886f",
+      "requested_evidence_tokens": 18000,
+      "phase": "coarse",
+      "recorded_vram_peak_gb": 20.9521484375,
+      "per_execution_peak_gb": 20.9521484375,
+      "contaminated": false,
+      "correction_source": "per_execution_hardware_samples_excluding_after_unload",
+      "do_not_rewrite_original": true
+    },
+    {
+      "execution_id": "4fb582776aceacd488cd9b786ee5b3832059d2f3d248768fad8474341f41a34b",
+      "requested_evidence_tokens": 19000,
+      "phase": "coarse",
+      "recorded_vram_peak_gb": 21.0732421875,
+      "per_execution_peak_gb": 21.0732421875,
+      "contaminated": false,
+      "correction_source": "per_execution_hardware_samples_excluding_after_unload",
+      "do_not_rewrite_original": true
+    },
+    {
+      "execution_id": "c75adba4171ed3289c11e54ab2fad20703c772607be9b164decbc7d4e118ed4b",
+      "requested_evidence_tokens": 20000,
+      "phase": "coarse",
+      "recorded_vram_peak_gb": 21.1904296875,
+      "per_execution_peak_gb": 21.1904296875,
+      "contaminated": false,
+      "correction_source": "per_execution_hardware_samples_excluding_after_unload",
+      "do_not_rewrite_original": true
+    },
+    {
+      "execution_id": "533170f93d41ddd72e6006a59e9fd42c7147ee2097be5ea57bf7dd0eb984d8ef",
+      "requested_evidence_tokens": 21000,
+      "phase": "coarse",
+      "recorded_vram_peak_gb": 21.3876953125,
+      "per_execution_peak_gb": 21.3876953125,
+      "contaminated": false,
+      "correction_source": "per_execution_hardware_samples_excluding_after_unload",
+      "do_not_rewrite_original": true
+    },
+    {
+      "execution_id": "a14fc5c430d38b58a47719fc78dfb52c43e0342b719ab9b5f2ea94c5a8a7e8bf",
+      "requested_evidence_tokens": 22000,
+      "phase": "coarse",
+      "recorded_vram_peak_gb": 21.5810546875,
+      "per_execution_peak_gb": 21.5810546875,
+      "contaminated": false,
+      "correction_source": "per_execution_hardware_samples_excluding_after_unload",
+      "do_not_rewrite_original": true
+    },
+    {
+      "execution_id": "8dacd64c9f10b7ce19ab00a552643a2be104f369c0eab6be68a72c8bfe433fb9",
+      "requested_evidence_tokens": 23000,
+      "phase": "coarse",
+      "recorded_vram_peak_gb": 21.7412109375,
+      "per_execution_peak_gb": 21.7412109375,
+      "contaminated": false,
+      "correction_source": "per_execution_hardware_samples_excluding_after_unload",
+      "do_not_rewrite_original": true
+    },
+    {
+      "execution_id": "0b5bbbd3c9628b8269be6dff7d0b19eb9fe86beea091762b112bbaab6a551274",
+      "requested_evidence_tokens": 24000,
+      "phase": "coarse",
+      "recorded_vram_peak_gb": 21.8974609375,
+      "per_execution_peak_gb": 21.8974609375,
+      "contaminated": false,
+      "correction_source": "per_execution_hardware_samples_excluding_after_unload",
+      "do_not_rewrite_original": true
+    },
+    {
+      "execution_id": "12acde59a980148cda323871a8586e8fc14309a33a0c33ab01ceba0fa55cf251",
+      "requested_evidence_tokens": 25000,
+      "phase": "coarse",
+      "recorded_vram_peak_gb": 22.0947265625,
+      "per_execution_peak_gb": 22.0947265625,
+      "contaminated": false,
+      "correction_source": "per_execution_hardware_samples_excluding_after_unload",
+      "do_not_rewrite_original": true
+    },
+    {
+      "execution_id": "2f36ab30da1d42c8649736350e0fbc10469bda25a5d15657a0c4cf2eefe15afd",
+      "requested_evidence_tokens": 26000,
+      "phase": "coarse",
+      "recorded_vram_peak_gb": 22.123046875,
+      "per_execution_peak_gb": 22.123046875,
+      "contaminated": false,
+      "correction_source": "per_execution_hardware_samples_excluding_after_unload",
+      "do_not_rewrite_original": true
+    },
+    {
+      "execution_id": "3bb1f765e92b4d3e660001c99c459a1b41f3ffb515f8257d6d4b4c15dfaa2ff3",
+      "requested_evidence_tokens": 27000,
+      "phase": "repeat_proposed",
+      "recorded_vram_peak_gb": 22.28515625,
+      "per_execution_peak_gb": 22.28515625,
+      "contaminated": false,
+      "correction_source": "per_execution_hardware_samples_excluding_after_unload",
+      "do_not_rewrite_original": true
+    },
+    {
+      "execution_id": "2e03b8c944d77702ef965d00e216640151af5bdfd55e6860de8ef0be566b1663",
+      "requested_evidence_tokens": 28000,
+      "phase": "coarse",
+      "recorded_vram_peak_gb": 20.69921875,
+      "per_execution_peak_gb": 20.69921875,
+      "contaminated": false,
+      "correction_source": "per_execution_hardware_samples_excluding_after_unload",
+      "do_not_rewrite_original": true
+    },
+    {
+      "execution_id": "333421cd4401f55839518cc5106c12d61b8c7e173fc300282099f7c32493334a",
+      "requested_evidence_tokens": 29000,
+      "phase": "coarse",
+      "recorded_vram_peak_gb": 20.779296875,
+      "per_execution_peak_gb": 20.779296875,
+      "contaminated": false,
+      "correction_source": "per_execution_hardware_samples_excluding_after_unload",
+      "do_not_rewrite_original": true
+    },
+    {
+      "execution_id": "58a133c1dc29c7683b076f5f6364ac1549f8af9b821a90a403d488d285873604",
+      "requested_evidence_tokens": 30000,
+      "phase": "coarse",
+      "recorded_vram_peak_gb": 20.8671875,
+      "per_execution_peak_gb": 20.857421875,
+      "contaminated": false,
+      "correction_source": "per_execution_hardware_samples_excluding_after_unload",
+      "do_not_rewrite_original": true
+    },
+    {
+      "execution_id": "e2a26994eb5ddcac68029ad4f02c2de7787c31992fe3c92b9d834675911d6341",
+      "requested_evidence_tokens": 31000,
+      "phase": "coarse",
+      "recorded_vram_peak_gb": 20.935546875,
+      "per_execution_peak_gb": 20.935546875,
+      "contaminated": false,
+      "correction_source": "per_execution_hardware_samples_excluding_after_unload",
+      "do_not_rewrite_original": true
+    },
+    {
+      "execution_id": "7e58ae2ba5e9ccd4bb2774c9c9c71cd6550494018931a37624c59fb3c68ab6b0",
+      "requested_evidence_tokens": 32000,
+      "phase": "coarse",
+      "recorded_vram_peak_gb": 21.0185546875,
+      "per_execution_peak_gb": 21.0185546875,
+      "contaminated": false,
+      "correction_source": "per_execution_hardware_samples_excluding_after_unload",
+      "do_not_rewrite_original": true
+    },
+    {
+      "execution_id": "91c328075741a6754b46aaee8a52adfd0fe6989c1ed7f99249d7c6f008c69268",
+      "requested_evidence_tokens": 33000,
+      "phase": "coarse",
+      "recorded_vram_peak_gb": 21.2138671875,
+      "per_execution_peak_gb": 21.2138671875,
+      "contaminated": false,
+      "correction_source": "per_execution_hardware_samples_excluding_after_unload",
+      "do_not_rewrite_original": true
+    },
+    {
+      "execution_id": "ab3dc452ff15a2ef277c51e185aad3f88aae0265ff1bd1244ca021d1ddb6697b",
+      "requested_evidence_tokens": 34000,
+      "phase": "coarse",
+      "recorded_vram_peak_gb": 21.2138671875,
+      "per_execution_peak_gb": 21.2109375,
+      "contaminated": false,
+      "correction_source": "per_execution_hardware_samples_excluding_after_unload",
+      "do_not_rewrite_original": true
+    },
+    {
+      "execution_id": "d5f26d05fc2c1b2a4fbfc0e8dd604073cbeab3617fe3e04ddca580c93dd9559b",
+      "requested_evidence_tokens": 35000,
+      "phase": "coarse",
+      "recorded_vram_peak_gb": 21.447265625,
+      "per_execution_peak_gb": 21.447265625,
+      "contaminated": false,
+      "correction_source": "per_execution_hardware_samples_excluding_after_unload",
+      "do_not_rewrite_original": true
+    },
+    {
+      "execution_id": "0e61ac8cd6cd3a192906a6f4e6902027d56ef275f800aaf05cab07d3c3fe8e22",
+      "requested_evidence_tokens": 37000,
+      "phase": "coarse",
+      "recorded_vram_peak_gb": 21.525390625,
+      "per_execution_peak_gb": 21.525390625,
+      "contaminated": false,
+      "correction_source": "per_execution_hardware_samples_excluding_after_unload",
+      "do_not_rewrite_original": true
+    },
+    {
+      "execution_id": "6342b7ec749bf57e35c1ba6cadd4cda822e4ee30880387e25c4528b1ba0264e5",
+      "requested_evidence_tokens": 38000,
+      "phase": "coarse",
+      "recorded_vram_peak_gb": 21.603515625,
+      "per_execution_peak_gb": 21.603515625,
+      "contaminated": false,
+      "correction_source": "per_execution_hardware_samples_excluding_after_unload",
+      "do_not_rewrite_original": true
+    },
+    {
+      "execution_id": "f80bd8c3fc334be2300a2c046cded128e313074263f6137764afb61b6fd26f73",
+      "requested_evidence_tokens": 39000,
+      "phase": "coarse",
+      "recorded_vram_peak_gb": 21.68359375,
+      "per_execution_peak_gb": 21.68359375,
+      "contaminated": false,
+      "correction_source": "per_execution_hardware_samples_excluding_after_unload",
+      "do_not_rewrite_original": true
+    },
+    {
+      "execution_id": "7a1d99e6dafd497a12f0a1cf47e86bd01daa2d9f719e3f290c7bb1103695e481",
+      "requested_evidence_tokens": 40000,
+      "phase": "coarse",
+      "recorded_vram_peak_gb": 21.91796875,
+      "per_execution_peak_gb": 21.91796875,
+      "contaminated": false,
+      "correction_source": "per_execution_hardware_samples_excluding_after_unload",
+      "do_not_rewrite_original": true
+    },
+    {
+      "execution_id": "ee5a83c20cb36ef3a2e716edced8c899ef196bd2e3f16523d59aa5ed0e6b1600",
+      "requested_evidence_tokens": 42000,
+      "phase": "coarse",
+      "recorded_vram_peak_gb": 21.958984375,
+      "per_execution_peak_gb": 21.958984375,
+      "contaminated": false,
+      "correction_source": "per_execution_hardware_samples_excluding_after_unload",
+      "do_not_rewrite_original": true
+    },
+    {
+      "execution_id": "49ff29a0eca05c3f3022a31e98a9b92105d7020bae817829499b06e49eb02d4e",
+      "requested_evidence_tokens": 43000,
+      "phase": "coarse",
+      "recorded_vram_peak_gb": 22.1181640625,
+      "per_execution_peak_gb": 22.1181640625,
+      "contaminated": false,
+      "correction_source": "per_execution_hardware_samples_excluding_after_unload",
+      "do_not_rewrite_original": true
+    },
+    {
+      "execution_id": "55c07773ef1850c3087c7847eca04e5415098a272a3b5881367de17c05c38a16",
+      "requested_evidence_tokens": 44000,
+      "phase": "coarse",
+      "recorded_vram_peak_gb": 22.16015625,
+      "per_execution_peak_gb": 22.16015625,
+      "contaminated": false,
+      "correction_source": "per_execution_hardware_samples_excluding_after_unload",
+      "do_not_rewrite_original": true
+    },
+    {
+      "execution_id": "3e81b5099de65d9b761f79ebd95f865949281d7dc37347eb2d88082bd5a1e2e2",
+      "requested_evidence_tokens": 45000,
+      "phase": "coarse",
+      "recorded_vram_peak_gb": 22.3125,
+      "per_execution_peak_gb": 22.3125,
+      "contaminated": false,
+      "correction_source": "per_execution_hardware_samples_excluding_after_unload",
+      "do_not_rewrite_original": true
+    },
+    {
+      "execution_id": "1f68131fde8ffadba2224873115fe6a56cfecf7f0898eaebb1e3aea95ea1c783",
+      "requested_evidence_tokens": 46000,
+      "phase": "refinement",
+      "recorded_vram_peak_gb": 22.544921875,
+      "per_execution_peak_gb": 22.4296875,
+      "contaminated": true,
+      "correction_source": "per_execution_hardware_samples_excluding_after_unload",
+      "do_not_rewrite_original": true
+    },
+    {
+      "execution_id": "849e150827fe99188ef5bfe3334bba6a3848173b5a3a1ce7c87504281465f4ad",
+      "requested_evidence_tokens": 48000,
+      "phase": "coarse",
+      "recorded_vram_peak_gb": 22.544921875,
+      "per_execution_peak_gb": 22.544921875,
+      "contaminated": false,
+      "correction_source": "per_execution_hardware_samples_excluding_after_unload",
+      "do_not_rewrite_original": true
+    },
+    {
+      "execution_id": "9142b07d5abe5eba85ffa83787084a894b35027d475a71154c04d5ce6ba24300",
+      "requested_evidence_tokens": 46000,
+      "phase": "coarse",
+      "recorded_vram_peak_gb": 22.4296875,
+      "per_execution_peak_gb": 22.4296875,
+      "contaminated": false,
+      "correction_source": "per_execution_hardware_samples_excluding_after_unload",
+      "do_not_rewrite_original": true
+    },
+    {
+      "execution_id": "ae771364baa0c10af8ebf38a6ec35c7e746423ba457a06dec9441f8a5cab64f6",
+      "requested_evidence_tokens": 46000,
+      "phase": "coarse",
+      "recorded_vram_peak_gb": 22.439453125,
+      "per_execution_peak_gb": 22.439453125,
+      "contaminated": false,
+      "correction_source": "per_execution_hardware_samples_excluding_after_unload",
+      "do_not_rewrite_original": true
+    },
+    {
+      "execution_id": "5f5f14eeae69c649c171c25e4593c4f3cdae0a72c189628eb508afe3d9c5b4cd",
+      "requested_evidence_tokens": 45000,
+      "phase": "repeat_proposed",
+      "recorded_vram_peak_gb": 22.544921875,
+      "per_execution_peak_gb": 22.3154296875,
+      "contaminated": true,
+      "correction_source": "per_execution_hardware_samples_excluding_after_unload",
+      "do_not_rewrite_original": true
+    }
+  ]
+}

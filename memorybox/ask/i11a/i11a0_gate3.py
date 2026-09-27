@@ -100,6 +100,10 @@ from memorybox.ask.i11a.i11a0_context_planner_v2 import (
     write_preservation_manifest,
     write_supersession_sidecar,
 )
+from memorybox.ask.i11a.i11a0_prompt_accounting_audit import (
+    RECOMMENDATION_INVALID,
+    prove_prompt_accounting_audit_offline,
+)
 
 GATE3_START_EVIDENCE_TOKENS = 2000
 GATE3_COARSE_INCREMENT_TOKENS = 1000
@@ -1007,6 +1011,12 @@ def write_gate3_run_artifacts(folder: Path, row: dict[str, Any]) -> None:
         encoding="utf-8",
         newline="\n",
     )
+    if row.get("request_capture"):
+        (folder / "request_capture.json").write_text(
+            json.dumps(row.get("request_capture") or {}, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+            newline="\n",
+        )
     (folder / "host_identity.json").write_text(
         json.dumps(row.get("host_identity") or {}, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
@@ -1162,6 +1172,15 @@ def analyze_gate3(runs: list[dict[str, Any]], *, stop_reason: str, config: Gate3
             ):
                 next_larger = row
                 break
+        if next_larger:
+            proposed_sha = proposed.get("packet_sha256") or (proposed.get("packet_manifest") or {}).get("packet_sha256")
+            larger_sha = next_larger.get("packet_sha256") or (next_larger.get("packet_manifest") or {}).get("packet_sha256")
+            same_packet = bool(proposed_sha and larger_sha and proposed_sha == larger_sha) or (
+                int(next_larger.get("estimated_evidence_tokens") or 0)
+                == int(proposed.get("estimated_evidence_tokens") or 0)
+            )
+            if same_packet:
+                next_larger = None
     if knee_observed:
         reason = "largest repeatably stable point below the confirmed performance-regression region"
     elif boundary_kind == "vram_boundary":
@@ -1187,6 +1206,20 @@ def analyze_gate3(runs: list[dict[str, Any]], *, stop_reason: str, config: Gate3
         )
     if reason_margin:
         reason = reason_margin
+    accounting_invalid = False
+    inferred_acct = [
+        row
+        for row in runs
+        if row.get("actual_prompt_tokens") not in {None, ""}
+        and row.get("configured_num_ctx") not in {None, ""}
+    ]
+    if inferred_acct and all(
+        int(row["actual_prompt_tokens"]) == int(row["configured_num_ctx"]) // 2 + 2
+        for row in inferred_acct
+    ):
+        accounting_invalid = True
+        proposed = None
+        reason = RECOMMENDATION_INVALID
     rec_manifest = ((proposed or {}).get("packet_manifest") or {})
     rec_plan = ((proposed or {}).get("calibration_plan") or {})
     return {
@@ -1207,6 +1240,7 @@ def analyze_gate3(runs: list[dict[str, Any]], *, stop_reason: str, config: Gate3
             ),
         },
         "recommended": {
+            "status": RECOMMENDATION_INVALID if accounting_invalid or not proposed else "provisional",
             "evidence_token_target": (proposed or {}).get("requested_evidence_tokens"),
             "estimated_evidence_tokens": (proposed or {}).get("estimated_evidence_tokens"),
             "actual_evidence_tokens": (proposed or {}).get("estimated_evidence_tokens"),
@@ -1504,6 +1538,8 @@ def _build_row(
         "confirmed_regression": False,
         "packet_sha256": packet.sha256,
         "prompt_sha256": request.prompt_sha256,
+        "request_capture": extras.get("request_capture"),
+        "series_peak_vram_gb": extras.get("series_peak_vram_gb") or hardware.get("series_peak_vram_gb"),
         "narration_relpath": f"{exec_id}/narration.txt",
         "evidence_text": packet.text,
         "narration": narration,
@@ -2447,6 +2483,7 @@ def run_gate3_live(
         raise
 
     def generate(request: RunRequest, packet: Gate3Packet) -> tuple[Measurement, str, dict[str, Any]]:
+        progress.begin_execution()
         sampler = HardwareSampler()
         progress.emit("Waiting for VRAM baseline", phase="baseline_wait")
         sampler.capture("baseline")
@@ -2474,7 +2511,7 @@ def run_gate3_live(
                 queried_while_loaded=True,
             )
 
-        measurement, narration, events = _chat(
+        measurement, narration, events, request_capture = _chat(
             request,
             base_url=ollama_base_url,
             timeout=config.timeout_seconds,
@@ -2507,6 +2544,8 @@ def run_gate3_live(
             "raw_api": "".join(json.dumps(event) + "\n" for event in events),
             "telemetry": "".join(json.dumps(sample) + "\n" for sample in hardware.get("samples") or []),
             "placement_raw": loaded_ps.get("payload"),
+            "request_capture": request_capture,
+            "series_peak_vram_gb": progress.state.get("series_peak_vram_gb"),
         }
 
     def unload(tag: str) -> tuple[float, dict[str, Any]]:
@@ -3604,6 +3643,74 @@ def prove_gate3_offline() -> dict[str, Any]:
     ok("i14_context_planner_v2_models_not_called", i14_planner.get("models_called") is False, None)
     ok("v2_27k_num_ctx_below_old", (i14_planner.get("plan_27054_packet") or {}).get("num_ctx", 0) < 32768, i14_planner.get("plan_27054_packet"))
     ok("v2_28k_num_ctx_below_old", (i14_planner.get("plan_28758_packet") or {}).get("num_ctx", 0) < 34560, i14_planner.get("plan_28758_packet"))
+    acct = prove_prompt_accounting_audit_offline()
+    ok("prompt_accounting_audit_offline", acct.get("ok") is True, acct.get("problems"))
+    ok("prompt_accounting_audit_models_not_called", acct.get("models_called") is False, None)
+
+    identity_analysis = analyze_gate3(
+        [
+            {
+                "phase": "coarse",
+                "requested_evidence_tokens": 27000,
+                "estimated_evidence_tokens": 27054,
+                "actual_prompt_tokens": 16386,
+                "configured_num_ctx": 32768,
+                "classification": "successful_stable",
+                "final_safety_result": "passed",
+                "gpu_resident": True,
+                "cpu_offload": False,
+                "placement_status": "gpu_resident",
+                "unload_recorded": True,
+                "vram_released": True,
+                "vram_peak_gb": 22.28,
+                "planner_id": I14_CONTEXT_PLANNER_V2,
+                "execution_id": "identity-27k",
+            },
+            {
+                "phase": "refinement",
+                "requested_evidence_tokens": 42000,
+                "estimated_evidence_tokens": 42108,
+                "actual_prompt_tokens": 15362,
+                "configured_num_ctx": 30720,
+                "classification": "successful_stable",
+                "final_safety_result": "passed",
+                "gpu_resident": True,
+                "cpu_offload": False,
+                "placement_status": "gpu_resident",
+                "unload_recorded": True,
+                "vram_released": True,
+                "vram_peak_gb": 22.35,
+                "planner_id": I14_CONTEXT_PLANNER_V2,
+                "execution_id": "identity-42k",
+            },
+        ],
+        stop_reason="evidence_exhausted",
+        config=Gate3Config(planner_id=I14_CONTEXT_PLANNER_V2, experiment_phase=I14_CONTEXT_PLANNER_V2),
+    )
+    ok(
+        "non_monotonic_prompt_eval_invalidates_recommendation",
+        identity_analysis["recommended"]["status"] == RECOMMENDATION_INVALID
+        and identity_analysis["recommended"]["execution_id"] is None,
+        identity_analysis.get("recommended"),
+    )
+
+    prog_vram = Gate3Progress(
+        Path(tempfile.mkdtemp()),
+        timeout_seconds=30,
+        controller_id="vram-reset",
+        stream=_CountStream(),
+        snapshot=lambda: {"vram_gb": 22.5449},
+        heartbeat_seconds=60,
+    )
+    prog_vram.emit("prior run", status="running", stage="generate", phase="generation")
+    ok("series_peak_retained_before_reset", prog_vram.state.get("series_peak_vram_gb") == 22.5449, prog_vram.state)
+    prog_vram.begin_execution()
+    ok("per_execution_peak_resets", prog_vram.state.get("peak_vram_gb") is None, prog_vram.state)
+    ok("series_peak_not_reset_by_begin_execution", prog_vram.state.get("series_peak_vram_gb") == 22.5449, prog_vram.state)
+    prog_vram.snapshot = lambda: {"vram_gb": 21.9}
+    prog_vram.emit("current run", status="running", stage="generate", phase="generation")
+    ok("current_run_peak_is_own_samples", prog_vram.state.get("peak_vram_gb") == 21.9, prog_vram.state)
+    ok("series_peak_still_prior_ceiling", prog_vram.state.get("series_peak_vram_gb") == 22.5449, prog_vram.state)
 
     return {
         "ok": not problems,

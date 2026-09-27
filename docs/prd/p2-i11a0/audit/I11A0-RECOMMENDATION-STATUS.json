@@ -1,0 +1,15 @@
+{
+  "status": "provisional_invalidated_pending_prompt_accounting_audit",
+  "do_not_declare_operating_point": true,
+  "invalidated_targets": [
+    42000,
+    45000,
+    47000,
+    47164,
+    48000
+  ],
+  "coexistence_testing": "not_authorized",
+  "peggy_narrative": "not_authorized",
+  "do_not_recalibrate_v2_against_these_actuals": true,
+  "forty_eight_k_vram_event": "observed_hardware_evidence_not_accepted_as_true_evidence_ceiling"
+}
