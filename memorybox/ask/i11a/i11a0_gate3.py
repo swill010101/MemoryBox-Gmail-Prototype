@@ -92,11 +92,20 @@ GATE3_CONFIRMED_REGRESSION_STOP = 3
 GATE3_TIMEOUT_SECONDS = 1800
 GATE3_SEED_B_ERROR_TOKENS = 85
 SOURCE_LIMITATION = (
+    "Accepted I14 cleaned household-email export for the remaining Qwen B ladder. "
+    "Legacy REVIEW_20260831T120929Z seven chunks are historical hardware evidence only. "
+    "Email only; SMS is not in this source."
+)
+LEGACY_SOURCE_LIMITATION = (
     "Reviewed Peggy email chunks only (REVIEW_20260831T120929Z). "
     "Peggy SMS is not in this Gate 3 source."
 )
 B_TAG = "qwen3:14b-q8_0"
 B_QUANT = "Q8_0"
+QWEN_B_VERIFIED_MAX_CTX = 40960
+VRAM_RELEASE_SETTLE_SECONDS = 8.0
+I14_SOURCE_LABEL = "accepted_i14_cleaned_household_email_export"
+LEGACY_CHUNK_SOURCE_LABEL = "legacy_reviewed_seven_chunks_REVIEW_20260831T120929Z"
 PRESERVED_GATE3_EXECUTION_ID = (
     "c34db0187be477bbc80bc0029419fedcf1366d1b4234ab81afb2b1e526e5db5e"
 )
@@ -149,6 +158,11 @@ class Gate3Packet:
     evidence_characters: int
     partial_context: bool = False
     partial_boundary_note: str = "none"
+    message_count: int = 0
+    partial_thread_ids: tuple[str, ...] = ()
+    included_boundary_evidence_ids: tuple[str, ...] = ()
+    omitted_boundary_evidence_ids: tuple[str, ...] = ()
+    packer_kind: str = "conversation"
 
 
 @dataclass
@@ -171,6 +185,9 @@ class Gate3Config:
     seed: int = 42
     thinking_mode: str = "off"
     seed_calibration_error_tokens: int = GATE3_SEED_B_ERROR_TOKENS
+    source: str = LEGACY_CHUNK_SOURCE_LABEL
+    verified_max_num_ctx: int = QWEN_B_VERIFIED_MAX_CTX
+    experiment_phase: str = "legacy_reviewed_chunks"
 
 
 def load_gate3_config(path: Path | str | None) -> Gate3Config:
@@ -214,11 +231,84 @@ class NestedEmailPacker:
             exhausted=exhausted,
             evidence_bytes=len(text.encode("utf-8")),
             evidence_characters=len(text),
+            packer_kind="conversation",
+            message_count=sum(len(item.turns) for item in chosen),
         )
 
     def remaining_after(self, packet: Gate3Packet) -> int:
         used = set(packet.conversation_ids)
         return sum(1 for piece in self.pieces if piece.piece_id not in used)
+
+
+class NestedMessagePacker:
+    """Prefix-nested complete-message packets. Threads may split between messages."""
+
+    def __init__(self, messages: list[Any]) -> None:
+        self.messages = list(messages)
+
+    def packet_for_target(self, target_tokens: int) -> Gate3Packet:
+        if target_tokens <= 0:
+            raise I11A0Error("evidence target must be positive")
+        if not self.messages:
+            raise I11A0Error("no I14 cleaned messages in freeze")
+        chosen: list[Any] = []
+        running = 0
+        for item in self.messages:
+            if chosen and running >= target_tokens:
+                break
+            chosen.append(item)
+            running = estimate_tokens("\n\n".join(msg.text for msg in chosen))
+        text = "\n\n".join(msg.text for msg in chosen)
+        estimated = estimate_tokens(text)
+        chosen_ids = {msg.evidence_id for msg in chosen}
+        remaining_by_thread: dict[str, list[Any]] = {}
+        for item in self.messages:
+            if item.evidence_id in chosen_ids:
+                continue
+            remaining_by_thread.setdefault(item.thread_display_id, []).append(item)
+        included_threads = {msg.thread_display_id for msg in chosen}
+        partial_threads = sorted(thread for thread in included_threads if thread in remaining_by_thread)
+        included_boundary: list[str] = []
+        omitted_boundary: list[str] = []
+        for thread in partial_threads:
+            last_included = [msg for msg in chosen if msg.thread_display_id == thread][-1]
+            first_omitted = remaining_by_thread[thread][0]
+            included_boundary.append(last_included.evidence_id)
+            omitted_boundary.append(first_omitted.evidence_id)
+        conversation_ids = tuple(dict.fromkeys(msg.thread_display_id for msg in chosen))
+        exhausted = len(chosen) >= len(self.messages)
+        return Gate3Packet(
+            text=text,
+            sha256=_sha256_text(text),
+            estimated_evidence_tokens=estimated,
+            evidence_ids=tuple(msg.evidence_id for msg in chosen),
+            conversation_ids=conversation_ids,
+            time_start=chosen[0].sent_at,
+            time_end=chosen[-1].sent_at,
+            target_tokens=target_tokens,
+            overshoot=estimated > target_tokens,
+            exhausted=exhausted,
+            evidence_bytes=len(text.encode("utf-8")),
+            evidence_characters=len(text),
+            partial_context=bool(partial_threads),
+            partial_boundary_note=(
+                "partial_context=yes included="
+                + ",".join(included_boundary)
+                + " omitted="
+                + ",".join(omitted_boundary)
+                if partial_threads
+                else "none"
+            ),
+            message_count=len(chosen),
+            partial_thread_ids=tuple(partial_threads),
+            included_boundary_evidence_ids=tuple(included_boundary),
+            omitted_boundary_evidence_ids=tuple(omitted_boundary),
+            packer_kind="message",
+        )
+
+    def remaining_after(self, packet: Gate3Packet) -> int:
+        used = set(packet.evidence_ids)
+        return sum(1 for item in self.messages if item.evidence_id not in used)
 
 
 def next_coarse_grid_target(
@@ -241,7 +331,7 @@ def classify_packet_progress(
     previous_ids: tuple[str, ...] | None,
     remaining: int,
 ) -> str:
-    if previous_ids is None or packet.conversation_ids != previous_ids:
+    if previous_ids is None or packet.evidence_ids != previous_ids:
         if remaining <= 0 or packet.exhausted:
             return "grew_to_source_end"
         return "grew"
@@ -254,6 +344,7 @@ def classify_packet_progress(
 
 def should_run_final_repeats(stop_reason: str) -> bool:
     return stop_reason in {
+        "planned_ctx_exceeds_model_limit",
         "three_confirmed_regressions",
         "vram_ceiling",
         "safety_margin_failed",
@@ -314,6 +405,7 @@ class QwenBPromptCalibration:
         calibrated = max(float(additive_plan), float(relative_plan))
         required = calibrated + OUTPUT_RESERVE_TOKENS + SAFETY_MARGIN_TOKENS
         num_ctx = int(math.ceil(required / CTX_ALIGN_TOKENS) * CTX_ALIGN_TOKENS)
+        exceeds = num_ctx > QWEN_B_VERIFIED_MAX_CTX
         return {
             "formula": (
                 "calibrated = max(raw + max_positive_additive_error, "
@@ -336,6 +428,8 @@ class QwenBPromptCalibration:
             "pre_rounding_required_tokens": required,
             "num_ctx": num_ctx,
             "ctx_align_tokens": CTX_ALIGN_TOKENS,
+            "verified_max_num_ctx": QWEN_B_VERIFIED_MAX_CTX,
+            "exceeds_verified_model_context": exceeds,
         }
 
 
@@ -353,13 +447,16 @@ def plan_gate3_num_ctx(
     if safety_margin_tokens != SAFETY_MARGIN_TOKENS:
         raise I11A0Error("Gate 3 safety margin must remain 1500")
     if pin_num_ctx is not None:
+        pinned = int(pin_num_ctx)
         return {
-            "num_ctx": int(pin_num_ctx),
+            "num_ctx": pinned,
             "pinned": True,
             "raw_estimated_complete_prompt_tokens": estimated_prompt_tokens,
             "output_reserve_tokens": reserved_output_tokens,
             "required_safety_margin_tokens": safety_margin_tokens,
             "formula": "pinned_identical_packet_rerun",
+            "verified_max_num_ctx": QWEN_B_VERIFIED_MAX_CTX,
+            "exceeds_verified_model_context": pinned > QWEN_B_VERIFIED_MAX_CTX,
         }
     book = calibration or QwenBPromptCalibration()
     planned = book.snapshot_for_estimate(estimated_prompt_tokens)
@@ -753,6 +850,11 @@ def hard_stop_reason(row: dict[str, Any], *, ceiling_gb: float = VRAM_CEILING_GB
         return "host_affinity"
     if row.get("model_identity_changed"):
         return "model_identity_changed"
+    if row.get("planned_ctx_exceeds_model_limit") or row.get("classification") == "planned_ctx_exceeds_model_limit":
+        return "planned_ctx_exceeds_model_limit"
+    peak = row.get("vram_peak_gb")
+    if peak is not None and float(peak) >= ceiling_gb:
+        return "vram_ceiling"
     if row.get("timed_out") or row.get("classification") == "timed_out":
         return "timed_out"
     if row.get("infrastructure_failure") or row.get("classification") == "infrastructure_failure":
@@ -762,19 +864,14 @@ def hard_stop_reason(row: dict[str, Any], *, ceiling_gb: float = VRAM_CEILING_GB
     placement_status = row.get("placement_status")
     if placement_status == "unknown":
         return "placement_unknown"
-    if placement_status == "cpu_offload" or (
-        (row.get("cpu_offload") or row.get("cpu_spill")) and placement_status != "gpu_resident"
-    ):
-        if placement_status != "cpu_offload":
-            return "placement_unknown"
+    if placement_status == "cpu_offload":
         return "cpu_offload"
+    if (row.get("cpu_offload") or row.get("cpu_spill")) and placement_status != "gpu_resident":
+        return "placement_unknown"
     if row.get("gpu_resident") is False and placement_status not in {"gpu_resident", None}:
         return "gpu_residency_lost"
     if row.get("gpu_resident") is False and placement_status is None and not row.get("hardware_classification_superseded"):
         return "placement_unknown"
-    peak = row.get("vram_peak_gb")
-    if peak is not None and float(peak) >= ceiling_gb:
-        return "vram_ceiling"
     if row.get("final_safety_result") not in {None, "passed"}:
         if is_estimator_calibration_shortfall(row):
             return "estimator_recalibration_required"
@@ -882,6 +979,24 @@ def analyze_gate3(runs: list[dict[str, Any]], *, stop_reason: str, config: Gate3
         if counts_as_stable_ladder_rung(row, ceiling_gb=config.maximum_vram_gb)
     ]
     last_stable = stable[-1] if stable else None
+    first_capacity = None
+    for row in runs:
+        if is_estimator_calibration_shortfall(row):
+            continue
+        if row.get("phase") in {"repeat_proposed", "repeat_next_larger"}:
+            continue
+        if row.get("hardware_classification_superseded"):
+            continue
+        if row.get("not_ladder_progression"):
+            continue
+        reason = hard_stop_reason(row, ceiling_gb=config.maximum_vram_gb)
+        if reason in {None, "estimator_recalibration_required"}:
+            continue
+        first_capacity = row
+        first_capacity_reason = reason
+        break
+    else:
+        first_capacity_reason = None
     failing = [
         row
         for row in runs
@@ -892,9 +1007,14 @@ def analyze_gate3(runs: list[dict[str, Any]], *, stop_reason: str, config: Gate3
             )
             or counts_toward_regression_stop(row)
         )
+        and not is_estimator_calibration_shortfall(row)
+        and not row.get("hardware_classification_superseded")
+        and row.get("phase") not in {"repeat_proposed", "repeat_next_larger"}
     ]
     knee_observed = stop_reason == "three_confirmed_regressions"
     ram = ram_pressure_report(runs)
+    ram["experiment_phase"] = getattr(config, "experiment_phase", None)
+    ram["do_not_mix_with_other_experiment_phases"] = True
     abs_max = None
     for row in runs:
         if row.get("final_safety_result") == "passed" and hard_stop_reason(row, ceiling_gb=config.maximum_vram_gb) is None:
@@ -928,7 +1048,14 @@ def analyze_gate3(runs: list[dict[str, Any]], *, stop_reason: str, config: Gate3
         "knee_observed": knee_observed,
         "knee_range": {
             "last_stable_estimated_evidence_tokens": (last_stable or {}).get("estimated_evidence_tokens"),
-            "first_regression_or_stop": (failing[0] if failing else {}).get("requested_evidence_tokens"),
+            "first_regression_or_stop": (first_capacity or {}).get("estimated_evidence_tokens"),
+            "first_regression_or_stop_requested_tokens": (first_capacity or {}).get("requested_evidence_tokens"),
+            "first_regression_or_stop_reason": first_capacity_reason,
+            "first_regression_or_stop_execution_id": (first_capacity or {}).get("execution_id"),
+            "note": (
+                "Uses estimated evidence tokens of the first non-calibration capacity/performance stop. "
+                "Does not use the first requested_evidence_tokens of a superseded or calibration row."
+            ),
         },
         "recommended": {
             "evidence_token_target": (proposed or {}).get("requested_evidence_tokens"),
@@ -1120,6 +1247,11 @@ def _build_row(
         )
     hardware = extras.get("hardware") or {}
     last = extras.get("last_event") or {}
+    placement_status = hardware.get("placement_status") or extras.get("placement_status")
+    gpu_res = hardware.get("gpu_resident", measurement.gpu_resident)
+    cpu_off = placement_status == "cpu_offload"
+    if gpu_res is True and placement_status in {"gpu_resident", None}:
+        cpu_off = False
     case = test_case_id(request)
     started = extras.get("started_at_utc") or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
     exec_id = extras.get("execution_id") or new_execution_id(
@@ -1167,13 +1299,13 @@ def _build_row(
         "ram_peak_gb": hardware.get("ram_peak_gb"),
         "ram_total_gb": hardware.get("ram_total_gb"),
         "ram_final_gb": hardware.get("ram_final_gb"),
-        "gpu_resident": hardware.get("gpu_resident", measurement.gpu_resident),
-        "cpu_offload": hardware.get("cpu_offload", measurement.cpu_spill),
-        "placement_status": hardware.get("placement_status") or extras.get("placement_status"),
+        "gpu_resident": gpu_res,
+        "cpu_offload": cpu_off,
+        "placement_status": placement_status,
         "placement_reason": hardware.get("placement_reason") or extras.get("placement_reason"),
         "vram_pre_unload_gb": hardware.get("vram_pre_unload_gb"),
         "vram_post_unload_gb": hardware.get("vram_post_unload_gb"),
-        "cpu_spill": measurement.cpu_spill,
+        "cpu_spill": cpu_off,
         "timed_out": measurement.timed_out,
         "infrastructure_failure": measurement.infrastructure_failure,
         "context_overflow": bool(actual and actual > request.num_ctx),
@@ -1203,8 +1335,19 @@ def _build_row(
             "evidence_bytes": packet.evidence_bytes,
             "evidence_characters": packet.evidence_characters,
             "packet_sha256": packet.sha256,
-            "source_limitation": SOURCE_LIMITATION,
+            "source_limitation": SOURCE_LIMITATION if packet.packer_kind == "message" else LEGACY_SOURCE_LIMITATION,
             "truncated": False,
+            "partial_context": packet.partial_context,
+            "partial_boundary_note": packet.partial_boundary_note,
+            "message_count": packet.message_count or len(packet.evidence_ids),
+            "conversation_count": len(packet.conversation_ids),
+            "requested_target": packet.target_tokens,
+            "actual_packed_estimated_tokens": packet.estimated_evidence_tokens,
+            "overshoot": packet.overshoot,
+            "included_boundary_evidence_ids": list(packet.included_boundary_evidence_ids),
+            "omitted_boundary_evidence_ids": list(packet.omitted_boundary_evidence_ids),
+            "partial_thread_ids": list(packet.partial_thread_ids),
+            "packer_kind": packet.packer_kind,
         },
         "token_accounting": {
             "estimator_id": TOKEN_ESTIMATOR_ID,
@@ -1234,6 +1377,7 @@ def run_gate3(
     preflight: dict[str, Any],
     models_called: bool,
     progress: Gate3Progress | None = None,
+    packer: NestedEmailPacker | NestedMessagePacker | None = None,
 ) -> dict[str, Any]:
     if not GATE3_CAPACITY_AUTHORIZED:
         raise GateNotAuthorized("Gate 3 capacity is not authorized")
@@ -1264,7 +1408,7 @@ def run_gate3(
         phase="starting",
         expected_next_action="build_packets",
     )
-    packer = NestedEmailPacker(pieces)
+    packer = packer or NestedEmailPacker(pieces)
     existing = load_existing_gate3_runs(root)
     log_text = ""
     log_path = root / "gate3_progress.log"
@@ -1346,8 +1490,8 @@ def run_gate3(
             packet_role="capacity",
             time_start=packet.time_start,
             time_end=packet.time_end,
-            partial_context=False,
-            partial_boundary_note="none",
+            partial_context=bool(packet.partial_context),
+            partial_boundary_note=packet.partial_boundary_note,
             evidence_ids=list(packet.evidence_ids),
             evidence_text=packet.text,
         )
@@ -1410,6 +1554,66 @@ def run_gate3(
                 stage="coarse",
                 phase="packet_build",
             )
+        if planned.get("exceeds_verified_model_context"):
+            progress.emit(
+                (
+                    f"Planned num_ctx={num_ctx} exceeds verified Qwen B maximum "
+                    f"{QWEN_B_VERIFIED_MAX_CTX}; inference was not started"
+                ),
+                warning="planned_ctx_exceeds_model_limit",
+                phase="packet_build",
+            )
+            extras = {
+                "classification": "planned_ctx_exceeds_model_limit",
+                "planned_ctx_exceeds_model_limit": True,
+                "hardware": {
+                    "gpu_resident": None,
+                    "cpu_offload": False,
+                    "placement_status": None,
+                    "vram_peak_gb": None,
+                },
+                "last_event": {},
+                "unload_seconds": 0,
+                "unload_recorded": True,
+                "vram_released": True,
+            }
+            measurement = Measurement(
+                elapsed_seconds=0,
+                prompt_eval_count=None,
+                timed_out=False,
+                infrastructure_failure=False,
+                gpu_resident=None,
+                cpu_spill=False,
+            )
+            row = _build_row(
+                request=request,
+                packet=packet,
+                measurement=measurement,
+                narration="",
+                extras=extras,
+                phase=phase,
+                spec=spec,
+                metadata=metadata,
+                preflight=preflight,
+                estimated_prompt=estimated_prompt,
+                calibration_plan=planned,
+            )
+            row["planned_ctx_exceeds_model_limit"] = True
+            row["classification"] = "planned_ctx_exceeds_model_limit"
+            row["stable_ladder_rung"] = False
+            row["stable_ladder_rung_vs_pipeline_success"] = (
+                "classification is a pre-inference planning stop; not a successful_stable rung"
+            )
+            folder = publish_completed_run(root, row)
+            rewrite_run_tables(root, list(runs) + [row])
+            progress.emit(
+                "Rung skipped before inference because planned context exceeded the verified model limit",
+                phase="artifact_finalization",
+                most_recent_classification=row.get("classification"),
+                last_completed_execution_id=row.get("execution_id"),
+                most_recent_artifact_directory=str(folder),
+            )
+            return row
         progress.emit(
             "Prompt submitted; Ollama /api/chat stream covers model load, prompt evaluation, and generation until the first token",
             phase="ollama_request",
@@ -1477,6 +1681,13 @@ def run_gate3(
             row["repeat_kind"] = "operating_point_repeat"
         row["stable_ladder_rung"] = counts_as_stable_ladder_rung(
             row, ceiling_gb=config.maximum_vram_gb
+        )
+        row["pipeline_success_classification"] = row.get("classification")
+        row["stable_ladder_rung_vs_pipeline_success"] = (
+            "successful_stable means the pipeline completed with a passing safety margin; "
+            "stable_ladder_rung is true only for coarse/refinement/calibrated_rerun rows that "
+            "also pass placement, VRAM, and regression gates. Repeats may be successful_stable "
+            "while stable_ladder_rung is false because they are validation copies, not new rungs."
         )
         if row.get("actual_prompt_tokens") is not None:
             qwen_cal.add_observation(
@@ -1564,7 +1775,7 @@ def run_gate3(
         if row.get("packet_sha256") != rerun_source.get("packet_sha256"):
             raise I11A0Error("calibrated rerun packet hash changed")
         runs.append(row)
-        last_packet_ids = packet.conversation_ids
+        last_packet_ids = packet.evidence_ids
         hard = hard_stop_reason(row, ceiling_gb=config.maximum_vram_gb)
         if hard:
             stop_reason = hard
@@ -1605,7 +1816,7 @@ def run_gate3(
         row = measure(packet, phase="coarse", target=target, repetition=1, confirmation=False)
         row["packet_progress_reason"] = packet_row_reason
         runs.append(row)
-        last_packet_ids = packet.conversation_ids
+        last_packet_ids = packet.evidence_ids
         hard = hard_stop_reason(row, ceiling_gb=config.maximum_vram_gb)
         if hard:
             stop_reason = hard
@@ -1767,6 +1978,7 @@ def run_gate3_live(
     results_dir: Path | str,
     ollama_base_url: str,
     confirm_benchmark: bool,
+    i14_export: Path | str | None = None,
 ) -> dict[str, Any]:
     if not confirm_benchmark:
         raise InferenceNotAuthorized("Gate 3 requires --confirm-benchmark")
@@ -1817,7 +2029,21 @@ def run_gate3_live(
         spec = ModelSpec("B", spec.tag, spec.quantization, digest)
         progress.emit("Verifying Qwen B", phase="model_verify")
         metadata = require_qwen_smoke_configuration(spec, row)
-        pieces = _pieces_from_review(Path(chunks_root))
+        live_packer: NestedEmailPacker | NestedMessagePacker
+        if i14_export or config.source == I14_SOURCE_LABEL or config.experiment_phase == "i14_cleaned":
+            from memorybox.ask.i11a.i11a0_i14_source import load_frozen_prompt_messages, messages_to_pieces
+
+            export_dir = Path(i14_export or "")
+            if not export_dir.is_dir():
+                raise I11A0Error("i14 cleaned export directory is required for the remaining Gate 3 ladder")
+            messages = load_frozen_prompt_messages(export_dir)
+            live_packer = NestedMessagePacker(messages)
+            pieces = messages_to_pieces(messages)
+        else:
+            raise I11A0Error(
+                "legacy seven-chunk REVIEW_20260831T120929Z source is closed for new ladder runs; "
+                "use --i14-export with the frozen accepted I14 cleaned export"
+            )
     except Exception as exc:
         progress.fail(str(exc), stop_reason="preflight")
         raise
@@ -1889,8 +2115,8 @@ def run_gate3_live(
         sampler = HardwareSampler()
         sampler.capture("before_unload")
         seconds = _unload(ollama_base_url, tag)
-        time.sleep(1.0)
-        sampler.capture("after_unload")
+        time.sleep(VRAM_RELEASE_SETTLE_SECONDS)
+        sampler.capture("after_unload_settled")
         hardware = sampler.summary()
         return seconds, {
             "unload_recorded": True,
@@ -1914,6 +2140,7 @@ def run_gate3_live(
             preflight=preflight,
             models_called=True,
             progress=progress,
+            packer=live_packer,
         )
     except Exception as exc:
         progress.fail(str(exc), stop_reason="failed")
@@ -2006,7 +2233,7 @@ def prove_gate3_offline() -> dict[str, Any]:
         classify_packet_progress(
             target=3000,
             packet=same_at_3000,
-            previous_ids=covered.conversation_ids,
+            previous_ids=covered.evidence_ids,
             remaining=first_big.remaining_after(same_at_3000),
         )
         == "target_already_covered"
@@ -2029,7 +2256,7 @@ def prove_gate3_offline() -> dict[str, Any]:
         classify_packet_progress(
             target=4000,
             packet=only.packet_for_target(4000),
-            previous_ids=only_pkt.conversation_ids,
+            previous_ids=only_pkt.evidence_ids,
             remaining=only.remaining_after(only_pkt),
         )
         == "evidence_exhausted"
@@ -2068,6 +2295,106 @@ def prove_gate3_offline() -> dict[str, Any]:
         "placement_status": "gpu_resident",
     }
     ok("vram_ceiling_stops", hard_stop_reason(vram_row) == "vram_ceiling", None)
+    ok(
+        "vram_ceiling_outranks_infrastructure_failure",
+        hard_stop_reason(
+            {
+                **vram_row,
+                "vram_peak_gb": 22.62109375,
+                "infrastructure_failure": True,
+                "classification": "infrastructure_failure",
+                "configured_num_ctx": 41472,
+            }
+        )
+        == "vram_ceiling",
+        None,
+    )
+    huge = QwenBPromptCalibration()
+    huge.add_observation(
+        execution_id="obs",
+        estimated_complete_prompt_tokens=1000,
+        actual_complete_prompt_tokens=1200,
+    )
+    over_ctx = huge.snapshot_for_estimate(37000)
+    ok(
+        "planned_num_ctx_above_40960_is_rejected",
+        over_ctx["exceeds_verified_model_context"] is True and over_ctx["num_ctx"] > QWEN_B_VERIFIED_MAX_CTX,
+        over_ctx,
+    )
+    ok(
+        "planned_ctx_stop_reason",
+        hard_stop_reason({"classification": "planned_ctx_exceeds_model_limit", "planned_ctx_exceeds_model_limit": True})
+        == "planned_ctx_exceeds_model_limit",
+        None,
+    )
+    from memorybox.ask.i11a.i11a0_i14_source import FrozenMessage, prove_i14_phase1_offline
+
+    i14_msgs = [
+        FrozenMessage("e1", "T-1", "2010-01-01T00:00:00Z", "Author: Peggy George\n\n" + ("a" * 1200), "Peggy George", "p", True),
+        FrozenMessage("e2", "T-1", "2010-01-02T00:00:00Z", "Author: Tom Will\n\n" + ("b" * 1200), "Tom Will", "t", True),
+        FrozenMessage("e3", "T-2", "2010-01-03T00:00:00Z", "Author: Peggy George\n\n" + ("c" * 5000), "Peggy George", "p", True),
+    ]
+    msg_packer = NestedMessagePacker(i14_msgs)
+    m_small = msg_packer.packet_for_target(200)
+    m_next = msg_packer.packet_for_target(m_small.estimated_evidence_tokens + 100)
+    ok("i14_nested_messages_are_prefix", set(m_small.evidence_ids).issubset(m_next.evidence_ids), (m_small.evidence_ids, m_next.evidence_ids))
+    ok("i14_does_not_split_a_message", m_small.evidence_ids[0] == "e1", m_small.evidence_ids)
+    ok("i14_partial_context_flagged_when_thread_continues", m_small.partial_context is True, m_small)
+    ok("i14_records_omitted_boundary", bool(m_small.omitted_boundary_evidence_ids), m_small)
+    covered_msg = msg_packer.packet_for_target(m_small.estimated_evidence_tokens)
+    ok(
+        "i14_covered_target_is_not_exhaustion",
+        classify_packet_progress(
+            target=m_small.estimated_evidence_tokens,
+            packet=covered_msg,
+            previous_ids=m_small.evidence_ids,
+            remaining=msg_packer.remaining_after(covered_msg),
+        )
+        == "target_already_covered",
+        None,
+    )
+    i14_proof = prove_i14_phase1_offline()
+    ok("i14_phase1_offline", i14_proof.get("ok") is True, i14_proof.get("problems"))
+    ok("i14_models_not_called", i14_proof.get("models_called") is False, None)
+
+    knee_fix = analyze_gate3(
+        [
+            {
+                "phase": "coarse",
+                "requested_evidence_tokens": 2000,
+                "estimated_evidence_tokens": 3048,
+                "classification": "successful_pipeline_safety_margin_failed",
+                "final_safety_result": "failed",
+                "remaining_safety_margin_tokens": -258,
+                "gpu_resident": True,
+                "cpu_offload": False,
+                "cpu_spill": False,
+                "placement_status": "gpu_resident",
+                "unload_recorded": True,
+                "vram_released": True,
+            },
+            {
+                "phase": "coarse",
+                "requested_evidence_tokens": 26000,
+                "estimated_evidence_tokens": 33229,
+                "classification": "infrastructure_failure",
+                "infrastructure_failure": True,
+                "vram_peak_gb": 22.62109375,
+                "configured_num_ctx": 41472,
+                "gpu_resident": False,
+                "unload_recorded": True,
+                "vram_released": True,
+                "execution_id": "fddc024a-test",
+            },
+        ],
+        stop_reason="vram_ceiling",
+        config=Gate3Config(),
+    )
+    ok(
+        "knee_first_stop_is_not_2000_requested",
+        knee_fix["knee_range"]["first_regression_or_stop"] == 33229,
+        knee_fix["knee_range"],
+    )
     ok(
         "cpu_offload_stops",
         hard_stop_reason({**vram_row, "vram_peak_gb": 10, "cpu_offload": True, "placement_status": "cpu_offload"})

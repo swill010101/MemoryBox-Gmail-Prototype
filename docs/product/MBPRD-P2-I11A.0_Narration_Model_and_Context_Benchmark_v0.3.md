@@ -1,11 +1,13 @@
 # MBPRD-P2-I11A.0 — Narration Model and Context Benchmark
 
-**Version:** 0.3  
-**Date:** 2026-09-26  
-**Status:** Founder-approved scope; Gate 1 accepted 2026-09-26  
+**Version:** 0.4  
+**Date:** 2026-09-27  
+**Status:** Founder-approved scope; Gate 1 accepted 2026-09-26; Gate 3 legacy-chunk series historical; I14 cleaned source Phase 1 frozen pending founder authorization of the remaining Qwen B ladder  
 **Clerical correction:** section 10.5 says “all three exact model configurations,” per founder direction 2026-09-26.  
 **Roadmap position:** Immediately after accepted P2-I14 and before P2-I15 and resumed P2-I11A narration work  
 **Primary environment:** FlightSim, Windows 11, NVIDIA RTX 4090 24 GB, Ollama
+
+**Source rule (v0.4):** The seven `CHUNK_00N_MODEL_PASTE.txt` files under `REVIEW_20260831T120929Z` established preliminary Qwen B behavior and hardware bounds. They remain historical evidence. The final production-representative operating point will be determined from a frozen accepted-I14 cleaned household-email Communications export. Do not continue the capacity ladder on the legacy seven chunks. Every benchmark result must record source identity, I14 generation/algo version, and file hashes.
 
 ## 1. Purpose
 
@@ -171,13 +173,13 @@ The same quality evidence and prompt must be used for every model comparison.
 
 ### 8.4 Peggy evidence baseline
 
-The benchmark must use the Peggy evidence prepared and reviewed during the earlier I11A work so the founder can recognize the material and judge narrative accuracy. This includes the prior canonical Peggy packet, manifests, source maps, and reviewed chunk artifacts where they remain consistent with the accepted I14 prepared-communications representation.
+I11A.0 is a model/configuration and effective-context benchmark. Narrative packets include both Peggy-authored and Tom-authored messages when both are part of the relevant exchange, with explicit author attribution on every message.
 
-- Preserve and record the exact prior artifact names, generation IDs, and hashes.
-- Use the previously reviewed Peggy chunks as the primary quality-comparison set, including `CHUNK_001_MODEL_PASTE.txt` or its verified I14-equivalent successor.
-- Do not silently rebuild or alter a reviewed comparison chunk. If I14 normalization requires regeneration, retain the prior chunk, create a separately versioned successor, and produce a deterministic difference report.
-- For the capacity ladder, repack the same canonical Peggy evidence into progressively larger conversation-intact token targets. These capacity chunks may differ in size from the old seven chunks, but must derive from the same identified evidence generation and retain complete provenance.
-- Every Qwen/Gemma comparison at a given size must receive the exact same Peggy input artifact and narration prompt.
+- **Historical source:** the founder-reviewed seven chunks (`REVIEW_20260831T120929Z` / `CHUNK_00N_MODEL_PASTE.txt`) remain the hardware/upper-bound series already run. They are noisy (quoted history, boilerplate, tracking links). Do not use them for the remaining Qwen B ladder or as the final operating-point recommendation.
+- **Production-representative source:** a deterministic freeze of the accepted I14 Communications store: `comms_prepared_active_generations` / `i14-prepared-email-v3` / `cleaned_authored_text`. Gallery `left(cleaned_authored_text, N)` previews are not the source.
+- **I11A.1 later:** “Words of a Life” will use only Peggy-authored spoken/cleaned words (Peggy-only inventory / `voice_corpus` subset). I11A.1 is not started by this increment.
+- Preserve source identity, generation UUID, algo version, generation checksum, and export file hashes on every result. Old-source and cleaned-source runs must not be mixed into one regression series.
+- Immutable originals remain in `evidence` (`payload_json`). The benchmark prompt uses cleaned authored text plus provenance pointers, not excluded original noise.
 - Synthetic evidence may be used only for unit or failure-path tests, not for founder quality selection.
 
 ## 9. Run parameters

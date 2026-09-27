@@ -1,4 +1,6 @@
-$ErrorActionPreference = "Stop"
+# LEGACY SOURCE — closed for new Qwen B ladder runs.
+# Historical REVIEW_20260831T120929Z seven-chunk series only.
+# Remaining Gate 3 uses docs/ops/i11a0-gate3-b-i14.ps1 after founder authorization.
 Set-Location C:\memorybox
 git fetch origin
 git checkout cursor/p2-i11a0-offline-harness

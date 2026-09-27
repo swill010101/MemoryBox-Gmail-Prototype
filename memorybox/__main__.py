@@ -791,7 +791,35 @@ def main(argv: list[str] | None = None) -> int:
     p_i11a0_gate3.add_argument("--ollama-base-url", default="http://127.0.0.1:11434")
     p_i11a0_gate3.add_argument(
         "--out",
-        default="docs/test-output/i11a0-benchmark/gate3-b",
+        default="docs/test-output/i11a0-benchmark/gate3-b-i14",
+    )
+    p_i11a0_gate3.add_argument(
+        "--i14-export",
+        default="docs/test-output/i11a0-benchmark/i14-cleaned-export",
+        help="Frozen accepted I14 cleaned export directory (email only)",
+    )
+    p_i11a0_freeze = sub.add_parser(
+        "i11a0-freeze-i14",
+        help="Read-only freeze of accepted I14 Peggy-related cleaned email; no model call",
+    )
+    p_i11a0_freeze.add_argument(
+        "--out",
+        default="docs/test-output/i11a0-benchmark/i14-cleaned-export",
+    )
+    p_i11a0_freeze.add_argument(
+        "--legacy-root",
+        default="",
+        help="Optional REVIEW_20260831T120929Z directory for comparison",
+    )
+    p_i11a0_freeze.add_argument(
+        "--confirm-readonly-export",
+        default="",
+        help="Must equal freeze-accepted-i14-cleaned-email-readonly",
+    )
+    p_i11a0_freeze.add_argument(
+        "--dsn",
+        default="",
+        help="Optional DSN; otherwise MEMORYBOX_DATABASE_URL or FlightSim default",
     )
     p_prove_email_id = sub.add_parser(
         "prove-person-email-identity",
@@ -1700,6 +1728,84 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(payload, indent=2, default=str), flush=True)
         return 0 if payload.get("ok") else 1
 
+    if args.cmd == "i11a0-freeze-i14":
+        import re
+        from pathlib import Path
+
+        import psycopg
+        from psycopg.rows import dict_row
+
+        from memorybox.ask.i11a.i11a0_i14_source import (
+            CONFIRM_FREEZE,
+            compare_legacy_and_i14,
+            freeze_accepted_i14_export,
+        )
+
+        dsn = (args.dsn or os.environ.get("MEMORYBOX_DATABASE_URL") or "").strip()
+        if not dsn:
+            dsn = "postgresql://memorybox:memorybox@flightsim:5432/memorybox"
+        print(
+            json.dumps(
+                {
+                    "connecting": True,
+                    "dsn_redacted": re.sub(r":([^:@/]+)@", ":****@", dsn),
+                    "models_called": False,
+                }
+            ),
+            flush=True,
+        )
+        with psycopg.connect(dsn, row_factory=dict_row, connect_timeout=30, autocommit=True) as conn:
+            conn.execute("SET default_transaction_read_only = on")
+            conn.execute("SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY")
+            payload = freeze_accepted_i14_export(
+                conn,
+                args.out,
+                confirm=str(args.confirm_readonly_export or ""),
+            )
+        legacy = args.legacy_root or None
+        if not legacy:
+            candidate = Path(
+                r"\\flightsim\FlightSim User\MemoryBox\docs\test-output\trusted-email-review\REVIEW_20260831T120929Z"
+            )
+            if candidate.is_dir():
+                legacy = str(candidate)
+        comparison = compare_legacy_and_i14(legacy_root=legacy, i14_export_dir=args.out)
+        from memorybox.ask.i11a.i11a0_gate3 import NestedMessagePacker
+        from memorybox.ask.i11a.i11a0_i14_source import load_frozen_prompt_messages
+
+        messages = load_frozen_prompt_messages(args.out)
+        packer = NestedMessagePacker(messages)
+        demo_targets = [18000, 19000, 20000, 21000, 22000]
+        demo = []
+        for target in demo_targets:
+            packet = packer.packet_for_target(target)
+            demo.append(
+                {
+                    "requested_target": target,
+                    "actual_packed_estimated_tokens": packet.estimated_evidence_tokens,
+                    "overshoot": packet.overshoot,
+                    "message_count": packet.message_count,
+                    "conversation_count": len(packet.conversation_ids),
+                    "partial_context": packet.partial_context,
+                    "included_boundary_evidence_ids": list(packet.included_boundary_evidence_ids),
+                    "omitted_boundary_evidence_ids": list(packet.omitted_boundary_evidence_ids),
+                    "exhausted": packet.exhausted,
+                    "remaining_messages": packer.remaining_after(packet),
+                    "packet_sha256": packet.sha256,
+                    "evidence_id_count": len(packet.evidence_ids),
+                }
+            )
+        demo_path = Path(args.out) / "PACKET_DEMO.json"
+        demo_path.write_text(json.dumps({"models_called": False, "packets": demo}, indent=2) + "\n", encoding="utf-8")
+        cmp_path = Path(args.out) / "COMPARISON.json"
+        cmp_path.write_text(json.dumps(comparison, indent=2) + "\n", encoding="utf-8")
+        payload["comparison_path"] = str(cmp_path)
+        payload["models_called"] = False
+        payload["pull_executed"] = False
+        payload["i11a1_started"] = False
+        print(json.dumps({"ok": payload.get("ok"), "manifest": payload.get("manifest"), "comparison": comparison, "packet_demo": demo, "models_called": False, "pull_executed": False, "i11a1_started": False}, indent=2, default=str), flush=True)
+        return 0 if payload.get("ok") else 1
+
     if args.cmd == "prove-i11a0-benchmark":
         from memorybox.ask.i11a0_acceptance import run_prove_i11a0_benchmark
 
@@ -1833,6 +1939,7 @@ def main(argv: list[str] | None = None) -> int:
                 results_dir=args.out,
                 ollama_base_url=args.ollama_base_url,
                 confirm_benchmark=bool(args.confirm_benchmark),
+                i14_export=getattr(args, "i14_export", None),
             )
         except (InferenceNotAuthorized, GateNotAuthorized, I11A0Error) as exc:
             print(

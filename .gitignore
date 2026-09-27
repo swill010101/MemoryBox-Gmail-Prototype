@@ -24,6 +24,8 @@ docs/test-output/i11a0-benchmark/gate2-review-package/**
 docs/test-output/i11a0-benchmark/gate2-review-package.xlsx
 docs/test-output/i11a0-benchmark/gate2-review-package.preview.md
 docs/test-output/i11a0-benchmark/gate3-b/**
+docs/test-output/i11a0-benchmark/gate3-b-i14/**
+docs/test-output/i11a0-benchmark/i14-cleaned-export/**
 
 # Archive: track Takeout originals + checksums only (zips via Git LFS).
 # Ignore other archive contents if added later.
