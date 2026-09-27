@@ -216,6 +216,55 @@ class NestedEmailPacker:
             evidence_characters=len(text),
         )
 
+    def remaining_after(self, packet: Gate3Packet) -> int:
+        used = set(packet.conversation_ids)
+        return sum(1 for piece in self.pieces if piece.piece_id not in used)
+
+
+def next_coarse_grid_target(
+    actual_estimated_tokens: int,
+    *,
+    increment: int = GATE3_COARSE_INCREMENT_TOKENS,
+) -> int:
+    """Smallest positive 1,000-token grid point strictly greater than the actual packet."""
+    actual = int(actual_estimated_tokens)
+    step = int(increment)
+    if step <= 0:
+        raise I11A0Error("coarse increment must be positive")
+    return ((max(actual, 0) // step) + 1) * step
+
+
+def classify_packet_progress(
+    *,
+    target: int,
+    packet: Gate3Packet,
+    previous_ids: tuple[str, ...] | None,
+    remaining: int,
+) -> str:
+    if previous_ids is None or packet.conversation_ids != previous_ids:
+        if remaining <= 0 or packet.exhausted:
+            return "grew_to_source_end"
+        return "grew"
+    if remaining <= 0 or packet.exhausted:
+        return "evidence_exhausted"
+    if int(target) <= int(packet.estimated_evidence_tokens):
+        return "target_already_covered"
+    return "no_packet_growth"
+
+
+def should_run_final_repeats(stop_reason: str) -> bool:
+    return stop_reason in {
+        "three_confirmed_regressions",
+        "vram_ceiling",
+        "safety_margin_failed",
+        "cpu_offload",
+        "gpu_residency_lost",
+        "unload_failed",
+        "unload_vram_not_released",
+        "timed_out",
+        "evidence_exhausted",
+    }
+
 
 @dataclass
 class QwenBPromptCalibration:
@@ -460,6 +509,43 @@ def write_preserved_rung_sidecar(root: Path, row: dict[str, Any], planned: dict[
     cal_dir = root / "calibration"
     cal_dir.mkdir(parents=True, exist_ok=True)
     path = cal_dir / f"{row.get('execution_id')}.supersession.json"
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n")
+    return path
+
+
+def write_same_packet_repeat_sidecar(root: Path, runs: list[dict[str, Any]]) -> Path | None:
+    repeats = [
+        {
+            "execution_id": row.get("execution_id"),
+            "phase": row.get("phase"),
+            "requested_evidence_tokens": row.get("requested_evidence_tokens"),
+            "estimated_evidence_tokens": row.get("estimated_evidence_tokens"),
+            "packet_sha256": row.get("packet_sha256"),
+            "label": "same_packet_validation_repeat",
+            "not_a_ladder": True,
+            "not_a_knee": True,
+            "not_evidence_exhaustion": True,
+            "not_refinement_around_a_knee": True,
+            "original_files_rewritten": False,
+        }
+        for row in runs
+        if row.get("phase") in {"repeat_proposed", "repeat_next_larger"}
+        or row.get("repeat_kind") == "same_packet_validation_repeat"
+    ]
+    if not repeats:
+        return None
+    payload = {
+        "supersession_kind": "same_packet_repeat_label",
+        "original_files_rewritten": False,
+        "repeats": repeats,
+        "note": (
+            "These executions reused one packet size. They are validation/repeatability "
+            "data, not coarse ladder rungs, not a knee, and not proof that evidence is exhausted."
+        ),
+    }
+    cal_dir = root / "calibration"
+    cal_dir.mkdir(parents=True, exist_ok=True)
+    path = cal_dir / "same_packet_repeats.classification.json"
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n")
     return path
 
@@ -986,6 +1072,11 @@ def write_gate3_package(
             f"- `{row.get('execution_id')}` phase={row.get('phase')} target={row.get('requested_evidence_tokens')} "
             f"actual_prompt={row.get('actual_prompt_tokens')} safety={row.get('final_safety_result')} "
             f"classification={row.get('classification')} vram_peak={row.get('vram_peak_gb')}"
+            + (
+                f" repeat_kind={row.get('repeat_kind')}"
+                if row.get("repeat_kind")
+                else ""
+            )
         )
     md.append("")
     (results_dir / "gate3_summary.md").write_text("\n".join(md) + "\n", encoding="utf-8", newline="\n")
@@ -1195,7 +1286,13 @@ def run_gate3(
             correction = correct_false_cpu_offload_row(row, heartbeat_vram=heartbeat_vram)
             write_hardware_sidecar(root, row, correction)
             row = apply_hardware_correction(row, correction)
+        if row.get("phase") in {"repeat_proposed", "repeat_next_larger"}:
+            row["repeat_kind"] = "same_packet_validation_repeat"
+            row["not_ladder_progression"] = True
+            row["not_a_knee"] = True
+            row["not_evidence_exhaustion"] = True
         corrected_existing.append(row)
+    write_same_packet_repeat_sidecar(root, corrected_existing)
     qwen_cal = seed_qwen_b_calibration_from_runs(corrected_existing)
     persist_qwen_b_calibration(root, qwen_cal)
     runs: list[dict[str, Any]] = list(corrected_existing)
@@ -1373,8 +1470,11 @@ def run_gate3(
             estimated_prompt=estimated_prompt,
             calibration_plan=planned,
         )
+        row["packet_progress_reason"] = extras.get("packet_progress_reason")
         row["calibrated_same_packet_rerun"] = calibrated_same_packet_rerun
         row["supersedes_execution_id"] = supersedes_execution_id
+        if phase in {"repeat_proposed", "repeat_next_larger"}:
+            row["repeat_kind"] = "operating_point_repeat"
         row["stable_ladder_rung"] = counts_as_stable_ladder_rung(
             row, ceiling_gb=config.maximum_vram_gb
         )
@@ -1425,7 +1525,10 @@ def run_gate3(
     placement_source = needs_gpu_placement_validation(runs)
     target = config.start_evidence_tokens
     if last_stable is not None:
-        target = int(last_stable["requested_evidence_tokens"]) + config.coarse_increment_tokens
+        target = next_coarse_grid_target(
+            int(last_stable.get("estimated_evidence_tokens") or last_stable.get("requested_evidence_tokens") or 0),
+            increment=config.coarse_increment_tokens,
+        )
     if rerun_source is None and placement_source is not None:
         rerun_source = placement_source
     if rerun_source is not None:
@@ -1469,7 +1572,10 @@ def run_gate3(
         elif row.get("final_safety_result") == "passed":
             last_stable = row
             confirmed_streak = 0
-            target = int(row["requested_evidence_tokens"]) + config.coarse_increment_tokens
+            target = next_coarse_grid_target(
+                int(row.get("estimated_evidence_tokens") or row.get("requested_evidence_tokens") or 0),
+                increment=config.coarse_increment_tokens,
+            )
         else:
             stop_reason = str(row.get("classification") or "calibrated_rerun_failed")
 
@@ -1477,10 +1583,27 @@ def run_gate3(
         if stop_reason != "stage_complete":
             break
         packet = packer.packet_for_target(target)
-        if last_packet_ids is not None and packet.conversation_ids == last_packet_ids:
+        remaining = packer.remaining_after(packet)
+        progress_reason = classify_packet_progress(
+            target=target,
+            packet=packet,
+            previous_ids=last_packet_ids,
+            remaining=remaining,
+        )
+        packet_row_reason = progress_reason
+        if progress_reason == "target_already_covered":
+            target = next_coarse_grid_target(
+                packet.estimated_evidence_tokens, increment=config.coarse_increment_tokens
+            )
+            continue
+        if progress_reason == "no_packet_growth":
+            stop_reason = "no_packet_growth"
+            break
+        if progress_reason == "evidence_exhausted" and last_packet_ids is not None:
             stop_reason = "evidence_exhausted"
             break
         row = measure(packet, phase="coarse", target=target, repetition=1, confirmation=False)
+        row["packet_progress_reason"] = packet_row_reason
         runs.append(row)
         last_packet_ids = packet.conversation_ids
         hard = hard_stop_reason(row, ceiling_gb=config.maximum_vram_gb)
@@ -1514,10 +1637,12 @@ def run_gate3(
             confirmed_streak = 0
             if counts_as_stable_ladder_rung(row, ceiling_gb=config.maximum_vram_gb):
                 last_stable = row
-        if packet.exhausted:
+        if packet.exhausted or packer.remaining_after(packet) <= 0:
             stop_reason = "evidence_exhausted"
             break
-        target += config.coarse_increment_tokens
+        target = next_coarse_grid_target(
+            packet.estimated_evidence_tokens, increment=config.coarse_increment_tokens
+        )
 
     progress.emit(
         f"Coarse ladder stopped and reason: {stop_reason}",
@@ -1525,11 +1650,10 @@ def run_gate3(
         stop_reason=stop_reason,
         expected_next_action="refinement_or_repeats",
     )
-    if last_stable and stop_reason not in {
+    if last_stable and should_run_final_repeats(stop_reason) and stop_reason not in {
         "host_affinity",
         "estimator_recalibration_required",
         "placement_unknown",
-        "cpu_offload",
     }:
         progress.emit("Refinement started", stage="refinement", phase="packet_build")
         low = int(last_stable["requested_evidence_tokens"])
@@ -1601,6 +1725,7 @@ def run_gate3(
         config=config,
         preflight=preflight,
     )
+    write_same_packet_repeat_sidecar(root, runs)
     final_status = "completed" if stop_reason in {"stage_complete", "evidence_exhausted"} else "stopped"
     progress.emit("Review package completed", stage="package", status=final_status, stop_reason=stop_reason)
     progress.emit(
@@ -1870,6 +1995,49 @@ def prove_gate3_offline() -> dict[str, Any]:
     ok("nested_packet_growth", set(p2.conversation_ids).issubset(p3.conversation_ids), (p2.conversation_ids, p3.conversation_ids))
     ok("nested_text_is_prefix", p3.text.startswith(p2.text.rstrip()) or p2.text in p3.text, None)
     ok("conversation_not_split", p2.partial_context is False and p3.overshoot in {True, False}, p2)
+    ok("two_k_overshoot_3048_advances_to_4000", next_coarse_grid_target(3048) == 4000, next_coarse_grid_target(3048))
+    ok("overshooting_several_grids_advances_above_actual", next_coarse_grid_target(4372) == 5000, next_coarse_grid_target(4372))
+    first_big = NestedEmailPacker([_piece("a", 12180), _piece("b", 5000), _piece("c", 5000)])
+    covered = first_big.packet_for_target(2000)
+    same_at_3000 = first_big.packet_for_target(3000)
+    next_at_4000 = first_big.packet_for_target(4000)
+    ok(
+        "same_packet_is_not_exhaustion_while_conversations_remain",
+        classify_packet_progress(
+            target=3000,
+            packet=same_at_3000,
+            previous_ids=covered.conversation_ids,
+            remaining=first_big.remaining_after(same_at_3000),
+        )
+        == "target_already_covered"
+        and first_big.remaining_after(covered) > 0
+        and next_at_4000.conversation_ids != covered.conversation_ids,
+        (covered.estimated_evidence_tokens, same_at_3000.conversation_ids, next_at_4000.conversation_ids),
+    )
+    ok("next_grid_after_overshoot_packet_is_4000", next_coarse_grid_target(covered.estimated_evidence_tokens) == 4000, covered.estimated_evidence_tokens)
+    ok("four_k_packet_is_nested_prefix", next_at_4000.text.startswith(covered.text) or covered.text in next_at_4000.text, None)
+    ok("conversations_remain_intact_on_growth", next_at_4000.partial_context is False, next_at_4000)
+    ok(
+        "no_duplicate_evidence_ids",
+        len(next_at_4000.evidence_ids) == len(set(next_at_4000.evidence_ids)),
+        next_at_4000.evidence_ids,
+    )
+    only = NestedEmailPacker([_piece("only", 12180)])
+    only_pkt = only.packet_for_target(2000)
+    ok(
+        "true_exhaustion_requires_no_remaining_conversations",
+        classify_packet_progress(
+            target=4000,
+            packet=only.packet_for_target(4000),
+            previous_ids=only_pkt.conversation_ids,
+            remaining=only.remaining_after(only_pkt),
+        )
+        == "evidence_exhausted"
+        and only.remaining_after(only_pkt) == 0,
+        only.remaining_after(only_pkt),
+    )
+    ok("final_repeats_not_triggered_by_false_exhaustion", should_run_final_repeats("target_already_covered") is False, None)
+    ok("final_repeats_allowed_after_true_exhaustion", should_run_final_repeats("evidence_exhausted") is True, None)
     one = NestedEmailPacker([_piece("big", 20000)])
     over = one.packet_for_target(2000)
     ok("intact_conversation_overshoot_recorded", over.overshoot is True and len(over.conversation_ids) == 1, over)
@@ -2562,6 +2730,96 @@ def prove_gate3_offline() -> dict[str, Any]:
         )
         ok("gpu_resident_validation_may_continue_ladder", payload["stop_reason"] in {"evidence_exhausted", "stage_complete"}, payload["stop_reason"])
         ok("gpu_resident_validation_is_new_execution", planted_id in payload["execution_ids"] and any(eid != planted_id for eid in payload["execution_ids"]), payload["execution_ids"])
+
+    overshoot_pieces = [_piece("first", 12180), _piece("second", 5000), _piece("third", 5000), _piece("fourth", 5000)]
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp) / "advance"
+        root.mkdir()
+        pack_src = NestedEmailPacker(overshoot_pieces)
+        packet = pack_src.packet_for_target(2000)
+        planted_id = "c76fea7808f8719f24df1e4e4765b7af519dab7e32f65b29e2305c663535e112"
+        dest = root / "runs" / planted_id
+        dest.mkdir(parents=True)
+        planted = {
+            "execution_id": planted_id,
+            "test_case_id": "gpu-baseline",
+            "phase": "coarse",
+            "requested_evidence_tokens": 2000,
+            "estimated_evidence_tokens": packet.estimated_evidence_tokens,
+            "actual_prompt_tokens": 4391,
+            "configured_num_ctx": 8448,
+            "final_safety_result": "passed",
+            "classification": "successful_stable",
+            "vram_peak_gb": 18.91,
+            "gpu_resident": True,
+            "cpu_offload": False,
+            "placement_status": "gpu_resident",
+            "packet_sha256": packet.sha256,
+            "unload_recorded": True,
+            "vram_released": True,
+            "confirmed_regression": False,
+            "evidence_text": packet.text,
+            "hardware": {"vram_peak_gb": 18.91, "cpu_offload": False, "gpu_resident": True, "placement_status": "gpu_resident"},
+            "model_identity": metadata,
+            "packet_manifest": {
+                "conversation_ids": list(packet.conversation_ids),
+                "evidence_ids": list(packet.evidence_ids),
+                "time_start": packet.time_start,
+                "time_end": packet.time_end,
+                "estimated_evidence_tokens": packet.estimated_evidence_tokens,
+                "packet_sha256": packet.sha256,
+            },
+        }
+        (dest / "run_record.json").write_text(json.dumps(planted) + "\n", encoding="utf-8")
+        (dest / "evidence_packet.txt").write_text(packet.text, encoding="utf-8")
+        (dest / "COMPLETE").write_text("ok\n", encoding="utf-8")
+        original = (dest / "run_record.json").read_bytes()
+        captured: list[RunRequest] = []
+
+        def generate_advance(request: RunRequest, resume_packet: Gate3Packet):
+            captured.append(request)
+            measurement = Measurement(
+                prompt_tokens_per_second=300.0,
+                generation_tokens_per_second=45.0,
+                elapsed_seconds=20.0,
+                peak_vram_gb=18.9,
+                gpu_resident=True,
+                cpu_spill=False,
+                prompt_eval_count=int(estimate_tokens(SYSTEM_PROMPT + resume_packet.text) + 80),
+            )
+            hardware = {
+                "vram_peak_gb": 18.9,
+                "gpu_resident": True,
+                "cpu_offload": False,
+                "placement_status": "gpu_resident",
+                "placement_reason": "scripted",
+                "samples": [],
+            }
+            return measurement, "ok", {"hardware": hardware, "last_event": {}, "raw_api": "", "telemetry": ""}
+
+        payload = run_gate3(
+            config=Gate3Config(start_evidence_tokens=2000, coarse_increment_tokens=1000, repeat_count=1),
+            pieces=overshoot_pieces,
+            results_dir=root,
+            generate=generate_advance,
+            unload=unload,
+            spec=spec,
+            metadata=metadata,
+            preflight=preflight_ok,
+            models_called=False,
+        )
+        ok("existing_validation_run_retained", dest.is_dir() and (dest / "run_record.json").read_bytes() == original, None)
+        ok(
+            "next_target_after_3048_class_packet_is_4000",
+            captured and captured[0].requested_evidence_tokens == 4000,
+            [req.requested_evidence_tokens for req in captured],
+        )
+        ok(
+            "did_not_rerun_identical_3048_packet_as_next_rung",
+            all(req.evidence_sha256 != packet.sha256 or req.requested_evidence_tokens != 2000 for req in captured),
+            [req.requested_evidence_tokens for req in captured],
+        )
+        ok("same_size_repeats_not_called_ladder", payload["stop_reason"] != "three_confirmed_regressions", payload["stop_reason"])
 
     a_blocked = False
     try:
