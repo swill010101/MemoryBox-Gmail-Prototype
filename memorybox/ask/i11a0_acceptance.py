@@ -1591,6 +1591,13 @@ def run_prove_i11a0_benchmark() -> dict[str, Any]:
     problems.extend(gate3.get("problems") or [])
     _check("gate3_offline_controller_did_not_call_a_model", gate3.get("models_called") is False, checks, problems)
     _check("gate3_offline_proofs_pass", gate3.get("ok") is True, checks, problems, gate3.get("problems"))
+    from memorybox.ask.i11a.i11a0_prompt_accounting_proof import prove_prompt_accounting_control_offline
+
+    control = prove_prompt_accounting_control_offline()
+    checks.extend(control.get("checks") or [])
+    problems.extend(control.get("problems") or [])
+    _check("prompt_accounting_control_offline", control.get("ok") is True, checks, problems, control.get("problems"))
+    _check("prompt_accounting_control_models_not_called", control.get("models_called") is False, checks, problems)
     return {
         "ok": not problems,
         "checks": len(checks),
@@ -1599,4 +1606,9 @@ def run_prove_i11a0_benchmark() -> dict[str, Any]:
         "prompt_sha256": prompt_hash,
         "models_called": False,
         "gate3_offline": {"ok": gate3.get("ok"), "check_count": len(gate3.get("checks") or [])},
+        "prompt_accounting_control_offline": {
+            "ok": control.get("ok"),
+            "check_count": len(control.get("checks") or []),
+            "models_called": control.get("models_called"),
+        },
     }

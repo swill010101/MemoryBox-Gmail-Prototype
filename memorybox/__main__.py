@@ -798,6 +798,24 @@ def main(argv: list[str] | None = None) -> int:
         default="docs/test-output/i11a0-benchmark/i14-cleaned-export",
         help="Frozen accepted I14 cleaned export directory (email only)",
     )
+    p_control = sub.add_parser(
+        "i11a0-prompt-accounting-proof",
+        help="Isolated three-run prompt_eval_count diagnostic; not a ladder",
+    )
+    p_control.add_argument("--confirm-benchmark", action="store_true")
+    p_control.add_argument("--ollama-base-url", default="http://127.0.0.1:11434")
+    p_control.add_argument(
+        "--source-series",
+        default="docs/test-output/i11a0-benchmark/gate3-b-i14",
+    )
+    p_control.add_argument(
+        "--out",
+        default="docs/test-output/i11a0-benchmark/prompt-accounting-proof",
+    )
+    p_control.add_argument(
+        "--i14-export",
+        default="docs/test-output/i11a0-benchmark/i14-cleaned-export",
+    )
     p_i11a0_freeze = sub.add_parser(
         "i11a0-freeze-i14",
         help="Read-only freeze of accepted I14 Peggy-related cleaned email; no model call",
@@ -1950,6 +1968,40 @@ def main(argv: list[str] | None = None) -> int:
                         "detail": str(exc),
                         "models_called": False,
                         "pull_executed": False,
+                    },
+                    indent=2,
+                ),
+                flush=True,
+            )
+            return 2
+        print(json.dumps(payload, indent=2, default=str), flush=True)
+        return 0 if payload.get("ok") else 1
+
+    if args.cmd == "i11a0-prompt-accounting-proof":
+        from memorybox.ask.i11a.i11a0_benchmark import I11A0Error, InferenceNotAuthorized
+        from memorybox.ask.i11a.i11a0_host import HostAffinityError
+        from memorybox.ask.i11a.i11a0_prompt_accounting_proof import run_prompt_accounting_control
+
+        try:
+            payload = run_prompt_accounting_control(
+                confirm_benchmark=bool(args.confirm_benchmark),
+                source_series=args.source_series,
+                results_dir=args.out,
+                ollama_base_url=args.ollama_base_url,
+                i14_export=args.i14_export,
+                require_host=True,
+                models_called=True,
+            )
+        except (InferenceNotAuthorized, HostAffinityError, I11A0Error) as exc:
+            print(
+                json.dumps(
+                    {
+                        "ok": False,
+                        "error": type(exc).__name__,
+                        "detail": str(exc),
+                        "models_called": False,
+                        "pull_executed": False,
+                        "experiment_id": "i11a0_prompt_accounting_control_v1",
                     },
                     indent=2,
                 ),
