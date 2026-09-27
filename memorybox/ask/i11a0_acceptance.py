@@ -1598,6 +1598,13 @@ def run_prove_i11a0_benchmark() -> dict[str, Any]:
     problems.extend(control.get("problems") or [])
     _check("prompt_accounting_control_offline", control.get("ok") is True, checks, problems, control.get("problems"))
     _check("prompt_accounting_control_models_not_called", control.get("models_called") is False, checks, problems)
+    from memorybox.ask.i11a.i11a0_full_prompt_v3 import prove_full_prompt_v3_offline
+
+    full_prompt = prove_full_prompt_v3_offline()
+    checks.extend(full_prompt.get("checks") or [])
+    problems.extend(full_prompt.get("problems") or [])
+    _check("full_prompt_v3_offline", full_prompt.get("ok") is True, checks, problems, full_prompt.get("problems"))
+    _check("full_prompt_v3_models_not_called", full_prompt.get("models_called") is False, checks, problems)
     return {
         "ok": not problems,
         "checks": len(checks),
@@ -1610,5 +1617,10 @@ def run_prove_i11a0_benchmark() -> dict[str, Any]:
             "ok": control.get("ok"),
             "check_count": len(control.get("checks") or []),
             "models_called": control.get("models_called"),
+        },
+        "full_prompt_v3_offline": {
+            "ok": full_prompt.get("ok"),
+            "check_count": len(full_prompt.get("checks") or []),
+            "models_called": full_prompt.get("models_called"),
         },
     }

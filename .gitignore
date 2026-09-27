@@ -27,6 +27,8 @@ docs/test-output/i11a0-benchmark/gate3-b/**
 docs/test-output/i11a0-benchmark/gate3-b-i14/**
 docs/test-output/i11a0-benchmark/prompt-accounting-proof/**
 docs/test-output/i11a0-benchmark/prompt-accounting-proof-telemetry-retry/**
+docs/test-output/i11a0-benchmark/prompt-accounting-root-cause/**
+docs/test-output/i11a0-benchmark/true-prompt-capacity-audit/**
 docs/test-output/i11a0-benchmark/i14-cleaned-export/**
 
 # Archive: track Takeout originals + checksums only (zips via Git LFS).

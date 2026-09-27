@@ -104,6 +104,17 @@ from memorybox.ask.i11a.i11a0_prompt_accounting_audit import (
     RECOMMENDATION_INVALID,
     prove_prompt_accounting_audit_offline,
 )
+from memorybox.ask.i11a.i11a0_full_prompt_v3 import (
+    INVALID_TRUNCATED,
+    PLANNER_ID as I14_FULL_PROMPT_V3,
+    apply_truncation_outcome,
+    find_truncation_for_execution,
+    is_v3_config,
+    plan_full_prompt_num_ctx,
+    project_vram_vs_num_ctx,
+    reject_projected_boundaries,
+    truncation_limit,
+)
 
 GATE3_START_EVIDENCE_TOKENS = 2000
 GATE3_COARSE_INCREMENT_TOKENS = 1000
@@ -369,6 +380,7 @@ def should_run_final_repeats(stop_reason: str) -> bool:
     return stop_reason in {
         "planned_ctx_exceeds_model_limit",
         "predicted_vram_ceiling",
+        INVALID_TRUNCATED,
         "three_confirmed_regressions",
         "vram_ceiling",
         "safety_margin_failed",
@@ -512,6 +524,8 @@ def is_estimator_calibration_shortfall(row: dict[str, Any]) -> bool:
 
 def counts_as_stable_ladder_rung(row: dict[str, Any], *, ceiling_gb: float = VRAM_CEILING_GB) -> bool:
     if is_estimator_calibration_shortfall(row):
+        return False
+    if row.get("classification") == INVALID_TRUNCATED or row.get("truncation_occurred"):
         return False
     if row.get("hardware_classification_superseded"):
         return False
@@ -882,6 +896,8 @@ def hard_stop_reason(row: dict[str, Any], *, ceiling_gb: float = VRAM_CEILING_GB
         return "prediction_envelope_exceeded"
     if row.get("planned_ctx_exceeds_model_limit") or row.get("classification") == "planned_ctx_exceeds_model_limit":
         return "planned_ctx_exceeds_model_limit"
+    if row.get("classification") == INVALID_TRUNCATED or row.get("truncation_occurred"):
+        return INVALID_TRUNCATED
     if row.get("superseded_as_planning_model_stop"):
         return None
     if row.get("predicted_vram_ceiling") or row.get("classification") == "predicted_vram_ceiling":
@@ -926,6 +942,8 @@ def classify_boundary_kind(stop_reason: str) -> str:
         return "planning_failure"
     if stop_reason in {"planned_ctx_exceeds_model_limit", "context_overflow"}:
         return "model_context_boundary"
+    if stop_reason == INVALID_TRUNCATED:
+        return "silent_truncation"
     if stop_reason == "evidence_exhausted":
         return "evidence_exhaustion"
     if stop_reason in {"generation_failed", "timed_out", "host_affinity"}:
@@ -1669,6 +1687,9 @@ def run_gate3(
     if not is_v2_config(config):
         write_same_packet_repeat_sidecar(root, corrected_existing)
     v2 = is_v2_config(config)
+    v3 = is_v3_config(config)
+    if v2 and v3:
+        raise I11A0Error("v2 and full-prompt v3 planners cannot share a Gate 3 run")
     if v2:
         live_identity = current_planner_identity(
             ollama_version=str((preflight or {}).get("ollama_version") or "0.34.1"),
@@ -1756,7 +1777,12 @@ def run_gate3(
             evidence_text=packet.text,
         )
         estimated_prompt = estimate_tokens(SYSTEM_PROMPT + "\n" + user)
-        if v2:
+        if v3:
+            planned = plan_full_prompt_num_ctx(evidence_bytes=int(packet.evidence_bytes))
+            predicted_prompt = int(planned["predicted_complete_prompt_tokens"])
+            if int(planned["num_ctx"]) < predicted_prompt + OUTPUT_RESERVE_TOKENS + SAFETY_MARGIN_TOKENS:
+                raise I11A0Error("planned num_ctx dropped below the 1,500-token safety margin")
+        elif v2:
             planned = i14_cal.snapshot_for_estimate(estimated_prompt)
             predicted_prompt = int(planned["predicted_complete_prompt_tokens"])
             if int(planned["num_ctx"]) < predicted_prompt + OUTPUT_RESERVE_TOKENS + SAFETY_MARGIN_TOKENS:
@@ -1772,6 +1798,29 @@ def run_gate3(
             if int(planned["num_ctx"]) < estimated_prompt + OUTPUT_RESERVE_TOKENS + SAFETY_MARGIN_TOKENS:
                 raise I11A0Error("planned num_ctx dropped below the 1,500-token safety margin")
         num_ctx = int(planned["num_ctx"])
+        if v3:
+            proj = project_vram_vs_num_ctx(
+                [
+                    {
+                        "num_ctx": r.get("configured_num_ctx") or r.get("num_ctx"),
+                        "vram_peak_gb": r.get("vram_peak_gb"),
+                        "hardware_valid_for_num_ctx_curve": (
+                            r.get("vram_peak_gb") is not None and float(r.get("vram_peak_gb") or 0) >= 4
+                        ),
+                    }
+                    for r in runs
+                ],
+                next_num_ctx=num_ctx,
+                ceiling_gb=config.maximum_vram_gb,
+            )
+            vram_stop = reject_projected_boundaries(
+                num_ctx=num_ctx,
+                predicted_vram_gb=proj.get("predicted_vram_gb"),
+                ceiling_gb=config.maximum_vram_gb,
+            )
+            planned["vram_projection"] = proj
+            if vram_stop == "predicted_vram_ceiling":
+                planned["predicted_vram_ceiling"] = True
         request = RunRequest(
             model_tag=spec.tag,
             digest=spec.digest,
@@ -1820,7 +1869,7 @@ def run_gate3(
                 stage="coarse",
                 phase="packet_build",
             )
-        if planned.get("exceeds_verified_model_context"):
+        if planned.get("exceeds_verified_model_context") or planned.get("exceeds_model_context"):
             progress.emit(
                 (
                     f"Planned num_ctx={num_ctx} exceeds verified Qwen B maximum "
@@ -1888,7 +1937,9 @@ def run_gate3(
             ceiling_gb=config.maximum_vram_gb,
             planner_id=I14_CONTEXT_PLANNER_V2 if v2 else None,
         )
-        if vram_projection.get("clearly_unsafe"):
+        if v3:
+            vram_projection = planned.get("vram_projection") or vram_projection
+        if vram_projection.get("clearly_unsafe") or planned.get("predicted_vram_ceiling"):
             progress.emit(
                 (
                     "Predicted VRAM "
@@ -2015,6 +2066,33 @@ def run_gate3(
         if v2:
             row["planner_id"] = I14_CONTEXT_PLANNER_V2
             row["experiment_phase"] = I14_CONTEXT_PLANNER_V2
+        if v3:
+            row["planner_id"] = I14_FULL_PROMPT_V3
+            row["experiment_phase"] = I14_FULL_PROMPT_V3
+            row["predicted_complete_prompt_tokens"] = planned.get("predicted_complete_prompt_tokens")
+            pec = row.get("actual_prompt_tokens")
+            log_text = str(extras.get("ollama_server_log_text") or "")
+            if not log_text:
+                log_path = Path(
+                    os.environ.get("MEMORYBOX_OLLAMA_SERVER_LOG")
+                    or r"C:\Users\tomwi\AppData\Local\Ollama\server.log"
+                )
+                if log_path.is_file():
+                    log_text = log_path.read_text(encoding="utf-8", errors="replace")[-200000:]
+            event = find_truncation_for_execution(
+                log_text,
+                num_ctx=int(row.get("configured_num_ctx") or num_ctx),
+                prompt_eval_count=None if pec is None else int(pec),
+            )
+            if event is None and pec is not None and int(pec) == truncation_limit(int(row.get("configured_num_ctx") or num_ctx)):
+                row["classification"] = INVALID_TRUNCATED
+                row["truncation_occurred"] = True
+                row["truncation_inferred_from_limit_identity"] = True
+                row["exclude_from_knee"] = True
+                row["stable_ladder_rung"] = False
+            else:
+                row = apply_truncation_outcome(row, event)
+            row["never_treat_prompt_eval_as_complete"] = True
         if phase in {"repeat_proposed", "repeat_next_larger"}:
             row["repeat_kind"] = "operating_point_repeat"
         if (
@@ -2035,7 +2113,7 @@ def run_gate3(
             "also pass placement, VRAM, and regression gates. Repeats may be successful_stable "
             "while stable_ladder_rung is false because they are validation copies, not new rungs."
         )
-        if row.get("actual_prompt_tokens") is not None:
+        if row.get("actual_prompt_tokens") is not None and not v3 and not row.get("truncation_occurred"):
             if v2:
                 i14_cal.add_observation(
                     execution_id=str(row["execution_id"]),
@@ -2099,7 +2177,7 @@ def run_gate3(
             int(last_stable.get("estimated_evidence_tokens") or last_stable.get("requested_evidence_tokens") or 0),
             increment=config.coarse_increment_tokens,
         )
-    if v2:
+    if v2 or v3:
         rerun_source = None
         placement_source = None
     if rerun_source is None and placement_source is not None:
