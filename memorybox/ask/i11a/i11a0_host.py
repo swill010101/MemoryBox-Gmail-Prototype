@@ -210,6 +210,43 @@ def read_ollama_process_memory() -> dict[str, Any]:
     }
 
 
+def capture_clean_ladder_host_state() -> dict[str, Any]:
+    ram = read_system_ram()
+    gpu = read_nvidia_snapshot()
+    ollama = read_ollama_process_memory()
+    python = dict(ollama)
+    try:
+        completed = subprocess.run(
+            ["tasklist", "/FO", "CSV", "/NH"],
+            capture_output=True,
+            text=True,
+            timeout=8,
+            check=False,
+        )
+        py_rows = []
+        for raw in (completed.stdout or "").splitlines():
+            if "python" not in raw.lower():
+                continue
+            parts = [item.strip().strip('"') for item in raw.split('","')]
+            if len(parts) >= 2:
+                py_rows.append({"name": parts[0], "pid": parts[1]})
+        python = {"available": bool(py_rows), "process_count": len(py_rows)}
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        python = {"available": False}
+    return {
+        "kind": "i11a0_clean_ladder_host_state",
+        "hostname": socket.gethostname(),
+        "captured_at_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "system_ram": ram,
+        "gpu": gpu,
+        "ollama_processes": ollama,
+        "python_process_count": python,
+        "experiment_phase": "i14_cleaned",
+        "do_not_mix_with_legacy_gate3_b": True,
+        "do_not_mix_with_coexistence_confirmation": True,
+    }
+
+
 def read_git_identity(repo: Path) -> dict[str, Any]:
     def _git(*args: str) -> str:
         completed = subprocess.run(
@@ -240,7 +277,24 @@ def read_ollama_version(base_url: str) -> str | None:
 
 
 def normalize_ollama_base_url(url: str) -> str:
-    return str(url or "").strip().rstrip("/")
+    raw = str(url or "").strip()
+    if any(ch in raw for ch in "[]()<>`"):
+        return ""
+    return raw.rstrip("/")
+
+
+def require_literal_loopback_ollama_url(url: str) -> str:
+    raw = str(url or "")
+    if any(ch in raw for ch in "[]()<>`"):
+        raise HostAffinityError(
+            "Ollama URL must be the literal http://127.0.0.1:11434; Markdown link forms are refused"
+        )
+    normalized = normalize_ollama_base_url(raw)
+    if normalized != REQUIRED_OLLAMA_BASE_URL:
+        raise HostAffinityError(
+            "Ollama URL must be exactly http://127.0.0.1:11434 on the FlightSim controller"
+        )
+    return normalized
 
 
 def collect_host_affinity_preflight(

@@ -7,6 +7,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -27,6 +28,20 @@ from memorybox.ask.i11a.i11a0_benchmark import (
 
 ACCEPTED_I14_COMMIT = "b54be38ade9f378f1e25e0738bb9e9963f7dcd88"
 ACCEPTED_ALGO_VERSION = "i14-prepared-email-v3"
+PINNED_GENERATION_ID = "a3ec3877-f91d-49a0-8201-267b383c69ce"
+PINNED_GENERATION_CHECKSUM = (
+    "cf12a9206b04abe697e20e90e9f336b8855476c94266506957aa7a934ae89785"
+)
+PINNED_PROMPT_JSONL_SHA256 = (
+    "fa870c80c758c6bfea0b7c29a8b58fe127db88a9c9cb7d994e2f074eae73ca30"
+)
+PINNED_RELATED_JSONL_SHA256 = (
+    "2e49831a379efb8b29d8782d9549d2e421ce8446e1add5641a468ea949719452"
+)
+PINNED_PROMPT_MESSAGE_COUNT = 6680
+PINNED_PROMPT_THREAD_COUNT = 1655
+PINNED_PEGGY_ONLY_COUNT = 2674
+PINNED_PEGGY_VOICE_COUNT = 1345
 SOURCE_LABEL = "accepted_i14_cleaned_household_email_export"
 CHANNEL = "email"
 PEGGY_DISPLAY = "Peggy George"
@@ -49,6 +64,74 @@ def sha256_file(path: Path) -> str:
 
 def sha256_text(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def verify_pinned_i14_export(
+    export_dir: Path | str,
+    *,
+    expected: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Refuse a substituted or regenerated freeze. Never writes, never calls a model."""
+    root = Path(export_dir)
+    want = {
+        "accepted_i14_commit": ACCEPTED_I14_COMMIT,
+        "algo_version": ACCEPTED_ALGO_VERSION,
+        "generation_id": PINNED_GENERATION_ID,
+        "generation_checksum": PINNED_GENERATION_CHECKSUM,
+        "prompt_sha256": PINNED_PROMPT_JSONL_SHA256,
+        "related_sha256": PINNED_RELATED_JSONL_SHA256,
+        "prompt_messages": PINNED_PROMPT_MESSAGE_COUNT,
+        "threads": PINNED_PROMPT_THREAD_COUNT,
+        **(expected or {}),
+    }
+    prompt = root / "i11a0_prompt_messages.jsonl"
+    related = root / "peggy_related_email.jsonl"
+    manifest_path = root / "MANIFEST.json"
+    if not prompt.is_file() or not related.is_file() or not manifest_path.is_file():
+        raise I11A0Error("pinned_i14_export_files_missing")
+    prompt_digest = sha256_file(prompt)
+    related_digest = sha256_file(related)
+    if prompt_digest != want["prompt_sha256"]:
+        raise I11A0Error("pinned_i14_prompt_hash_mismatch")
+    if related_digest != want["related_sha256"]:
+        raise I11A0Error("pinned_i14_related_hash_mismatch")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if str(manifest.get("accepted_i14_commit") or "") != want["accepted_i14_commit"]:
+        raise I11A0Error("pinned_i14_commit_mismatch")
+    if str(manifest.get("algo_version") or "") != want["algo_version"]:
+        raise I11A0Error("pinned_i14_algo_version_mismatch")
+    if str(manifest.get("generation_id") or "") != want["generation_id"]:
+        raise I11A0Error("pinned_i14_generation_id_mismatch")
+    if str(manifest.get("generation_checksum") or "") != want["generation_checksum"]:
+        raise I11A0Error("pinned_i14_generation_checksum_mismatch")
+    counts = manifest.get("record_counts") or {}
+    if int(counts.get("i11a0_prompt_messages") or 0) != int(want["prompt_messages"]):
+        raise I11A0Error("pinned_i14_prompt_count_mismatch")
+    if int(counts.get("threads") or 0) != int(want["threads"]):
+        raise I11A0Error("pinned_i14_thread_count_mismatch")
+    line_count = sum(1 for line in prompt.read_text(encoding="utf-8").splitlines() if line.strip())
+    if line_count != int(want["prompt_messages"]):
+        raise I11A0Error("pinned_i14_prompt_line_count_mismatch")
+    if bool(manifest.get("sms_included")):
+        raise I11A0Error("pinned_i14_sms_not_authorized")
+    return {
+        "ok": True,
+        "verified": True,
+        "regenerated": False,
+        "substituted": False,
+        "models_called": False,
+        "export_dir": str(root.resolve()),
+        "prompt_sha256": prompt_digest,
+        "related_sha256": related_digest,
+        "generation_id": want["generation_id"],
+        "generation_checksum": want["generation_checksum"],
+        "algo_version": want["algo_version"],
+        "accepted_i14_commit": want["accepted_i14_commit"],
+        "prompt_messages": int(want["prompt_messages"]),
+        "threads": int(want["threads"]),
+        "peggy_only": int(counts.get("peggy_only_authored_displayable") or PINNED_PEGGY_ONLY_COUNT),
+        "peggy_voice_corpus": int(counts.get("peggy_voice_corpus") or PINNED_PEGGY_VOICE_COUNT),
+    }
 
 
 def require_readonly_connection(conn: Any) -> None:
@@ -576,6 +659,64 @@ def prove_i14_phase1_offline() -> dict[str, Any]:
     ok("attribution_preserved", "Author: Peggy George" in text and "I made soup today." in text, text)
     ok("full_body_not_preview_truncated", "I made soup today." in text, None)
     ok("http_not_reintroduced", "http://" not in text.lower(), None)
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        (root / "i11a0_prompt_messages.jsonl").write_text('{"evidence_id":"a"}\n{"evidence_id":"b"}\n', encoding="utf-8")
+        (root / "peggy_related_email.jsonl").write_text("{}\n", encoding="utf-8")
+        (root / "MANIFEST.json").write_text(
+            json.dumps(
+                {
+                    "accepted_i14_commit": ACCEPTED_I14_COMMIT,
+                    "algo_version": ACCEPTED_ALGO_VERSION,
+                    "generation_id": PINNED_GENERATION_ID,
+                    "generation_checksum": PINNED_GENERATION_CHECKSUM,
+                    "record_counts": {"i11a0_prompt_messages": 2, "threads": 1},
+                    "sms_included": False,
+                }
+            ),
+            encoding="utf-8",
+        )
+        verified = verify_pinned_i14_export(
+            root,
+            expected={
+                "prompt_sha256": sha256_file(root / "i11a0_prompt_messages.jsonl"),
+                "related_sha256": sha256_file(root / "peggy_related_email.jsonl"),
+                "prompt_messages": 2,
+                "threads": 1,
+            },
+        )
+        ok("pinned_export_accepts_matching_identity", verified.get("ok") is True, verified)
+        try:
+            verify_pinned_i14_export(root)
+            ok("pinned_export_rejects_wrong_hash", False, "did_not_raise")
+        except I11A0Error as exc:
+            ok("pinned_export_rejects_wrong_hash", "hash" in str(exc) or "count" in str(exc), str(exc))
+        (root / "MANIFEST.json").write_text(
+            json.dumps(
+                {
+                    "accepted_i14_commit": ACCEPTED_I14_COMMIT,
+                    "algo_version": ACCEPTED_ALGO_VERSION,
+                    "generation_id": "00000000-0000-0000-0000-000000000000",
+                    "generation_checksum": PINNED_GENERATION_CHECKSUM,
+                    "record_counts": {"i11a0_prompt_messages": 2, "threads": 1},
+                    "sms_included": False,
+                }
+            ),
+            encoding="utf-8",
+        )
+        try:
+            verify_pinned_i14_export(
+                root,
+                expected={
+                    "prompt_sha256": sha256_file(root / "i11a0_prompt_messages.jsonl"),
+                    "related_sha256": sha256_file(root / "peggy_related_email.jsonl"),
+                    "prompt_messages": 2,
+                    "threads": 1,
+                },
+            )
+            ok("pinned_export_rejects_wrong_generation", False, "did_not_raise")
+        except I11A0Error as exc:
+            ok("pinned_export_rejects_wrong_generation", "generation" in str(exc), str(exc))
     ok("i11a1_not_started", True, None)
     ok("models_not_called", True, None)
     return {

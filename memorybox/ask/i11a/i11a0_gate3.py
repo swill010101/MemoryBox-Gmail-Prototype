@@ -42,9 +42,11 @@ from memorybox.ask.i11a.i11a0_benchmark import (
 from memorybox.ask.i11a.i11a0_host import (
     HardwareSampler,
     collect_host_affinity_preflight,
+    capture_clean_ladder_host_state,
     read_nvidia_snapshot,
     read_system_ram,
     require_flightsim_host_affinity,
+    require_literal_loopback_ollama_url,
 )
 from memorybox.ask.i11a.i11a0_prompt import (
     PRODUCTION_PROMPT_ACCEPTED,
@@ -345,6 +347,7 @@ def classify_packet_progress(
 def should_run_final_repeats(stop_reason: str) -> bool:
     return stop_reason in {
         "planned_ctx_exceeds_model_limit",
+        "predicted_vram_ceiling",
         "three_confirmed_regressions",
         "vram_ceiling",
         "safety_margin_failed",
@@ -852,6 +855,8 @@ def hard_stop_reason(row: dict[str, Any], *, ceiling_gb: float = VRAM_CEILING_GB
         return "model_identity_changed"
     if row.get("planned_ctx_exceeds_model_limit") or row.get("classification") == "planned_ctx_exceeds_model_limit":
         return "planned_ctx_exceeds_model_limit"
+    if row.get("predicted_vram_ceiling") or row.get("classification") == "predicted_vram_ceiling":
+        return "predicted_vram_ceiling"
     peak = row.get("vram_peak_gb")
     if peak is not None and float(peak) >= ceiling_gb:
         return "vram_ceiling"
@@ -881,6 +886,61 @@ def hard_stop_reason(row: dict[str, Any], *, ceiling_gb: float = VRAM_CEILING_GB
     if row.get("vram_released") is False:
         return "unload_vram_not_released"
     return None
+
+
+def classify_boundary_kind(stop_reason: str) -> str:
+    if stop_reason == "three_confirmed_regressions":
+        return "performance_knee"
+    if stop_reason in {"vram_ceiling", "predicted_vram_ceiling"}:
+        return "vram_boundary"
+    if stop_reason in {"planned_ctx_exceeds_model_limit", "context_overflow"}:
+        return "model_context_boundary"
+    if stop_reason == "evidence_exhausted":
+        return "evidence_exhaustion"
+    if stop_reason in {"generation_failed", "timed_out", "host_affinity"}:
+        return "infrastructure_failure"
+    return str(stop_reason or "unknown")
+
+
+def project_vram_for_next_packet(
+    prior_rows: list[dict[str, Any]],
+    *,
+    next_estimated_tokens: int,
+    ceiling_gb: float = VRAM_CEILING_GB,
+) -> dict[str, Any]:
+    stables = [
+        row
+        for row in prior_rows
+        if counts_as_stable_ladder_rung(row, ceiling_gb=ceiling_gb)
+        and row.get("vram_peak_gb") is not None
+    ]
+    if len(stables) < 2:
+        return {
+            "predicted_vram_gb": None,
+            "clearly_unsafe": False,
+            "reason": "insufficient_same_phase_points",
+        }
+    first, second = stables[-2], stables[-1]
+    t1 = float(first.get("estimated_evidence_tokens") or 0)
+    t2 = float(second.get("estimated_evidence_tokens") or 0)
+    v1 = float(first["vram_peak_gb"])
+    v2 = float(second["vram_peak_gb"])
+    if t2 <= t1:
+        return {
+            "predicted_vram_gb": None,
+            "clearly_unsafe": False,
+            "reason": "non_increasing_token_points",
+        }
+    slope = (v2 - v1) / (t2 - t1)
+    predicted = v2 + slope * (float(next_estimated_tokens) - t2)
+    return {
+        "predicted_vram_gb": predicted,
+        "clearly_unsafe": bool(slope > 0 and predicted >= ceiling_gb),
+        "slope_gb_per_estimated_token": slope,
+        "from_estimated_evidence_tokens": (t1, t2),
+        "from_vram_peak_gb": (v1, v2),
+        "reason": "two_point_same_phase_projection",
+    }
 
 
 def _ns_to_s(value: Any) -> float | None:
@@ -1012,6 +1072,9 @@ def analyze_gate3(runs: list[dict[str, Any]], *, stop_reason: str, config: Gate3
         and row.get("phase") not in {"repeat_proposed", "repeat_next_larger"}
     ]
     knee_observed = stop_reason == "three_confirmed_regressions"
+    boundary_kind = classify_boundary_kind(stop_reason)
+    if knee_observed and boundary_kind != "performance_knee":
+        knee_observed = False
     ram = ram_pressure_report(runs)
     ram["experiment_phase"] = getattr(config, "experiment_phase", None)
     ram["do_not_mix_with_other_experiment_phases"] = True
@@ -1031,21 +1094,34 @@ def analyze_gate3(runs: list[dict[str, Any]], *, stop_reason: str, config: Gate3
                 next_larger = row
                 break
     if knee_observed:
-        reason = "largest repeatably stable point below the confirmed regression region"
+        reason = "largest repeatably stable point below the confirmed performance-regression region"
+    elif boundary_kind == "vram_boundary":
+        reason = (
+            "VRAM/capacity boundary, not a performance knee. The proposed point is the last "
+            "fully stable safety-passing run below that boundary."
+        )
+    elif boundary_kind == "model_context_boundary":
+        reason = (
+            "Verified model-context boundary (planned num_ctx would exceed 40960 or overflow), "
+            "not a performance knee."
+        )
     elif stop_reason == "evidence_exhausted":
         reason = (
-            "no genuine performance knee was observed; the reviewed-email corpus was exhausted "
+            "no genuine performance knee was observed; eligible cleaned messages were exhausted "
             "while runs remained stable. The recommended point is the largest stable packet, "
             "not a manufactured knee."
         )
     else:
         reason = (
-            f"no genuine performance knee was observed; coarse growth stopped for {stop_reason}. "
-            "The recommended point is the last fully stable safety-passing run below that stop."
+            f"no genuine performance knee was observed; coarse growth stopped for {stop_reason} "
+            f"({boundary_kind}). The recommended point is the last fully stable safety-passing run below that stop."
         )
     return {
         "stop_reason": stop_reason,
+        "boundary_kind": boundary_kind,
         "knee_observed": knee_observed,
+        "vram_or_context_stop_is_not_a_performance_knee": boundary_kind
+        in {"vram_boundary", "model_context_boundary"},
         "knee_range": {
             "last_stable_estimated_evidence_tokens": (last_stable or {}).get("estimated_evidence_tokens"),
             "first_regression_or_stop": (first_capacity or {}).get("estimated_evidence_tokens"),
@@ -1072,6 +1148,17 @@ def analyze_gate3(runs: list[dict[str, Any]], *, stop_reason: str, config: Gate3
             "remaining_context_headroom_tokens": (proposed or {}).get(
                 "remaining_safety_margin_tokens"
             ),
+            "prompt_tokens_per_second": (proposed or {}).get("prompt_tokens_per_second"),
+            "generation_tokens_per_second": (proposed or {}).get("generation_tokens_per_second"),
+            "vram_peak_gb": (proposed or {}).get("vram_peak_gb"),
+            "repeatability": "repeat_proposed_and_next_larger_only_after_boundary",
+            "largest_observed_safe_run_execution_id": (abs_max or {}).get("execution_id"),
+            "margin_from_largest_safe_to_proposed": reason,
+        },
+        "i11a1_inventories_preserved_not_decided": {
+            "peggy_only_authored_displayable": 2674,
+            "peggy_voice_corpus": 1345,
+            "i11a1_started": False,
         },
         "absolute_maximum_safe_run": {
             "execution_id": (abs_max or {}).get("execution_id"),
@@ -1614,6 +1701,70 @@ def run_gate3(
                 most_recent_artifact_directory=str(folder),
             )
             return row
+        vram_projection = project_vram_for_next_packet(
+            runs,
+            next_estimated_tokens=packet.estimated_evidence_tokens,
+            ceiling_gb=config.maximum_vram_gb,
+        )
+        if vram_projection.get("clearly_unsafe"):
+            progress.emit(
+                (
+                    "Predicted VRAM "
+                    f"{vram_projection.get('predicted_vram_gb')} GB would meet or exceed "
+                    f"{config.maximum_vram_gb} GB; inference was not started"
+                ),
+                warning="predicted_vram_ceiling",
+                phase="packet_build",
+            )
+            extras = {
+                "classification": "predicted_vram_ceiling",
+                "predicted_vram_ceiling": True,
+                "hardware": {
+                    "gpu_resident": None,
+                    "cpu_offload": False,
+                    "placement_status": None,
+                    "vram_peak_gb": None,
+                },
+                "last_event": {},
+                "unload_seconds": 0,
+                "unload_recorded": True,
+                "vram_released": True,
+            }
+            measurement = Measurement(
+                elapsed_seconds=0,
+                prompt_eval_count=None,
+                timed_out=False,
+                infrastructure_failure=False,
+                gpu_resident=None,
+                cpu_spill=False,
+            )
+            row = _build_row(
+                request=request,
+                packet=packet,
+                measurement=measurement,
+                narration="",
+                extras=extras,
+                phase=phase,
+                spec=spec,
+                metadata=metadata,
+                preflight=preflight,
+                estimated_prompt=estimated_prompt,
+                calibration_plan=planned,
+            )
+            row["predicted_vram_ceiling"] = True
+            row["vram_projection"] = vram_projection
+            row["classification"] = "predicted_vram_ceiling"
+            row["stable_ladder_rung"] = False
+            folder = publish_completed_run(root, row)
+            rewrite_run_tables(root, list(runs) + [row])
+            progress.emit(
+                "Rung skipped before inference because predicted VRAM was clearly unsafe",
+                phase="artifact_finalization",
+                most_recent_classification=row.get("classification"),
+                last_completed_execution_id=row.get("execution_id"),
+                most_recent_artifact_directory=str(folder),
+            )
+            return row
         progress.emit(
             "Prompt submitted; Ollama /api/chat stream covers model load, prompt evaluation, and generation until the first token",
             phase="ollama_request",
@@ -1698,6 +1849,11 @@ def run_gate3(
             )
             persist_qwen_b_calibration(root, qwen_cal, planned)
         folder = publish_completed_run(root, row)
+        progress.emit(
+            f"Run COMPLETE marker published at {folder}",
+            phase="artifact_finalization",
+            most_recent_artifact_directory=str(folder),
+        )
         runs_so_far = list(runs) + [row]
         rewrite_run_tables(root, runs_so_far)
         progress.emit(
@@ -1982,9 +2138,16 @@ def run_gate3_live(
 ) -> dict[str, Any]:
     if not confirm_benchmark:
         raise InferenceNotAuthorized("Gate 3 requires --confirm-benchmark")
+    ollama_base_url = require_literal_loopback_ollama_url(ollama_base_url)
     config = load_gate3_config(config_path)
     results = Path(results_dir)
     results.mkdir(parents=True, exist_ok=True)
+    host_state = capture_clean_ladder_host_state()
+    (results / "host_state_at_start.json").write_text(
+        json.dumps(host_state, indent=2, sort_keys=True, default=str) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
 
     def live_snapshot() -> dict[str, Any]:
         nv = read_nvidia_snapshot()
@@ -2031,11 +2194,32 @@ def run_gate3_live(
         metadata = require_qwen_smoke_configuration(spec, row)
         live_packer: NestedEmailPacker | NestedMessagePacker
         if i14_export or config.source == I14_SOURCE_LABEL or config.experiment_phase == "i14_cleaned":
-            from memorybox.ask.i11a.i11a0_i14_source import load_frozen_prompt_messages, messages_to_pieces
+            from memorybox.ask.i11a.i11a0_i14_source import (
+                load_frozen_prompt_messages,
+                messages_to_pieces,
+                verify_pinned_i14_export,
+            )
 
             export_dir = Path(i14_export or "")
             if not export_dir.is_dir():
                 raise I11A0Error("i14 cleaned export directory is required for the remaining Gate 3 ladder")
+            progress.emit("Verifying frozen I14 export", stage="preflight", phase="export_verify")
+            export_proof = verify_pinned_i14_export(export_dir)
+            (results / "i14_export_verification.json").write_text(
+                json.dumps(export_proof, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+                newline="\n",
+            )
+            progress.emit(
+                (
+                    "Frozen I14 export verified: "
+                    f"v3 {export_proof['generation_id']} "
+                    f"prompt_sha256={export_proof['prompt_sha256'][:12]} "
+                    f"messages={export_proof['prompt_messages']} threads={export_proof['threads']}"
+                ),
+                stage="preflight",
+                phase="export_verify",
+            )
             messages = load_frozen_prompt_messages(export_dir)
             live_packer = NestedMessagePacker(messages)
             pieces = messages_to_pieces(messages)
@@ -2327,6 +2511,42 @@ def prove_gate3_offline() -> dict[str, Any]:
         == "planned_ctx_exceeds_model_limit",
         None,
     )
+    def _stable_vram(est: int, vram: float) -> dict[str, Any]:
+        return {
+            "phase": "coarse",
+            "estimated_evidence_tokens": est,
+            "vram_peak_gb": vram,
+            "final_safety_result": "passed",
+            "gpu_resident": True,
+            "cpu_offload": False,
+            "cpu_spill": False,
+            "placement_status": "gpu_resident",
+            "unload_recorded": True,
+            "vram_released": True,
+        }
+    unsafe_proj = project_vram_for_next_packet(
+        [_stable_vram(18000, 20.0), _stable_vram(19000, 21.0)],
+        next_estimated_tokens=25000,
+        ceiling_gb=22.5,
+    )
+    ok("predicted_vram_two_point_clearly_unsafe", unsafe_proj.get("clearly_unsafe") is True, unsafe_proj)
+    flat_proj = project_vram_for_next_packet(
+        [_stable_vram(18000, 20.0), _stable_vram(19000, 20.05)],
+        next_estimated_tokens=20000,
+        ceiling_gb=22.5,
+    )
+    ok("predicted_vram_flat_not_clearly_unsafe", flat_proj.get("clearly_unsafe") is False, flat_proj)
+    ok("vram_boundary_is_not_a_knee", classify_boundary_kind("vram_ceiling") == "vram_boundary", None)
+    ok("context_boundary_is_not_a_knee", classify_boundary_kind("planned_ctx_exceeds_model_limit") == "model_context_boundary", None)
+    ok("performance_knee_kind", classify_boundary_kind("three_confirmed_regressions") == "performance_knee", None)
+    from memorybox.ask.i11a.i11a0_host import require_literal_loopback_ollama_url as require_url
+    from memorybox.ask.i11a.i11a0_host import HostAffinityError as UrlAffinityError
+    try:
+        require_url("[http://127.0.0.1:11434](http://127.0.0.1:11434)")
+        ok("markdown_ollama_url_refused", False, "did_not_raise")
+    except UrlAffinityError:
+        ok("markdown_ollama_url_refused", True, None)
+    ok("literal_ollama_url_accepted", require_url("http://127.0.0.1:11434") == "http://127.0.0.1:11434", None)
     from memorybox.ask.i11a.i11a0_i14_source import FrozenMessage, prove_i14_phase1_offline
 
     i14_msgs = [
