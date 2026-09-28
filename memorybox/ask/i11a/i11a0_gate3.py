@@ -123,6 +123,13 @@ from memorybox.ask.i11a.i11a0_full_prompt_v4 import (
     plan_retention_aware_run,
     v4_artifact_dir,
 )
+from memorybox.ask.i11a.i11a0_full_prompt_v5 import (
+    PLANNER_ID as I14_FULL_PROMPT_V5,
+    is_retired_v4_config,
+    is_v5_config,
+    plan_reserve_aware_run,
+    v5_artifact_dir,
+)
 from memorybox.ask.i11a.i11a0_ollama_log_cursor import (
     COMPLETE_EVALUATED,
     COMPLETE_INFRA,
@@ -237,6 +244,7 @@ class Gate3Config:
     verified_max_num_ctx: int = QWEN_B_VERIFIED_MAX_CTX
     experiment_phase: str = "legacy_reviewed_chunks"
     planner_id: str = ""
+    live_ladder_authorized: bool = False
 
 
 def load_gate3_config(path: Path | str | None) -> Gate3Config:
@@ -1730,11 +1738,23 @@ def run_gate3(
     if is_defective_v3_config(config):
         raise I11A0Error(
             "planner i14_cleaned_full_prompt_v3 is invalid: it omitted Ollama "
-            "keep+(num_ctx-keep)//2 retention. Use i14_cleaned_full_prompt_v4."
+            "keep+(num_ctx-keep)//2 retention. That half-window preflight was later "
+            "retired after Diagnostic A2. Use i14_cleaned_full_prompt_v5 after founder authorization."
         )
-    v4 = is_v4_config(config)
-    if v2 and v4:
-        raise I11A0Error("v2 and full-prompt v4 planners cannot share a Gate 3 run")
+    if is_retired_v4_config(config) or is_v4_config(config):
+        raise I11A0Error(
+            "planner i14_cleaned_full_prompt_v4 is retired: Diagnostic A2 evaluated "
+            "24,174 tokens at num_ctx=28416, so the half-window is not the admission "
+            "limit. Use i14_cleaned_full_prompt_v5 after founder authorization."
+        )
+    v5 = is_v5_config(config)
+    if v5 and not bool(config.live_ladder_authorized):
+        raise I11A0Error(
+            "planner i14_cleaned_full_prompt_v5 is planned only. Founder authorization "
+            "is required before any live ladder rung."
+        )
+    if v2 and v5:
+        raise I11A0Error("v2 and full-prompt v5 planners cannot share a Gate 3 run")
     if v2:
         live_identity = current_planner_identity(
             ollama_version=str((preflight or {}).get("ollama_version") or "0.34.1"),
@@ -1822,17 +1842,16 @@ def run_gate3(
             evidence_text=packet.text,
         )
         estimated_prompt = estimate_tokens(SYSTEM_PROMPT + "\n" + user)
-        if v4:
-            planned = plan_retention_aware_run(evidence_bytes=int(packet.evidence_bytes))
+        if v5:
+            planned = plan_reserve_aware_run(evidence_bytes=int(packet.evidence_bytes))
             predicted_prompt = int(planned["predicted_complete_prompt_tokens"])
             if not planned.get("eligible"):
-                planned["exceeds_model_context"] = planned.get("rejection_reason") in {
-                    "planned_ctx_exceeds_model_limit",
-                    "predicted_complete_prompt_exceeds_model_retention_window",
-                    "retention_window_exceeded",
-                    "reserves_not_satisfied",
+                planned["exceeds_model_context"] = planned.get("rejection_reason") == "planned_ctx_exceeds_model_limit"
+                planned["predicted_vram_ceiling"] = planned.get("rejection_reason") in {
+                    "predicted_vram_ceiling",
+                    "adjacent_measured_peak_at_or_above_ceiling",
+                    "outside_measured_curve",
                 }
-                planned["predicted_vram_ceiling"] = planned.get("rejection_reason") == "predicted_vram_ceiling"
             elif int(planned["planned_num_ctx"]) < predicted_prompt + OUTPUT_RESERVE_TOKENS + SAFETY_MARGIN_TOKENS:
                 raise I11A0Error("planned num_ctx dropped below the 1,500-token safety margin")
         elif v2:
@@ -1952,7 +1971,7 @@ def run_gate3(
             )
             folder = publish_completed_run(root, row)
             rewrite_run_tables(
-                root, list(runs) + [row], dest_dir=planner_artifact_dir(root) if v2 else (v4_artifact_dir(root) if v4 else root)
+                root, list(runs) + [row], dest_dir=planner_artifact_dir(root) if v2 else (v5_artifact_dir(root) if v5 else root)
             )
             progress.emit(
                 "Rung skipped before inference because planned context exceeded the verified model limit",
@@ -1968,10 +1987,10 @@ def run_gate3(
             ceiling_gb=config.maximum_vram_gb,
             planner_id=I14_CONTEXT_PLANNER_V2 if v2 else None,
         )
-        if v4:
+        if v5:
             vram_projection = {
                 "predicted_vram_gb": planned.get("projected_peak_vram_gb"),
-                "clearly_unsafe": planned.get("rejection_reason") == "predicted_vram_ceiling",
+                "clearly_unsafe": bool(planned.get("predicted_vram_ceiling")),
             }
         if vram_projection.get("clearly_unsafe") or planned.get("predicted_vram_ceiling"):
             progress.emit(
@@ -2024,7 +2043,7 @@ def run_gate3(
             row["stable_ladder_rung"] = False
             folder = publish_completed_run(root, row)
             rewrite_run_tables(
-                root, list(runs) + [row], dest_dir=planner_artifact_dir(root) if v2 else (v4_artifact_dir(root) if v4 else root)
+                root, list(runs) + [row], dest_dir=planner_artifact_dir(root) if v2 else (v5_artifact_dir(root) if v5 else root)
             )
             progress.emit(
                 "Rung skipped before inference because predicted VRAM was clearly unsafe",
@@ -2102,19 +2121,15 @@ def run_gate3(
         if v2:
             row["planner_id"] = I14_CONTEXT_PLANNER_V2
             row["experiment_phase"] = I14_CONTEXT_PLANNER_V2
-        if v4:
-            row["planner_id"] = I14_FULL_PROMPT_V4
-            row["experiment_phase"] = I14_FULL_PROMPT_V4
+        if v5:
+            row["planner_id"] = I14_FULL_PROMPT_V5
+            row["experiment_phase"] = I14_FULL_PROMPT_V5
             for key in (
                 "predicted_complete_prompt_tokens",
-                "keep_tokens",
-                "retention_limit_tokens",
-                "minimum_num_ctx_for_retention",
                 "minimum_num_ctx_for_reserves",
                 "planned_num_ctx",
                 "model_context_limit",
                 "projected_peak_vram_gb",
-                "retention_check",
                 "reserve_check",
                 "model_context_check",
                 "vram_projection_check",
@@ -2135,7 +2150,18 @@ def run_gate3(
             )
             row["log_cursor"] = {k: v for k, v in snap.items() if k != "text"}
             row.update({k: v for k, v in verdict.items() if k not in {"passed", "parsed"}})
-            if verdict.get("passed") and extras.get("vram_released") is False:
+            from memorybox.ask.i11a.i11a0_full_prompt_v5 import estimator_underestimate
+
+            observed = verdict.get("complete_log_tokens")
+            if observed is not None and estimator_underestimate(
+                predicted=int(planned.get("predicted_complete_prompt_tokens") or 0),
+                observed_complete=int(observed),
+            ):
+                row["classification"] = "estimator_underestimate"
+                row["stable_ladder_rung"] = False
+                row["exclude_from_knee"] = True
+                row["exclude_from_operating_point"] = True
+            elif verdict.get("passed") and extras.get("vram_released") is False:
                 row["classification"] = COMPLETE_INFRA
                 row["stable_ladder_rung"] = False
                 row["exclude_from_knee"] = True
@@ -2148,6 +2174,9 @@ def run_gate3(
             else:
                 row["classification"] = COMPLETE_EVALUATED
             row["never_treat_prompt_eval_as_complete"] = not bool(verdict.get("no_truncation_proven"))
+            row["half_window_preflight_retired"] = True
+            row["truncate"] = False
+            row["shift"] = False
         if phase in {"repeat_proposed", "repeat_next_larger"}:
             row["repeat_kind"] = "operating_point_repeat"
         if (
@@ -2168,7 +2197,7 @@ def run_gate3(
             "also pass placement, VRAM, and regression gates. Repeats may be successful_stable "
             "while stable_ladder_rung is false because they are validation copies, not new rungs."
         )
-        if row.get("actual_prompt_tokens") is not None and not v4 and not row.get("truncation_occurred"):
+        if row.get("actual_prompt_tokens") is not None and not v5 and not row.get("truncation_occurred"):
             if v2:
                 i14_cal.add_observation(
                     execution_id=str(row["execution_id"]),
@@ -2191,7 +2220,7 @@ def run_gate3(
             most_recent_artifact_directory=str(folder),
         )
         runs_so_far = list(runs) + [row]
-        rewrite_run_tables(root, runs_so_far, dest_dir=planner_artifact_dir(root) if v2 else (v4_artifact_dir(root) if v4 else root))
+        rewrite_run_tables(root, runs_so_far, dest_dir=planner_artifact_dir(root) if v2 else (v5_artifact_dir(root) if v5 else root))
         progress.emit(
             (
                 f"Actual prompt tokens={row.get('actual_prompt_tokens')} "
@@ -2232,7 +2261,7 @@ def run_gate3(
             int(last_stable.get("estimated_evidence_tokens") or last_stable.get("requested_evidence_tokens") or 0),
             increment=config.coarse_increment_tokens,
         )
-    if v2 or v4:
+    if v2 or v5:
         rerun_source = None
         placement_source = None
     if rerun_source is None and placement_source is not None:
@@ -3862,6 +3891,17 @@ def prove_gate3_offline() -> dict[str, Any]:
     ok("v4_config_detected", is_v4_config(Gate3Config(planner_id=V4_PLANNER_ID, experiment_phase=V4_PLANNER_ID)))
     ok("legacy_v3_18k_plan_ineligible", evaluate_legacy_v3_plan(predicted=24109, num_ctx=28416)["eligible"] is False)
     ok("retention_aware_rejects_oversized", plan_retention_aware_run(evidence_bytes=74063)["eligible"] is False)
+    from memorybox.ask.i11a.i11a0_full_prompt_v5 import (
+        PLANNER_ID as V5_PLANNER_ID,
+        is_retired_v4_config,
+        is_v5_config,
+        plan_reserve_aware_run,
+    )
+
+    ok("v4_planner_retired_flag", is_retired_v4_config(Gate3Config(planner_id=V4_PLANNER_ID)))
+    ok("v5_config_detected", is_v5_config(Gate3Config(planner_id=V5_PLANNER_ID)))
+    ok("v5_reserve_equation_accepts_18k", plan_reserve_aware_run(evidence_bytes=74063)["eligible"] is True)
+    ok("v5_default_not_live_authorized", Gate3Config(planner_id=V5_PLANNER_ID).live_ladder_authorized is False)
 
     return {
         "ok": not problems,

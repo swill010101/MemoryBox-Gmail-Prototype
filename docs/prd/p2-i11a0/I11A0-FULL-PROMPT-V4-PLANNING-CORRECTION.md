@@ -1,7 +1,8 @@
 # I11A.0 full-prompt v4 planning correction
 
-**Status:** controller and offline planning correction only. No v4 inference until founder authorization.  
-**Planner:** `i14_cleaned_full_prompt_v4`  
+**Status:** **RETIRED as a live preflight** after Diagnostic A2 (2026-09-28). A2 evaluated 24,174 tokens at `num_ctx=28416` with `truncate=false`/`shift=false`; Diagnostic B fail-closed overflow. Use v5: `I11A0-FULL-PROMPT-V5-PLAN.md`. This file remains as the historical v4 correction record.
+
+**Planner:** `i14_cleaned_full_prompt_v4` (retired)  
 **Does not rewrite** the reconstructed historical audit or prior run artifacts.
 
 ## Invalidation of v3

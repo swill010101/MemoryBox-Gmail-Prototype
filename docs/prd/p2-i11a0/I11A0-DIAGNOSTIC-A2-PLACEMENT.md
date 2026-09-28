@@ -9,3 +9,5 @@ Diagnostic B runs only if A2 is `gpu_resident`, `cpu_offload=false`, peak VRAM `
 If A2 placement is unknown, stop. Do not run B. Do not resume the ladder.
 
 18K estimator: predicted 24,109 vs observed 24,174 (**+65 tokens, ~0.27%**). Do not mix with the v4 8K +861 error.
+
+A2 `292642bad1a27cb4…` and Diagnostic B completed. Read-only report: `I11A0-DIAGNOSTIC-A2-B-RESULTS.md`. Half-window preflight retired: `I11A0-HALF-WINDOW-PREFLIGHT-RETIRED.md`.

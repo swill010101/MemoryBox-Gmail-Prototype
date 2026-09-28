@@ -1619,6 +1619,14 @@ def run_prove_i11a0_benchmark() -> dict[str, Any]:
     problems.extend(no_trunc.get("problems") or [])
     _check("no_truncation_diagnostic_offline", no_trunc.get("ok") is True, checks, problems, no_trunc.get("problems"))
     _check("no_truncation_diagnostic_models_not_called", no_trunc.get("models_called") is False, checks, problems)
+    from memorybox.ask.i11a.i11a0_full_prompt_v5 import prove_full_prompt_v5_offline
+
+    full_prompt_v5 = prove_full_prompt_v5_offline()
+    checks.extend(full_prompt_v5.get("checks") or [])
+    problems.extend(full_prompt_v5.get("problems") or [])
+    _check("full_prompt_v5_offline", full_prompt_v5.get("ok") is True, checks, problems, full_prompt_v5.get("problems"))
+    _check("full_prompt_v5_models_not_called", full_prompt_v5.get("models_called") is False, checks, problems)
+    _check("full_prompt_v5_ladder_not_resumed", full_prompt_v5.get("ladder_resumed") is False, checks, problems)
     return {
         "ok": not problems,
         "checks": len(checks),
@@ -1647,5 +1655,11 @@ def run_prove_i11a0_benchmark() -> dict[str, Any]:
             "check_count": len(no_trunc.get("checks") or []),
             "models_called": no_trunc.get("models_called"),
             "ladder_resumed": no_trunc.get("ladder_resumed"),
+        },
+        "full_prompt_v5_offline": {
+            "ok": full_prompt_v5.get("ok"),
+            "check_count": len(full_prompt_v5.get("checks") or []),
+            "models_called": full_prompt_v5.get("models_called"),
+            "ladder_resumed": full_prompt_v5.get("ladder_resumed"),
         },
     }
