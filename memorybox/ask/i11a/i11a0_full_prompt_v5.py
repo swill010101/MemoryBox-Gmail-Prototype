@@ -361,13 +361,46 @@ def decide_22k(
         "proposed_num_ctx": TWENTY_TWO_K_PLANNED_NUM_CTX,
         "projection": projection,
         "founder_authorization_required_to_run": False,
-        "note": "Founder authorized one 22K rung. Do not run 23K in this invocation.",
+        "note": "22K is authorized. Autonomous continuation is controlled by autonomous_full_prompt_ladder.",
     }
 
 
-def decide_23k(projection: dict[str, Any], *, ceiling_gb: float = VRAM_CEILING_GB) -> dict[str, Any]:
+def decide_23k(
+    projection: dict[str, Any],
+    *,
+    autonomous: bool = False,
+    ceiling_gb: float = VRAM_CEILING_GB,
+) -> dict[str, Any]:
     conservative = projection.get("conservative_gb")
     below = conservative is not None and float(conservative) < float(ceiling_gb)
+    if autonomous:
+        if below:
+            return {
+                "run_23k": True,
+                "automatically_ran_23k": True,
+                "classification": "authorized_autonomous_continuation",
+                "stop_reason": None,
+                "not_a_performance_knee": True,
+                "vram_or_context_stop_is_not_a_performance_knee": True,
+                "proposed_num_ctx": TWENTY_THREE_K_PLANNED_NUM_CTX,
+                "projection": projection,
+                "twenty_three_k_merits_separate_founder_authorization": False,
+                "founder_authorization_required_to_run": False,
+                "note": "Founder authorized autonomous continuation from 23K. Do not stop for founder_review_23k.",
+            }
+        return {
+            "run_23k": False,
+            "automatically_ran_23k": False,
+            "classification": "predicted_vram_boundary",
+            "stop_reason": "predicted_vram_ceiling",
+            "not_a_performance_knee": True,
+            "vram_or_context_stop_is_not_a_performance_knee": True,
+            "proposed_num_ctx": TWENTY_THREE_K_PLANNED_NUM_CTX,
+            "projection": projection,
+            "twenty_three_k_merits_separate_founder_authorization": False,
+            "founder_authorization_required_to_run": False,
+            "note": "Conservative valid-run projection for 23K is at or above 22.5 GB. VRAM boundary, not a knee.",
+        }
     return {
         "run_23k": False,
         "automatically_ran_23k": False,
@@ -381,12 +414,91 @@ def decide_23k(projection: dict[str, Any], *, ceiling_gb: float = VRAM_CEILING_G
         "founder_authorization_required_to_run": True,
         "note": (
             "Conservative valid-run projection for 23K is below 22.5 GB. "
-            "23K merits separate founder authorization; do not auto-run."
+            "Historical sidecar only; live ops use autonomous_full_prompt_ladder."
             if below
             else "Conservative valid-run projection for 23K is at or above 22.5 GB. "
             "Treat as a VRAM capacity boundary, not a performance knee."
         ),
     }
+
+
+def v5_underestimate_invalidates_safety(
+    *,
+    predicted: int,
+    observed_complete: int,
+    num_ctx: int,
+) -> bool:
+    if int(observed_complete) <= int(predicted):
+        return False
+    return int(observed_complete) + OUTPUT_RESERVE_TOKENS + SAFETY_MARGIN_TOKENS > int(num_ctx)
+
+
+def should_run_v5_refinement(stop_reason: str) -> bool:
+    return stop_reason in {
+        "predicted_vram_ceiling",
+        "vram_ceiling",
+        "planned_ctx_exceeds_model_limit",
+        "three_confirmed_regressions",
+        "evidence_exhausted",
+        "safety_margin_failed",
+    }
+
+
+def valid_vram_points_from_runs(runs: list[dict[str, Any]]) -> list[tuple[int, float]]:
+    points: list[tuple[int, float]] = []
+    seen: set[int] = set()
+    for row in runs:
+        cls = str(row.get("classification") or "")
+        if not (
+            row.get("imported_not_rerun")
+            or cls == "complete_prompt_evaluated"
+            or (row.get("final_safety_result") == "passed" and row.get("gpu_resident") is True)
+        ):
+            continue
+        ctx = row.get("configured_num_ctx")
+        peak = row.get("vram_peak_gb")
+        if ctx in {None, ""} or peak is None:
+            continue
+        key = int(ctx)
+        if key in seen:
+            continue
+        seen.add(key)
+        points.append((key, float(peak)))
+    return points
+
+
+def write_json_if_absent(path: Path, payload: dict[str, Any]) -> bool:
+    dest = Path(path)
+    if dest.is_file():
+        return False
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(json.dumps(payload, indent=2, default=str) + "\n", encoding="utf-8", newline="\n")
+    return True
+
+
+def v5_authoritative_safety_assessment(
+    *,
+    actual_complete: int,
+    predicted_complete: int,
+    num_ctx: int,
+    bytes_div4_full_prompt: int,
+) -> dict[str, Any]:
+    from memorybox.ask.i11a.i11a0_benchmark import prompt_safety_assessment
+
+    assessment = prompt_safety_assessment(
+        actual_prompt_tokens=int(actual_complete),
+        estimated_prompt_tokens=int(predicted_complete),
+        configured_num_ctx=int(num_ctx),
+        output_reserve_tokens=OUTPUT_RESERVE_TOKENS,
+        required_safety_margin_tokens=SAFETY_MARGIN_TOKENS,
+    )
+    assessment["bytes_div4_full_prompt_tokens"] = int(bytes_div4_full_prompt)
+    assessment["bytes_div4_vs_actual_error_tokens"] = int(actual_complete) - int(bytes_div4_full_prompt)
+    assessment["v5_planner_error_tokens"] = int(actual_complete) - int(predicted_complete)
+    assessment["accepted_planner_comparison"] = "predicted_complete_prompt_tokens_vs_ollama_complete"
+    assessment["bytes_div4_full_prompt_is_diagnostic_only"] = True
+    assessment["bytes_div4_must_not_classify_recalibrate"] = True
+    return assessment
 
 
 def verify_v5_22k_packet(packet: Any, *, digest: str) -> dict[str, Any]:
@@ -567,7 +679,7 @@ def prove_full_prompt_v5_offline() -> dict[str, Any]:
         estimator_underestimate(predicted=24109, observed_complete=25000) is True,
         None,
     )
-    from memorybox.ask.i11a.i11a0_gate3 import Gate3Config, analyze_gate3
+    from memorybox.ask.i11a.i11a0_gate3 import Gate3Config, analyze_gate3, hard_stop_reason
 
     ok("v5_config_detected", is_v5_config(Gate3Config(planner_id=PLANNER_ID)))
     ok("v4_config_is_retired", is_retired_v4_config(Gate3Config(planner_id=V4_PLANNER_ID)))
@@ -582,7 +694,12 @@ def prove_full_prompt_v5_offline() -> dict[str, Any]:
         ok("v5_table_built", False, str(exc))
     ops = json.loads((REPO_ROOT / "docs" / "ops" / "i11a0_gate3.b.full-prompt-v5.json").read_text(encoding="utf-8"))
     ok("v5_ops_live_authorized", ops.get("live_ladder_authorized") is True and ops.get("start_evidence_tokens") == 19000, ops)
-    ok("v5_ops_authorizes_22k_not_23k", ops.get("authorized_22k") is True and ops.get("authorized_23k") is False, ops)
+    ok(
+        "v5_ops_authorizes_autonomous_continuation",
+        ops.get("autonomous_full_prompt_ladder") is True and ops.get("authorized_23k") is True,
+        ops,
+    )
+    ok("v5_default_config_is_not_autonomous", Gate3Config(planner_id=PLANNER_ID).autonomous_full_prompt_ladder is False)
     fit = project_valid_full_prompt_vram([(28416, 20.239), (29440, 20.5)], 32000)
     ok("valid_run_vram_fit_uses_two_points", fit.get("ok") is True and fit.get("historical_is_comparison_only") is True, fit)
     boundary = decide_22k({"conservative_gb": 22.6, "ok": True})
@@ -606,12 +723,15 @@ def prove_full_prompt_v5_offline() -> dict[str, Any]:
     )
     d23_low = decide_23k({"conservative_gb": 21.4, "ok": True})
     ok(
-        "23k_below_ceiling_is_founder_review_not_auto",
-        d23_low["run_23k"] is False
-        and d23_low["stop_reason"] == "founder_review_23k"
-        and d23_low["twenty_three_k_merits_separate_founder_authorization"] is True
-        and d23_low["vram_or_context_stop_is_not_a_performance_knee"] is True,
+        "historical_decide_23k_still_records_founder_review",
+        d23_low["run_23k"] is False and d23_low["stop_reason"] == "founder_review_23k",
         d23_low,
+    )
+    d23_auto = decide_23k({"conservative_gb": 21.424, "ok": True}, autonomous=True)
+    ok(
+        "autonomous_23k_does_not_founder_gate",
+        d23_auto["run_23k"] is True and d23_auto["stop_reason"] is None and d23_auto["founder_authorization_required_to_run"] is False,
+        d23_auto,
     )
     d23_high = decide_23k({"conservative_gb": 22.6, "ok": True})
     ok(
@@ -619,6 +739,53 @@ def prove_full_prompt_v5_offline() -> dict[str, Any]:
         d23_high["stop_reason"] == "predicted_vram_ceiling" and d23_high["run_23k"] is False,
         d23_high,
     )
+    d23_auto_high = decide_23k({"conservative_gb": 22.6, "ok": True}, autonomous=True)
+    ok(
+        "autonomous_23k_still_stops_on_vram",
+        d23_auto_high["run_23k"] is False and d23_auto_high["stop_reason"] == "predicted_vram_ceiling",
+        d23_auto_high,
+    )
+    ok(
+        "v5_underestimate_stops_only_when_safety_fails",
+        v5_underestimate_invalidates_safety(predicted=29508, observed_complete=29025, num_ctx=33536) is False
+        and v5_underestimate_invalidates_safety(predicted=30000, observed_complete=32000, num_ctx=33536) is True,
+        None,
+    )
+    ok("v5_refinement_after_vram_stop", should_run_v5_refinement("predicted_vram_ceiling") is True)
+    ok("v5_refinement_not_after_truncation", should_run_v5_refinement("invalid_truncated_prompt") is False)
+    ok("v5_refinement_not_after_founder_review", should_run_v5_refinement("founder_review_23k") is False)
+    acct_22k = v5_authoritative_safety_assessment(
+        actual_complete=29025,
+        predicted_complete=29508,
+        num_ctx=33536,
+        bytes_div4_full_prompt=24018,
+    )
+    ok(
+        "v5_22k_planner_overestimate_is_not_recalibrate",
+        acct_22k["overall_classification"] == "successful_stable"
+        and acct_22k["v5_planner_error_tokens"] == -483
+        and acct_22k["bytes_div4_full_prompt_is_diagnostic_only"] is True
+        and acct_22k["enlargement_stop"] is False,
+        acct_22k,
+    )
+    from tempfile import TemporaryDirectory
+
+    with TemporaryDirectory() as tmp:
+        preserved = Path(tmp) / "sidecar.json"
+        write_json_if_absent(preserved, {"keep": 1})
+        write_json_if_absent(preserved, {"keep": 2})
+        ok("historical_sidecar_not_rewritten", json.loads(preserved.read_text(encoding="utf-8"))["keep"] == 1)
+    ok("hard_stop_estimator_underestimate", hard_stop_reason({"classification": "estimator_underestimate"}) == "estimator_underestimate")
+    ok("hard_stop_shift", hard_stop_reason({"classification": "context_shift_detected"}) == "context_shift_detected")
+    ok("hard_stop_context_overflow", hard_stop_reason({"context_overflow": True, "classification": "complete_prompt_evaluated"}) == "context_overflow")
+    ok("hard_stop_vram_ceiling", hard_stop_reason({"vram_peak_gb": 22.5, "classification": "complete_prompt_evaluated", "final_safety_result": "passed", "unload_recorded": True, "vram_released": True, "gpu_resident": True, "placement_status": "gpu_resident"}) == "vram_ceiling")
+    ok("hard_stop_cpu_offload", hard_stop_reason({"placement_status": "cpu_offload", "cpu_offload": True, "classification": "complete_prompt_evaluated"}) == "cpu_offload")
+    ok("hard_stop_unknown_placement", hard_stop_reason({"placement_status": "unknown", "classification": "complete_prompt_evaluated"}) == "placement_unknown")
+    ok("hard_stop_timeout", hard_stop_reason({"timed_out": True, "classification": "timed_out"}) == "timed_out")
+    ok("hard_stop_identity", hard_stop_reason({"model_identity_changed": True}) == "model_identity_changed")
+    ok("hard_stop_unload", hard_stop_reason({"classification": "complete_prompt_evaluated", "final_safety_result": "passed", "unload_recorded": False, "gpu_resident": True, "placement_status": "gpu_resident"}) == "unload_failed")
+    ok("hard_stop_predicted_vram", hard_stop_reason({"predicted_vram_ceiling": True, "classification": "predicted_vram_ceiling"}) == "predicted_vram_ceiling")
+    ok("hard_stop_planned_ctx", hard_stop_reason({"classification": "planned_ctx_exceeds_model_limit", "planned_ctx_exceeds_model_limit": True}) == "planned_ctx_exceeds_model_limit")
     from types import SimpleNamespace
 
     fake_ok = SimpleNamespace(

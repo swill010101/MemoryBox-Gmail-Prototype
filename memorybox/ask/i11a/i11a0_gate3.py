@@ -247,6 +247,7 @@ class Gate3Config:
     live_ladder_authorized: bool = False
     authorized_22k: bool = False
     authorized_23k: bool = False
+    autonomous_full_prompt_ladder: bool = False
 
 
 def load_gate3_config(path: Path | str | None) -> Gate3Config:
@@ -1561,14 +1562,26 @@ def _build_row(
 ) -> dict[str, Any]:
     actual = measurement.prompt_eval_count
     assessment = None
+    planner_predicted = (calibration_plan or {}).get("predicted_complete_prompt_tokens")
+    is_v5_plan = (calibration_plan or {}).get("planner_id") == "i14_cleaned_full_prompt_v5"
     if actual is not None:
-        assessment = prompt_safety_assessment(
-            actual_prompt_tokens=int(actual),
-            estimated_prompt_tokens=estimated_prompt,
-            configured_num_ctx=request.num_ctx,
-            output_reserve_tokens=request.reserved_output_tokens,
-            required_safety_margin_tokens=SAFETY_MARGIN_TOKENS,
-        )
+        if is_v5_plan and planner_predicted is not None:
+            from memorybox.ask.i11a.i11a0_full_prompt_v5 import v5_authoritative_safety_assessment
+
+            assessment = v5_authoritative_safety_assessment(
+                actual_complete=int(actual),
+                predicted_complete=int(planner_predicted),
+                num_ctx=request.num_ctx,
+                bytes_div4_full_prompt=int(estimated_prompt),
+            )
+        else:
+            assessment = prompt_safety_assessment(
+                actual_prompt_tokens=int(actual),
+                estimated_prompt_tokens=estimated_prompt,
+                configured_num_ctx=request.num_ctx,
+                output_reserve_tokens=request.reserved_output_tokens,
+                required_safety_margin_tokens=SAFETY_MARGIN_TOKENS,
+            )
     hardware = extras.get("hardware") or {}
     last = extras.get("last_event") or {}
     placement_status = hardware.get("placement_status") or extras.get("placement_status")
@@ -1597,9 +1610,18 @@ def _build_row(
         "phase": phase,
         "requested_evidence_tokens": request.requested_evidence_tokens,
         "estimated_evidence_tokens": packet.estimated_evidence_tokens,
+        "actual_evidence_tokens": None,
         "actual_prompt_tokens": actual,
         "estimated_prompt_tokens": estimated_prompt,
-        "estimation_error_tokens": None if actual is None else int(actual) - estimated_prompt,
+        "estimation_error_tokens": (
+            None
+            if actual is None
+            else (
+                int(actual) - int(planner_predicted)
+                if is_v5_plan and planner_predicted is not None
+                else int(actual) - estimated_prompt
+            )
+        ),
         "configured_num_ctx": request.num_ctx,
         "calibration_plan": calibration_plan,
         "planner_id": (calibration_plan or {}).get("planner_id"),
@@ -1682,9 +1704,16 @@ def _build_row(
             "estimator_result_kind": TOKEN_ESTIMATOR_LABEL,
             "estimated_evidence_tokens": packet.estimated_evidence_tokens,
             "estimated_prompt_tokens": estimated_prompt,
+            "predicted_complete_prompt_tokens": planner_predicted,
             "actual_prompt_eval_count": actual,
             "configured_num_ctx": request.num_ctx,
             "assessment": assessment,
+            "accepted_v5_comparison": (
+                "predicted_complete_prompt_tokens versus Ollama/log-verified complete prompt"
+                if is_v5_plan
+                else None
+            ),
+            "bytes_div4_full_prompt_is_diagnostic_only": bool(is_v5_plan),
         },
         "last_event": last,
     }
@@ -2030,11 +2059,18 @@ def run_gate3(
             planner_id=I14_CONTEXT_PLANNER_V2 if v2 else None,
         )
         if v5:
+            from memorybox.ask.i11a.i11a0_full_prompt_v5 import (
+                project_valid_full_prompt_vram,
+                valid_vram_points_from_runs,
+            )
+
+            valid_proj = project_valid_full_prompt_vram(valid_vram_points_from_runs(runs), num_ctx)
+            planned["valid_run_vram_projection"] = valid_proj
             vram_projection = {
-                "predicted_vram_gb": planned.get("projected_peak_vram_gb"),
-                "clearly_unsafe": bool(planned.get("predicted_vram_ceiling")),
+                "predicted_vram_gb": valid_proj.get("conservative_gb"),
+                "clearly_unsafe": bool(valid_proj.get("ok")) and not bool(valid_proj.get("below_ceiling")),
             }
-        if vram_projection.get("clearly_unsafe") or planned.get("predicted_vram_ceiling"):
+        if vram_projection.get("clearly_unsafe") or ((not v5) and planned.get("predicted_vram_ceiling")):
             progress.emit(
                 (
                     "Predicted VRAM "
@@ -2192,19 +2228,21 @@ def run_gate3(
             )
             row["log_cursor"] = {k: v for k, v in snap.items() if k != "text"}
             row.update({k: v for k, v in verdict.items() if k not in {"passed", "parsed"}})
-            from memorybox.ask.i11a.i11a0_full_prompt_v5 import estimator_underestimate
+            from memorybox.ask.i11a.i11a0_full_prompt_v5 import v5_underestimate_invalidates_safety
 
             observed = verdict.get("complete_log_tokens")
             starts = json.dumps(verdict.get("runner_starts") or [])
+            predicted_complete = int(planned.get("predicted_complete_prompt_tokens") or 0)
             if "context-shift" in starts and "no-context-shift" not in starts:
                 row["classification"] = "context_shift_detected"
                 row["stable_ladder_rung"] = False
             elif observed is not None and pec is not None and int(observed) != int(pec):
                 row["classification"] = "prompt_eval_mismatch"
                 row["stable_ladder_rung"] = False
-            elif observed is not None and estimator_underestimate(
-                predicted=int(planned.get("predicted_complete_prompt_tokens") or 0),
+            elif observed is not None and v5_underestimate_invalidates_safety(
+                predicted=predicted_complete,
                 observed_complete=int(observed),
+                num_ctx=int(row.get("configured_num_ctx") or num_ctx),
             ):
                 row["classification"] = "estimator_underestimate"
                 row["stable_ladder_rung"] = False
@@ -2222,6 +2260,8 @@ def run_gate3(
                 row["exclude_from_operating_point"] = True
             else:
                 row["classification"] = COMPLETE_EVALUATED
+                if observed is not None and int(observed) > predicted_complete:
+                    row["v5_planner_underestimate_within_reserves"] = True
             row["never_treat_prompt_eval_as_complete"] = not bool(verdict.get("no_truncation_proven"))
             row["half_window_preflight_retired"] = True
             row["truncate"] = False
@@ -2303,6 +2343,7 @@ def run_gate3(
         return row
 
     v5_decision: dict[str, Any] | None = None
+    v5_autonomous = False
     if v5:
         from memorybox.ask.i11a.i11a0_full_prompt_v5 import (
             A2_NUM_CTX,
@@ -2316,8 +2357,9 @@ def run_gate3(
             decide_23k,
             imported_a2_rung_row,
             project_valid_full_prompt_vram,
+            should_run_v5_refinement,
             verify_v5_22k_packet,
-            write_v5_ladder_review,
+            write_json_if_absent,
         )
 
         a2_row = imported_a2_rung_row()
@@ -2334,6 +2376,7 @@ def run_gate3(
         stop_reason = "stage_complete"
         measured_22k = False
         decision_23k: dict[str, Any] | None = None
+        v5_autonomous = bool(config.autonomous_full_prompt_ladder)
         for spec_rung in V5_LIVE_RUNGS:
             if int(spec_rung["nominal"]) == 21000:
                 proj21 = project_valid_full_prompt_vram(valid_points, int(spec_rung["num_ctx"]))
@@ -2407,7 +2450,10 @@ def run_gate3(
             last_stable = row
         else:
             proj22 = project_valid_full_prompt_vram(valid_points, TWENTY_TWO_K_PLANNED_NUM_CTX)
-            v5_decision = decide_22k(proj22, authorized=bool(config.authorized_22k))
+            v5_decision = decide_22k(
+                proj22,
+                authorized=bool(config.authorized_22k or config.autonomous_full_prompt_ladder),
+            )
             if not v5_decision.get("run_22k"):
                 stop_reason = str(v5_decision["stop_reason"])
             else:
@@ -2488,58 +2534,82 @@ def run_gate3(
                                 (int(row_22["configured_num_ctx"]), float(row_22["vram_peak_gb"]))
                             )
                         last_stable = row_22
+                        last_packet_ids = packet_identity_ids(row_22)
                         decision_23k = decide_23k(
-                            project_valid_full_prompt_vram(valid_points, TWENTY_THREE_K_PLANNED_NUM_CTX)
+                            project_valid_full_prompt_vram(valid_points, TWENTY_THREE_K_PLANNED_NUM_CTX),
+                            autonomous=v5_autonomous,
                         )
-                        stop_reason = str(decision_23k["stop_reason"])
+                        if v5_autonomous and decision_23k.get("run_23k"):
+                            stop_reason = "stage_complete"
+                        else:
+                            stop_reason = str(decision_23k["stop_reason"] or "founder_review_23k")
                         v5_decision = {
                             **v5_decision,
                             "preflight": identity,
                             "ran_22k": True,
                             "measured_22k_this_invocation": measured_22k,
+                            "stop_after_22k": not v5_autonomous,
+                            "autonomous_continuation": v5_autonomous,
                             "twenty_two_k_execution_id": row_22.get("execution_id"),
-                            "stop_after_22k": True,
                             "twenty_three_k": decision_23k,
                         }
-        decision_path = v5_artifact_dir(root) / "v5_22k_decision.json"
-        decision_path.write_text(
-            json.dumps(
-                {
-                    "decision": v5_decision,
-                    "stop_reason": stop_reason,
-                    "valid_vram_points": valid_points,
-                    "twenty_three_k": decision_23k,
-                    "automatically_ran_22k": measured_22k,
-                    "automatically_ran_23k": False,
-                },
-                indent=2,
-                default=str,
-            )
-            + "\n",
-            encoding="utf-8",
-            newline="\n",
+        write_json_if_absent(
+            v5_artifact_dir(root) / "v5_22k_decision.json",
+            {
+                "decision": v5_decision,
+                "stop_reason": stop_reason,
+                "valid_vram_points": valid_points,
+                "twenty_three_k": decision_23k,
+                "automatically_ran_22k": measured_22k,
+                "automatically_ran_23k": False,
+                "historical_sidecar_preserved": True,
+            },
         )
         if decision_23k is not None:
-            (v5_artifact_dir(root) / "v5_23k_decision.json").write_text(
-                json.dumps(decision_23k, indent=2, default=str) + "\n",
-                encoding="utf-8",
-                newline="\n",
-            )
-        write_v5_ladder_review(
-            root,
+            write_json_if_absent(v5_artifact_dir(root) / "v5_23k_decision.json", decision_23k)
+        write_json_if_absent(
+            v5_artifact_dir(root) / "v5_a2_through_22k_review.json",
             build_a2_through_22k_review(
                 runs,
-                stop_reason=stop_reason,
-                decision_23k=decision_23k,
+                stop_reason="founder_review_23k",
+                decision_23k=None,
                 measured_22k=measured_22k,
             ),
         )
-        progress.emit(
-            f"v5 authorized ladder stopped: {stop_reason}",
-            stage="analysis",
-            stop_reason=stop_reason,
-            expected_next_action="founder_review",
-        )
+        if v5_autonomous:
+            (v5_artifact_dir(root) / "v5_autonomous_continuation.json").write_text(
+                json.dumps(
+                    {
+                        "planner_id": "i14_cleaned_full_prompt_v5",
+                        "autonomous_full_prompt_ladder": True,
+                        "founder_review_23k_bypassed": True,
+                        "do_not_rerun_a2_through_22k": True,
+                        "start_nominal": 23000,
+                        "coarse_increment_tokens": 1000,
+                        "refinement_increment_tokens": 250,
+                        "peggy_scenario": False,
+                        "stop_reason_after_22k_preflight": stop_reason,
+                    },
+                    indent=2,
+                )
+                + "\n",
+                encoding="utf-8",
+                newline="\n",
+            )
+        if v5_autonomous and stop_reason == "stage_complete":
+            progress.emit(
+                "v5 22K artifacts preserved; autonomous continuation starts at 23K",
+                stage="coarse",
+                phase="packet_build",
+                expected_next_action="continue_ladder",
+            )
+        else:
+            progress.emit(
+                f"v5 authorized ladder stopped: {stop_reason}",
+                stage="analysis",
+                stop_reason=stop_reason,
+                expected_next_action="founder_review",
+            )
 
     rerun_source = needs_identical_packet_rerun(runs)
     placement_source = needs_gpu_placement_validation(runs)
@@ -2603,7 +2673,9 @@ def run_gate3(
             stop_reason = str(row.get("classification") or "calibrated_rerun_failed")
 
     while True:
-        if v5 or stop_reason != "stage_complete":
+        if stop_reason != "stage_complete":
+            break
+        if v5 and not v5_autonomous:
             break
         packet = packer.packet_for_target(target)
         remaining = packer.remaining_after(packet)
@@ -2684,10 +2756,24 @@ def run_gate3(
         stop_reason=stop_reason,
         expected_next_action="refinement_or_repeats",
     )
-    if last_stable and should_run_final_repeats(stop_reason) and not v5 and stop_reason not in {
+    v5_refine = bool(v5_autonomous and last_stable and should_run_v5_refinement(stop_reason))
+    if last_stable and (
+        (not v5 and should_run_final_repeats(stop_reason)) or v5_refine
+    ) and stop_reason not in {
         "host_affinity",
         "estimator_recalibration_required",
         "placement_unknown",
+        "estimator_underestimate",
+        "cpu_offload",
+        "context_overflow",
+        "timed_out",
+        "model_identity_changed",
+        INVALID_TRUNCATED,
+        "context_shift_detected",
+        "prompt_eval_mismatch",
+        "unload_failed",
+        "unload_vram_not_released",
+        LOG_UNVERIFIED,
     }:
         progress.emit("Refinement started", stage="refinement", phase="packet_build")
         low = int(last_stable["requested_evidence_tokens"])
@@ -2787,17 +2873,22 @@ def run_gate3(
         analysis["truncated_historical_runs_excluded"] = True
         analysis["v5_22k_decision"] = v5_decision
         analysis["automatically_ran_22k"] = bool(measured_22k)
-        analysis["automatically_ran_23k"] = False
+        analysis["automatically_ran_23k"] = bool(v5_autonomous)
+        analysis["autonomous_full_prompt_ladder"] = v5_autonomous
+        analysis["founder_review_23k_bypassed"] = v5_autonomous
         analysis["v5_23k_decision"] = decision_23k
         if stop_reason in {
             "predicted_vram_ceiling",
             "founder_review_22k",
             "founder_review_23k",
             "vram_ceiling",
+            "planned_ctx_exceeds_model_limit",
+            "three_confirmed_regressions",
+            "evidence_exhausted",
         }:
-            analysis["knee_observed"] = False
+            analysis["knee_observed"] = stop_reason == "three_confirmed_regressions"
             analysis["boundary_kind"] = classify_boundary_kind(stop_reason)
-            analysis["vram_or_context_stop_is_not_a_performance_knee"] = True
+            analysis["vram_or_context_stop_is_not_a_performance_knee"] = stop_reason != "three_confirmed_regressions"
     progress.emit("Assembling review package", stage="package", phase="package")
     package = write_gate3_package(
         results_dir=root,
@@ -4253,7 +4344,8 @@ def prove_gate3_offline() -> dict[str, Any]:
     ok("v5_default_not_live_authorized", Gate3Config(planner_id=V5_PLANNER_ID).live_ladder_authorized is False)
     live_cfg = load_gate3_config(REPO_ROOT / "docs" / "ops" / "i11a0_gate3.b.full-prompt-v5.json")
     ok("v5_ops_config_authorizes_live", live_cfg.live_ladder_authorized is True and live_cfg.start_evidence_tokens == 19000, live_cfg)
-    ok("v5_ops_config_authorizes_22k_only", live_cfg.authorized_22k is True and live_cfg.authorized_23k is False, live_cfg)
+    ok("v5_ops_config_authorizes_autonomous", live_cfg.autonomous_full_prompt_ladder is True and live_cfg.authorized_23k is True, live_cfg)
+    ok("v5_default_not_autonomous", Gate3Config(planner_id=V5_PLANNER_ID).autonomous_full_prompt_ladder is False)
 
     return {
         "ok": not problems,
