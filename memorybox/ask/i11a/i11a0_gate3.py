@@ -245,6 +245,8 @@ class Gate3Config:
     experiment_phase: str = "legacy_reviewed_chunks"
     planner_id: str = ""
     live_ladder_authorized: bool = False
+    authorized_22k: bool = False
+    authorized_23k: bool = False
 
 
 def load_gate3_config(path: Path | str | None) -> Gate3Config:
@@ -980,8 +982,17 @@ def hard_stop_reason(row: dict[str, Any], *, ceiling_gb: float = VRAM_CEILING_GB
 def classify_boundary_kind(stop_reason: str) -> str:
     if stop_reason == "three_confirmed_regressions":
         return "performance_knee"
-    if stop_reason in {"vram_ceiling", "predicted_vram_ceiling"}:
-        return "vram_boundary"
+    if stop_reason in {
+        "founder_review_22k",
+        "founder_review_23k",
+        "vram_ceiling",
+        "predicted_vram_ceiling",
+        "planned_ctx_exceeds_model_limit",
+        "context_overflow",
+    }:
+        return "vram_boundary" if stop_reason in {"vram_ceiling", "predicted_vram_ceiling"} else (
+            "awaiting_founder_authorization" if stop_reason.startswith("founder_review") else "model_context_boundary"
+        )
     if stop_reason in {"prediction_envelope_exceeded", "calibration_identity_invalid"}:
         return "planning_failure"
     if stop_reason in {
@@ -1298,8 +1309,26 @@ def analyze_gate3(runs: list[dict[str, Any]], *, stop_reason: str, config: Gate3
         "stop_reason": stop_reason,
         "boundary_kind": boundary_kind,
         "knee_observed": knee_observed,
-        "vram_or_context_stop_is_not_a_performance_knee": boundary_kind
-        in {"vram_boundary", "model_context_boundary"},
+        "vram_or_context_stop_is_not_a_performance_knee": (
+            not knee_observed
+            and (
+                boundary_kind
+                in {
+                    "vram_boundary",
+                    "model_context_boundary",
+                    "awaiting_founder_authorization",
+                }
+                or str(stop_reason)
+                in {
+                    "founder_review_22k",
+                    "founder_review_23k",
+                    "vram_ceiling",
+                    "predicted_vram_ceiling",
+                    "planned_ctx_exceeds_model_limit",
+                    "context_overflow",
+                }
+            )
+        ),
         "knee_range": {
             "last_stable_estimated_evidence_tokens": (last_stable or {}).get("estimated_evidence_tokens"),
             "first_regression_or_stop": (first_capacity or {}).get("estimated_evidence_tokens"),
@@ -1315,7 +1344,7 @@ def analyze_gate3(runs: list[dict[str, Any]], *, stop_reason: str, config: Gate3
             "status": RECOMMENDATION_INVALID if accounting_invalid or not proposed else "provisional",
             "evidence_token_target": (proposed or {}).get("requested_evidence_tokens"),
             "estimated_evidence_tokens": (proposed or {}).get("estimated_evidence_tokens"),
-            "actual_evidence_tokens": (proposed or {}).get("estimated_evidence_tokens"),
+            "actual_evidence_tokens": (proposed or {}).get("independently_tokenized_evidence_tokens"),
             "evidence_bytes": rec_manifest.get("evidence_bytes"),
             "evidence_characters": rec_manifest.get("evidence_characters"),
             "message_count": rec_manifest.get("message_count"),
@@ -1463,6 +1492,7 @@ def write_gate3_package(
         "",
         f"- Requested evidence target: {rec.get('evidence_token_target')}",
         f"- Estimated evidence tokens (bytes÷4 diagnostic): {rec.get('estimated_evidence_tokens')}",
+        f"- Independently tokenized evidence tokens: {rec.get('actual_evidence_tokens')}",
         f"- Evidence bytes / characters: {rec.get('evidence_bytes')} / {rec.get('evidence_characters')}",
         f"- Messages / threads: {rec.get('message_count')} / {rec.get('conversation_count')}",
         f"- Actual complete prompt (`prompt_eval_count`): {rec.get('actual_complete_prompt_tokens')}",
@@ -2278,10 +2308,16 @@ def run_gate3(
             A2_NUM_CTX,
             A2_PEAK_VRAM_GB,
             TWENTY_TWO_K_PLANNED_NUM_CTX,
+            TWENTY_THREE_K_PLANNED_NUM_CTX,
+            V5_22K_RUNG,
             V5_LIVE_RUNGS,
+            build_a2_through_22k_review,
             decide_22k,
+            decide_23k,
             imported_a2_rung_row,
             project_valid_full_prompt_vram,
+            verify_v5_22k_packet,
+            write_v5_ladder_review,
         )
 
         a2_row = imported_a2_rung_row()
@@ -2296,6 +2332,8 @@ def run_gate3(
         )
         valid_points: list[tuple[int, float]] = [(A2_NUM_CTX, A2_PEAK_VRAM_GB)]
         stop_reason = "stage_complete"
+        measured_22k = False
+        decision_23k: dict[str, Any] | None = None
         for spec_rung in V5_LIVE_RUNGS:
             if int(spec_rung["nominal"]) == 21000:
                 proj21 = project_valid_full_prompt_vram(valid_points, int(spec_rung["num_ctx"]))
@@ -2368,20 +2406,133 @@ def run_gate3(
             valid_points.append((int(row["configured_num_ctx"]), float(peak)))
             last_stable = row
         else:
-            v5_decision = decide_22k(
-                project_valid_full_prompt_vram(valid_points, TWENTY_TWO_K_PLANNED_NUM_CTX)
-            )
-            stop_reason = str(v5_decision["stop_reason"])
+            proj22 = project_valid_full_prompt_vram(valid_points, TWENTY_TWO_K_PLANNED_NUM_CTX)
+            v5_decision = decide_22k(proj22, authorized=bool(config.authorized_22k))
+            if not v5_decision.get("run_22k"):
+                stop_reason = str(v5_decision["stop_reason"])
+            else:
+                packet_22 = packer.packet_for_target(int(V5_22K_RUNG["nominal"]))
+                identity = verify_v5_22k_packet(packet_22, digest=str(config.digest))
+                progress.emit(
+                    (
+                        "22K preflight: packet/digest/I14 nested prefix, planned num_ctx="
+                        f"{V5_22K_RUNG['num_ctx']}, conservative VRAM="
+                        f"{proj22.get('conservative_gb')} GB"
+                    ),
+                    stage="coarse",
+                    phase="packet_build",
+                )
+                if not identity.get("ok"):
+                    stop_reason = "model_identity_changed"
+                    v5_decision = {**v5_decision, "preflight": identity, "run_22k": False}
+                    progress.emit(
+                        "22K packet identity does not match the pinned I14 nested prefix",
+                        warning="model_identity_changed",
+                        phase="packet_build",
+                    )
+                elif not proj22.get("below_ceiling"):
+                    stop_reason = "predicted_vram_ceiling"
+                    v5_decision = decide_22k(proj22, authorized=False)
+                    v5_decision["preflight"] = identity
+                else:
+                    prior_22 = next(
+                        (
+                            item
+                            for item in runs
+                            if item.get("packet_sha256") == packet_22.sha256
+                            and item.get("actual_prompt_tokens")
+                        ),
+                        None,
+                    )
+                    if prior_22 is not None:
+                        peak_prior = prior_22.get("vram_peak_gb")
+                        if peak_prior is not None:
+                            valid_points.append(
+                                (
+                                    int(prior_22.get("configured_num_ctx") or V5_22K_RUNG["num_ctx"]),
+                                    float(peak_prior),
+                                )
+                            )
+                        last_stable = prior_22
+                        row_22 = prior_22
+                    else:
+                        row_22 = measure(
+                            packet_22,
+                            phase="coarse",
+                            target=int(V5_22K_RUNG["nominal"]),
+                            repetition=1,
+                            confirmation=False,
+                        )
+                        measured_22k = True
+                        if int(row_22.get("configured_num_ctx") or 0) != int(V5_22K_RUNG["num_ctx"]):
+                            row_22["model_identity_changed"] = True
+                        runs.append(row_22)
+                    hard = hard_stop_reason(row_22, ceiling_gb=config.maximum_vram_gb)
+                    if hard:
+                        stop_reason = hard
+                        v5_decision = {
+                            **v5_decision,
+                            "preflight": identity,
+                            "twenty_two_k_execution_id": row_22.get("execution_id"),
+                            "classification": hard,
+                        }
+                    elif row_22.get("classification") != COMPLETE_EVALUATED:
+                        stop_reason = str(row_22.get("classification") or "generation_failed")
+                    elif row_22.get("vram_peak_gb") is None or row_22.get("placement_status") != "gpu_resident":
+                        stop_reason = str(row_22.get("placement_status") or "placement_unknown")
+                    else:
+                        if row_22.get("vram_peak_gb") is not None and not any(
+                            int(p[0]) == int(row_22.get("configured_num_ctx") or 0) for p in valid_points[1:]
+                        ):
+                            valid_points.append(
+                                (int(row_22["configured_num_ctx"]), float(row_22["vram_peak_gb"]))
+                            )
+                        last_stable = row_22
+                        decision_23k = decide_23k(
+                            project_valid_full_prompt_vram(valid_points, TWENTY_THREE_K_PLANNED_NUM_CTX)
+                        )
+                        stop_reason = str(decision_23k["stop_reason"])
+                        v5_decision = {
+                            **v5_decision,
+                            "preflight": identity,
+                            "ran_22k": True,
+                            "measured_22k_this_invocation": measured_22k,
+                            "twenty_two_k_execution_id": row_22.get("execution_id"),
+                            "stop_after_22k": True,
+                            "twenty_three_k": decision_23k,
+                        }
         decision_path = v5_artifact_dir(root) / "v5_22k_decision.json"
         decision_path.write_text(
             json.dumps(
-                {"decision": v5_decision, "stop_reason": stop_reason, "valid_vram_points": valid_points},
+                {
+                    "decision": v5_decision,
+                    "stop_reason": stop_reason,
+                    "valid_vram_points": valid_points,
+                    "twenty_three_k": decision_23k,
+                    "automatically_ran_22k": measured_22k,
+                    "automatically_ran_23k": False,
+                },
                 indent=2,
                 default=str,
             )
             + "\n",
             encoding="utf-8",
             newline="\n",
+        )
+        if decision_23k is not None:
+            (v5_artifact_dir(root) / "v5_23k_decision.json").write_text(
+                json.dumps(decision_23k, indent=2, default=str) + "\n",
+                encoding="utf-8",
+                newline="\n",
+            )
+        write_v5_ladder_review(
+            root,
+            build_a2_through_22k_review(
+                runs,
+                stop_reason=stop_reason,
+                decision_23k=decision_23k,
+                measured_22k=measured_22k,
+            ),
         )
         progress.emit(
             f"v5 authorized ladder stopped: {stop_reason}",
@@ -2452,7 +2603,7 @@ def run_gate3(
             stop_reason = str(row.get("classification") or "calibrated_rerun_failed")
 
     while True:
-        if stop_reason != "stage_complete":
+        if v5 or stop_reason != "stage_complete":
             break
         packet = packer.packet_for_target(target)
         remaining = packer.remaining_after(packet)
@@ -2635,12 +2786,18 @@ def run_gate3(
         analysis["a2_imported_not_rerun"] = True
         analysis["truncated_historical_runs_excluded"] = True
         analysis["v5_22k_decision"] = v5_decision
-        analysis["automatically_ran_22k"] = False
-        if stop_reason in {"predicted_vram_ceiling", "founder_review_22k"}:
+        analysis["automatically_ran_22k"] = bool(measured_22k)
+        analysis["automatically_ran_23k"] = False
+        analysis["v5_23k_decision"] = decision_23k
+        if stop_reason in {
+            "predicted_vram_ceiling",
+            "founder_review_22k",
+            "founder_review_23k",
+            "vram_ceiling",
+        }:
             analysis["knee_observed"] = False
-            analysis["boundary_kind"] = (
-                "vram_boundary" if stop_reason == "predicted_vram_ceiling" else "awaiting_founder_authorization"
-            )
+            analysis["boundary_kind"] = classify_boundary_kind(stop_reason)
+            analysis["vram_or_context_stop_is_not_a_performance_knee"] = True
     progress.emit("Assembling review package", stage="package", phase="package")
     package = write_gate3_package(
         results_dir=root,
@@ -4096,6 +4253,7 @@ def prove_gate3_offline() -> dict[str, Any]:
     ok("v5_default_not_live_authorized", Gate3Config(planner_id=V5_PLANNER_ID).live_ladder_authorized is False)
     live_cfg = load_gate3_config(REPO_ROOT / "docs" / "ops" / "i11a0_gate3.b.full-prompt-v5.json")
     ok("v5_ops_config_authorizes_live", live_cfg.live_ladder_authorized is True and live_cfg.start_evidence_tokens == 19000, live_cfg)
+    ok("v5_ops_config_authorizes_22k_only", live_cfg.authorized_22k is True and live_cfg.authorized_23k is False, live_cfg)
 
     return {
         "ok": not problems,

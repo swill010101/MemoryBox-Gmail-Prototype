@@ -55,6 +55,27 @@ A2_PACKED_EVIDENCE_TOKENS = 18516
 A2_EVIDENCE_BYTES = 74063
 TWENTY_TWO_K_NOMINAL = 22000
 TWENTY_TWO_K_PLANNED_NUM_CTX = 33536
+TWENTY_THREE_K_NOMINAL = 23000
+TWENTY_THREE_K_PLANNED_NUM_CTX = 34816
+V5_22K_RUNG = {
+    "nominal": TWENTY_TWO_K_NOMINAL,
+    "packed": 22547,
+    "evidence_bytes": 90186,
+    "message_count": 51,
+    "thread_count": 33,
+    "predicted_complete_prompt_tokens": 29508,
+    "num_ctx": TWENTY_TWO_K_PLANNED_NUM_CTX,
+    "packet_sha256": "4b46950f4b7949facbe2214b7dbcfe1953fa87782b428d7a03beaba6c8c1e6bd",
+    "output_reserve_tokens": 2500,
+    "safety_margin_tokens": 1500,
+    "digest": PINNED_B_DIGEST,
+}
+FOUNDER_VALID_VRAM_POINTS_A2_THROUGH_21K = (
+    (28416, 20.239),
+    (29440, 20.398),
+    (30208, 20.516),
+    (32000, 20.791),
+)
 V5_LIVE_RUNGS = (
     {
         "nominal": 19000,
@@ -300,7 +321,12 @@ def project_valid_full_prompt_vram(
     }
 
 
-def decide_22k(projection: dict[str, Any], *, ceiling_gb: float = VRAM_CEILING_GB) -> dict[str, Any]:
+def decide_22k(
+    projection: dict[str, Any],
+    *,
+    authorized: bool = False,
+    ceiling_gb: float = VRAM_CEILING_GB,
+) -> dict[str, Any]:
     conservative = projection.get("conservative_gb")
     if conservative is None or float(conservative) >= float(ceiling_gb):
         return {
@@ -308,21 +334,163 @@ def decide_22k(projection: dict[str, Any], *, ceiling_gb: float = VRAM_CEILING_G
             "classification": "predicted_vram_boundary",
             "stop_reason": "predicted_vram_ceiling",
             "not_a_performance_knee": True,
+            "vram_or_context_stop_is_not_a_performance_knee": True,
             "proposed_num_ctx": TWENTY_TWO_K_PLANNED_NUM_CTX,
             "projection": projection,
             "founder_authorization_required_to_run": False,
             "note": "Conservative valid-run projection is at or above 22.5 GB. Do not run 22K.",
         }
+    if not authorized:
+        return {
+            "run_22k": False,
+            "classification": "awaiting_founder_authorization_22k",
+            "stop_reason": "founder_review_22k",
+            "not_a_performance_knee": True,
+            "vram_or_context_stop_is_not_a_performance_knee": True,
+            "proposed_num_ctx": TWENTY_TWO_K_PLANNED_NUM_CTX,
+            "projection": projection,
+            "founder_authorization_required_to_run": True,
+            "note": "Valid-run projection is below 22.5 GB. Stop for founder authorization before 22K.",
+        }
     return {
-        "run_22k": False,
-        "classification": "awaiting_founder_authorization_22k",
-        "stop_reason": "founder_review_22k",
+        "run_22k": True,
+        "classification": "authorized_single_22k_rung",
+        "stop_reason": None,
         "not_a_performance_knee": True,
+        "vram_or_context_stop_is_not_a_performance_knee": True,
         "proposed_num_ctx": TWENTY_TWO_K_PLANNED_NUM_CTX,
         "projection": projection,
-        "founder_authorization_required_to_run": True,
-        "note": "Valid-run projection is below 22.5 GB. Stop for founder authorization before 22K.",
+        "founder_authorization_required_to_run": False,
+        "note": "Founder authorized one 22K rung. Do not run 23K in this invocation.",
     }
+
+
+def decide_23k(projection: dict[str, Any], *, ceiling_gb: float = VRAM_CEILING_GB) -> dict[str, Any]:
+    conservative = projection.get("conservative_gb")
+    below = conservative is not None and float(conservative) < float(ceiling_gb)
+    return {
+        "run_23k": False,
+        "automatically_ran_23k": False,
+        "classification": "awaiting_founder_authorization_23k" if below else "predicted_vram_boundary",
+        "stop_reason": "founder_review_23k" if below else "predicted_vram_ceiling",
+        "not_a_performance_knee": True,
+        "vram_or_context_stop_is_not_a_performance_knee": True,
+        "proposed_num_ctx": TWENTY_THREE_K_PLANNED_NUM_CTX,
+        "projection": projection,
+        "twenty_three_k_merits_separate_founder_authorization": below,
+        "founder_authorization_required_to_run": True,
+        "note": (
+            "Conservative valid-run projection for 23K is below 22.5 GB. "
+            "23K merits separate founder authorization; do not auto-run."
+            if below
+            else "Conservative valid-run projection for 23K is at or above 22.5 GB. "
+            "Treat as a VRAM capacity boundary, not a performance knee."
+        ),
+    }
+
+
+def verify_v5_22k_packet(packet: Any, *, digest: str) -> dict[str, Any]:
+    spec = V5_22K_RUNG
+    mismatches: list[str] = []
+    packed = int(getattr(packet, "estimated_evidence_tokens", 0) or 0)
+    if packed != int(spec["packed"]):
+        mismatches.append(f"packed:{packed}")
+    bytes_n = int(getattr(packet, "evidence_bytes", 0) or 0)
+    if bytes_n != int(spec["evidence_bytes"]):
+        mismatches.append(f"evidence_bytes:{bytes_n}")
+    messages = int(getattr(packet, "message_count", 0) or 0)
+    if messages != int(spec["message_count"]):
+        mismatches.append(f"message_count:{messages}")
+    threads = len(getattr(packet, "conversation_ids", ()) or ())
+    if threads != int(spec["thread_count"]):
+        mismatches.append(f"thread_count:{threads}")
+    sha = str(getattr(packet, "sha256", "") or "")
+    if sha != str(spec["packet_sha256"]):
+        mismatches.append(f"packet_sha256:{sha[:16]}")
+    if str(digest or "") != str(spec["digest"]):
+        mismatches.append("digest")
+    predicted = predicted_complete_prompt_tokens(bytes_n) if bytes_n else None
+    if predicted != int(spec["predicted_complete_prompt_tokens"]):
+        mismatches.append(f"predicted:{predicted}")
+    planned = plan_reserve_aware_run(evidence_bytes=bytes_n) if bytes_n else {}
+    if int(planned.get("planned_num_ctx") or 0) != int(spec["num_ctx"]):
+        mismatches.append(f"planned_num_ctx:{planned.get('planned_num_ctx')}")
+    return {
+        "ok": not mismatches,
+        "mismatches": mismatches,
+        "stop_reason": None if not mismatches else "model_identity_changed",
+        "packet_sha256": sha,
+        "digest": digest,
+        "predicted_complete_prompt_tokens": predicted,
+        "planned_num_ctx": planned.get("planned_num_ctx"),
+        "source": "pinned_i14_cleaned_export",
+        "do_not_rebuild_different_source": True,
+    }
+
+
+def summarize_v5_rung(row: dict[str, Any]) -> dict[str, Any]:
+    actual = row.get("actual_prompt_tokens")
+    predicted = row.get("predicted_complete_prompt_tokens")
+    ctx = row.get("configured_num_ctx")
+    return {
+        "execution_id": row.get("execution_id"),
+        "requested_evidence_tokens": row.get("requested_evidence_tokens"),
+        "estimated_evidence_tokens": row.get("estimated_evidence_tokens"),
+        "actual_evidence_tokens": row.get("independently_tokenized_evidence_tokens"),
+        "actual_complete_prompt_tokens": actual,
+        "predicted_complete_prompt_tokens": predicted,
+        "estimator_error_tokens": (
+            None if actual is None or predicted is None else int(actual) - int(predicted)
+        ),
+        "configured_num_ctx": ctx,
+        "context_headroom_tokens": None if actual is None or ctx is None else int(ctx) - int(actual),
+        "safety_equation_ok": (
+            None if actual is None or ctx is None else int(actual) + 2500 + 1500 <= int(ctx)
+        ),
+        "vram_peak_gb": row.get("vram_peak_gb"),
+        "vram_baseline_gb": row.get("vram_baseline_gb"),
+        "vram_final_gb": row.get("vram_final_gb"),
+        "prompt_tokens_per_second": row.get("prompt_tokens_per_second"),
+        "generation_tokens_per_second": row.get("generation_tokens_per_second"),
+        "gpu_resident": row.get("gpu_resident"),
+        "cpu_offload": row.get("cpu_offload"),
+        "placement_status": row.get("placement_status"),
+        "unload_recorded": row.get("unload_recorded"),
+        "vram_released": row.get("vram_released"),
+        "classification": row.get("classification"),
+        "narration_excerpt": (str(row.get("visible_text") or row.get("narration") or "")[:500] or None),
+        "imported_not_rerun": bool(row.get("imported_not_rerun")),
+    }
+
+
+def build_a2_through_22k_review(
+    runs: list[dict[str, Any]],
+    *,
+    stop_reason: str,
+    decision_23k: dict[str, Any] | None,
+    measured_22k: bool,
+) -> dict[str, Any]:
+    table = [summarize_v5_rung(row) for row in runs]
+    return {
+        "planner_id": PLANNER_ID,
+        "series": "gate3-b-i14-full-prompt-v5",
+        "completed_run_records_immutable": True,
+        "stop_reason": stop_reason,
+        "automatically_ran_22k": bool(measured_22k),
+        "automatically_ran_23k": False,
+        "vram_or_context_stop_is_not_a_performance_knee": True,
+        "knee_observed": False,
+        "a2_through_22k": table,
+        "twenty_three_k_decision": decision_23k,
+        "estimated_evidence_tokens_are_bytes_div_4": True,
+        "actual_evidence_tokens_null_unless_independently_tokenized": True,
+    }
+
+
+def write_v5_ladder_review(results_dir: Path | str, payload: dict[str, Any]) -> Path:
+    dest = v5_artifact_dir(results_dir) / "v5_a2_through_22k_review.json"
+    dest.write_text(json.dumps(payload, indent=2, default=str) + "\n", encoding="utf-8", newline="\n")
+    return dest
 
 
 def imported_a2_rung_row() -> dict[str, Any]:
@@ -399,7 +567,7 @@ def prove_full_prompt_v5_offline() -> dict[str, Any]:
         estimator_underestimate(predicted=24109, observed_complete=25000) is True,
         None,
     )
-    from memorybox.ask.i11a.i11a0_gate3 import Gate3Config
+    from memorybox.ask.i11a.i11a0_gate3 import Gate3Config, analyze_gate3
 
     ok("v5_config_detected", is_v5_config(Gate3Config(planner_id=PLANNER_ID)))
     ok("v4_config_is_retired", is_retired_v4_config(Gate3Config(planner_id=V4_PLANNER_ID)))
@@ -414,12 +582,70 @@ def prove_full_prompt_v5_offline() -> dict[str, Any]:
         ok("v5_table_built", False, str(exc))
     ops = json.loads((REPO_ROOT / "docs" / "ops" / "i11a0_gate3.b.full-prompt-v5.json").read_text(encoding="utf-8"))
     ok("v5_ops_live_authorized", ops.get("live_ladder_authorized") is True and ops.get("start_evidence_tokens") == 19000, ops)
+    ok("v5_ops_authorizes_22k_not_23k", ops.get("authorized_22k") is True and ops.get("authorized_23k") is False, ops)
     fit = project_valid_full_prompt_vram([(28416, 20.239), (29440, 20.5)], 32000)
     ok("valid_run_vram_fit_uses_two_points", fit.get("ok") is True and fit.get("historical_is_comparison_only") is True, fit)
     boundary = decide_22k({"conservative_gb": 22.6, "ok": True})
     ok("conservative_22k_is_vram_boundary_not_knee", boundary["classification"] == "predicted_vram_boundary" and boundary["not_a_performance_knee"] is True, boundary)
     wait = decide_22k({"conservative_gb": 21.9, "ok": True})
     ok("sub_ceiling_22k_waits_for_founder", wait["founder_authorization_required_to_run"] is True and wait["run_22k"] is False, wait)
+    go = decide_22k({"conservative_gb": 21.228, "ok": True}, authorized=True)
+    ok("authorized_22k_runs_below_ceiling", go["run_22k"] is True and go["stop_reason"] is None, go)
+    refuse = decide_22k({"conservative_gb": 22.6, "ok": True}, authorized=True)
+    ok("authorized_22k_still_refuses_ceiling", refuse["run_22k"] is False and refuse["not_a_performance_knee"] is True, refuse)
+    founder_fit = project_valid_full_prompt_vram(list(FOUNDER_VALID_VRAM_POINTS_A2_THROUGH_21K), 33536)
+    ok(
+        "founder_22k_projection_below_22_5",
+        founder_fit.get("below_ceiling") is True and float(founder_fit["conservative_gb"]) < 22.5,
+        founder_fit,
+    )
+    ok(
+        "founder_22k_conservative_near_21_228",
+        abs(float(founder_fit["conservative_gb"]) - 21.228) < 0.05,
+        founder_fit.get("conservative_gb"),
+    )
+    d23_low = decide_23k({"conservative_gb": 21.4, "ok": True})
+    ok(
+        "23k_below_ceiling_is_founder_review_not_auto",
+        d23_low["run_23k"] is False
+        and d23_low["stop_reason"] == "founder_review_23k"
+        and d23_low["twenty_three_k_merits_separate_founder_authorization"] is True
+        and d23_low["vram_or_context_stop_is_not_a_performance_knee"] is True,
+        d23_low,
+    )
+    d23_high = decide_23k({"conservative_gb": 22.6, "ok": True})
+    ok(
+        "23k_at_ceiling_is_vram_boundary_not_knee",
+        d23_high["stop_reason"] == "predicted_vram_ceiling" and d23_high["run_23k"] is False,
+        d23_high,
+    )
+    from types import SimpleNamespace
+
+    fake_ok = SimpleNamespace(
+        estimated_evidence_tokens=22547,
+        evidence_bytes=90186,
+        message_count=51,
+        conversation_ids=tuple(str(i) for i in range(33)),
+        sha256=V5_22K_RUNG["packet_sha256"],
+    )
+    ident = verify_v5_22k_packet(fake_ok, digest=PINNED_B_DIGEST)
+    ok("22k_identity_matches_pinned_packet", ident.get("ok") is True, ident)
+    fake_bad = SimpleNamespace(
+        estimated_evidence_tokens=1,
+        evidence_bytes=90186,
+        message_count=51,
+        conversation_ids=tuple(str(i) for i in range(33)),
+        sha256="deadbeef",
+    )
+    ident_bad = verify_v5_22k_packet(fake_bad, digest=PINNED_B_DIGEST)
+    ok("22k_identity_mismatch_fails_closed", ident_bad.get("ok") is False and ident_bad.get("stop_reason") == "model_identity_changed", ident_bad)
+    review_flag = analyze_gate3([], stop_reason="founder_review_23k", config=Gate3Config())
+    ok(
+        "founder_review_23k_is_not_a_performance_knee",
+        review_flag.get("vram_or_context_stop_is_not_a_performance_knee") is True
+        and review_flag.get("recommended", {}).get("actual_evidence_tokens") is None,
+        review_flag.get("vram_or_context_stop_is_not_a_performance_knee"),
+    )
     imported = imported_a2_rung_row()
     ok("a2_import_is_not_a_rerun", imported["do_not_rerun"] is True and imported["execution_id"] == A2_EXECUTION_ID, imported)
     return {"ok": not problems, "checks": checks, "problems": problems, "models_called": False, "ladder_resumed": False}
