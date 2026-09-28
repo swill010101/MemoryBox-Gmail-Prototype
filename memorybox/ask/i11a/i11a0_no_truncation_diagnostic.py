@@ -31,6 +31,7 @@ from memorybox.ask.i11a.i11a0_full_prompt_v3 import (
 )
 from memorybox.ask.i11a.i11a0_host import (
     capture_clean_ladder_host_state,
+    collect_host_affinity_preflight,
     read_nvidia_snapshot,
     read_system_ram,
     require_flightsim_host_affinity,
@@ -46,7 +47,7 @@ from memorybox.ask.i11a.i11a0_ollama_log_cursor import (
 )
 from memorybox.ask.i11a.i11a0_placement import interpret_ollama_placement, read_ollama_ps
 from memorybox.ask.i11a.i11a0_prompt import SYSTEM_PROMPT, render_user_message
-from memorybox.ask.i11a.i11a0_smoke import PINNED_B_DIGEST, VRAM_RELEASE_SLACK_GB
+from memorybox.ask.i11a.i11a0_smoke import PINNED_B_DIGEST, REPO_ROOT, VRAM_RELEASE_SLACK_GB
 from memorybox.ask.i11a.i11a0_unload_verify import verify_unload
 
 B_TAG = "qwen3:14b-q8_0"
@@ -340,13 +341,19 @@ def run_no_truncation_diagnostic(
     if not confirm_benchmark:
         raise InferenceNotAuthorized("pass --confirm-benchmark on FlightSim to run the diagnostic")
     url = require_literal_loopback_ollama_url(ollama_base_url)
-    require_flightsim_host_affinity(url)
     if skip_live:
         raise I11A0Error("skip_live is for tests; live path was not entered")
-    host = capture_clean_ladder_host_state()
-    ram_guard = host_ram_guard(host.get("system_ram"))
     out = Path(results_dir)
     out.mkdir(parents=True, exist_ok=True)
+    preflight = collect_host_affinity_preflight(
+        ollama_base_url=url,
+        output_path=out,
+        chunks_path=i14_export or out,
+        repo=REPO_ROOT,
+    )
+    require_flightsim_host_affinity(preflight)
+    host = capture_clean_ladder_host_state()
+    ram_guard = host_ram_guard(host.get("system_ram"))
     if ram_guard["stop_before_inference"]:
         payload = {
             "ok": False,
@@ -575,5 +582,19 @@ def prove_no_truncation_diagnostic_offline() -> dict[str, Any]:
     )
     payload = build_chat_payload(user_text="x", num_ctx=28416, num_predict=256)
     ok("truncate_shift_top_level", payload.get("truncate") is False and "truncate" not in payload["options"], payload)
+    import inspect
+    from memorybox.ask.i11a.i11a0_host import require_flightsim_host_affinity as require_affinity
+
+    src = inspect.getsource(run_no_truncation_diagnostic)
+    ok(
+        "host_affinity_uses_preflight_dict",
+        "collect_host_affinity_preflight" in src and "require_flightsim_host_affinity(url)" not in src,
+        None,
+    )
+    try:
+        require_affinity("http://127.0.0.1:11434")
+        ok("string_url_is_not_preflight", False, "expected HostAffinityError")
+    except Exception as exc:
+        ok("string_url_is_not_preflight", type(exc).__name__ == "HostAffinityError", type(exc).__name__)
     ok("no_model_call", True)
     return {"ok": not problems, "checks": checks, "problems": problems, "models_called": False, "ladder_resumed": False}

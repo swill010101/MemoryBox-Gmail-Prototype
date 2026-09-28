@@ -358,6 +358,11 @@ def collect_host_affinity_preflight(
 
 
 def require_flightsim_host_affinity(preflight: dict[str, Any]) -> None:
+    if not isinstance(preflight, dict):
+        raise HostAffinityError(
+            "require_flightsim_host_affinity expects a host-affinity preflight dict, "
+            f"not {type(preflight).__name__}"
+        )
     checks = preflight.get("checks") or {}
     if not checks.get("controller_is_flightsim"):
         raise HostAffinityError(
