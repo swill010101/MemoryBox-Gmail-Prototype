@@ -1,13 +1,19 @@
 {
-  "stage": "no_truncation_diagnostic",
-  "command_kind": "i11a0_no_truncation_noshift_diagnostic_v1",
+  "stage": "no_truncation_diagnostic_a2",
+  "command_kind": "i11a0_no_truncation_noshift_diagnostic_a2",
   "config_id": "B",
   "tag": "qwen3:14b-q8_0",
   "digest": "304bf7349c71ad37a07eec8be67212b3f05b0f243f4a6f7c98e90dd2f3009f48",
   "truncate": false,
   "shift": false,
   "truncate_shift_top_level_not_options": true,
-  "keep_alive": 0,
+  "keep_alive": "2m",
+  "explicit_unload_keep_alive": 0,
+  "telemetry_interval_seconds": 1.0,
+  "query_api_ps_before_unload": true,
+  "first_a_execution_id": "34a376c84fd120e336518cb745dbe256559af81b3fbd22454ef2b1e3389b84f6",
+  "first_a_role": "accepted_token_accounting_proof_not_placement_qualified_diagnostic_a",
+  "v4_execution_id": "48d5421b5500b88b14a4ff9da4ed2c22dce9270269f235936452c5928856a52f",
   "diagnostic_a_num_ctx": 28416,
   "diagnostic_a_num_predict": 256,
   "diagnostic_b_num_ctx": 2048,
@@ -16,10 +22,22 @@
   "vram_release_slack_gb": 2.0,
   "ram_stop_available_gb": 2.0,
   "proposed_diagnostic_min_available_ram_gb": 4.0,
+  "estimator_18k": {
+    "predicted_complete_prompt_tokens": 24109,
+    "observed_complete_prompt_tokens": 24174,
+    "error_tokens": 65,
+    "error_percent": 0.27
+  },
+  "planning_if_a2_and_b_pass": {
+    "retire_half_window_preflight": true,
+    "predicted_plus_reserves": "predicted_complete_prompt + 2500 + 1500 <= num_ctx",
+    "num_ctx_max": 40960,
+    "do_not_automatically_resume_ladder": true
+  },
   "configurations_a_and_c": false,
   "peggy_scenario": false,
   "ladder_resume": false,
   "i11a1": false,
-  "do_not_run_until_founder_authorization": false,
+  "i11a2": false,
   "run_on_flightsim_only": true
 }

@@ -1,0 +1,13 @@
+{
+  "execution_id": "34a376c84fd120e336518cb745dbe256559af81b3fbd22454ef2b1e3389b84f6",
+  "experiment_role": "accepted_token_accounting_proof_not_placement_qualified_diagnostic_a",
+  "prompt_accounting_valid": true,
+  "no_truncation_proven": true,
+  "api_fields_accepted_by_server": true,
+  "hardware_placement_unproven_instrumentation_miss": true,
+  "unload_clean": true,
+  "not_cpu_offload": true,
+  "not_gpu_residency_lost": true,
+  "stable_ladder_rung": false,
+  "original_files_rewritten": false
+}
