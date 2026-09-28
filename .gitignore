@@ -25,6 +25,7 @@ docs/test-output/i11a0-benchmark/gate2-review-package.xlsx
 docs/test-output/i11a0-benchmark/gate2-review-package.preview.md
 docs/test-output/i11a0-benchmark/gate3-b/**
 docs/test-output/i11a0-benchmark/gate3-b-i14/**
+docs/test-output/i11a0-benchmark/gate3-b-i14-full-prompt-v4/**
 docs/test-output/i11a0-benchmark/prompt-accounting-proof/**
 docs/test-output/i11a0-benchmark/prompt-accounting-proof-telemetry-retry/**
 docs/test-output/i11a0-benchmark/prompt-accounting-root-cause/**
