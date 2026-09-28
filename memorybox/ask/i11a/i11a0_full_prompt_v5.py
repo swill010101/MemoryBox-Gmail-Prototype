@@ -1,8 +1,9 @@
 """Reserve-equation full-prompt planner (v5).
 
 A2 proved a 24,174-token prompt evaluates at num_ctx=28416 with truncate=false
-and shift=false. The v4 half-window preflight is retired. This module does not
-call Ollama and does not resume the ladder.
+and shift=false. The v4 half-window preflight is retired.
+Live rungs require founder-authorized ops JSON and FlightSim --confirm-benchmark.
+This module does not call Ollama from prove.
 """
 from __future__ import annotations
 
@@ -50,6 +51,30 @@ ESTIMATOR_ABS_TOLERANCE_TOKENS = 80
 PACKET_TARGETS_START = 18000
 PACKET_TARGETS_STOP_AFTER_INELIGIBLE = 3
 COARSE_INCREMENT = 1000
+A2_PACKED_EVIDENCE_TOKENS = 18516
+A2_EVIDENCE_BYTES = 74063
+TWENTY_TWO_K_NOMINAL = 22000
+TWENTY_TWO_K_PLANNED_NUM_CTX = 33536
+V5_LIVE_RUNGS = (
+    {
+        "nominal": 19000,
+        "packed": 19386,
+        "num_ctx": 29440,
+        "sha_prefix": "351bb581c725e687",
+    },
+    {
+        "nominal": 20000,
+        "packed": 20008,
+        "num_ctx": 30208,
+        "sha_prefix": "a7c6737d54474cdf",
+    },
+    {
+        "nominal": 21000,
+        "packed": 21288,
+        "num_ctx": 32000,
+        "sha_prefix": "22d951e5e1d676db",
+    },
+)
 
 
 def is_v5_config(config: Any) -> bool:
@@ -221,6 +246,130 @@ def write_v5_packet_plan(table: dict[str, Any]) -> Path:
     return dest
 
 
+def project_valid_full_prompt_vram(
+    points: list[tuple[int, float]],
+    num_ctx: int,
+    *,
+    ceiling_gb: float = VRAM_CEILING_GB,
+) -> dict[str, Any]:
+    """Linear peak-VRAM vs num_ctx from valid full-prompt rungs only."""
+    usable = [(int(c), float(v)) for c, v in points if c and v is not None]
+    historical = project_vram_for_num_ctx(int(num_ctx), ceiling_gb=ceiling_gb)
+    if len(usable) < 2:
+        return {
+            "ok": False,
+            "reason": "need_at_least_two_valid_full_prompt_vram_points",
+            "target_num_ctx": int(num_ctx),
+            "points": usable,
+            "historical_occupancy": historical,
+            "conservative_gb": None,
+            "below_ceiling": False,
+        }
+    n = float(len(usable))
+    mean_x = sum(p[0] for p in usable) / n
+    mean_y = sum(p[1] for p in usable) / n
+    var_x = sum((p[0] - mean_x) ** 2 for p in usable)
+    if var_x <= 0:
+        slope = 0.0
+    else:
+        slope = sum((p[0] - mean_x) * (p[1] - mean_y) for p in usable) / var_x
+    intercept = mean_y - slope * mean_x
+    fitted = intercept + slope * float(num_ctx)
+    residuals = [p[1] - (intercept + slope * p[0]) for p in usable]
+    max_abs = max(abs(r) for r in residuals)
+    margin = max(0.20, 1.5 * max_abs)
+    conservative = fitted + margin
+    return {
+        "ok": True,
+        "reason": "linear_fit_valid_full_prompt_peaks",
+        "target_num_ctx": int(num_ctx),
+        "points": [{"num_ctx": c, "peak_vram_gb": v} for c, v in usable],
+        "slope_gb_per_ctx": slope,
+        "intercept_gb": intercept,
+        "fitted_gb": fitted,
+        "residual_margin_gb": margin,
+        "conservative_gb": conservative,
+        "below_ceiling": conservative < float(ceiling_gb),
+        "ceiling_gb": float(ceiling_gb),
+        "historical_occupancy": historical,
+        "historical_is_comparison_only": True,
+        "a2_measured_vs_historical_28416": {
+            "measured_gb": A2_PEAK_VRAM_GB,
+            "historical_gb": 21.603516,
+        },
+    }
+
+
+def decide_22k(projection: dict[str, Any], *, ceiling_gb: float = VRAM_CEILING_GB) -> dict[str, Any]:
+    conservative = projection.get("conservative_gb")
+    if conservative is None or float(conservative) >= float(ceiling_gb):
+        return {
+            "run_22k": False,
+            "classification": "predicted_vram_boundary",
+            "stop_reason": "predicted_vram_ceiling",
+            "not_a_performance_knee": True,
+            "proposed_num_ctx": TWENTY_TWO_K_PLANNED_NUM_CTX,
+            "projection": projection,
+            "founder_authorization_required_to_run": False,
+            "note": "Conservative valid-run projection is at or above 22.5 GB. Do not run 22K.",
+        }
+    return {
+        "run_22k": False,
+        "classification": "awaiting_founder_authorization_22k",
+        "stop_reason": "founder_review_22k",
+        "not_a_performance_knee": True,
+        "proposed_num_ctx": TWENTY_TWO_K_PLANNED_NUM_CTX,
+        "projection": projection,
+        "founder_authorization_required_to_run": True,
+        "note": "Valid-run projection is below 22.5 GB. Stop for founder authorization before 22K.",
+    }
+
+
+def imported_a2_rung_row() -> dict[str, Any]:
+    return {
+        "execution_id": A2_EXECUTION_ID,
+        "test_case_id": "imported-a2-first-valid-full-prompt-rung",
+        "phase": "imported_a2",
+        "requested_evidence_tokens": 18000,
+        "estimated_evidence_tokens": A2_PACKED_EVIDENCE_TOKENS,
+        "actual_prompt_tokens": A2_OBSERVED_COMPLETE_TOKENS,
+        "configured_num_ctx": A2_NUM_CTX,
+        "predicted_complete_prompt_tokens": 24233,
+        "planned_num_ctx": A2_NUM_CTX,
+        "packet_sha256": A2_PACKET_SHA256,
+        "classification": "complete_prompt_evaluated",
+        "no_truncation_proven": True,
+        "truncation_occurred": False,
+        "complete_log_tokens": A2_OBSERVED_COMPLETE_TOKENS,
+        "prompt_eval_count": A2_OBSERVED_COMPLETE_TOKENS,
+        "final_safety_result": "passed",
+        "gpu_resident": True,
+        "cpu_offload": False,
+        "placement_status": "gpu_resident",
+        "vram_peak_gb": A2_PEAK_VRAM_GB,
+        "vram_baseline_gb": 1.2607421875,
+        "vram_final_gb": 1.2607421875,
+        "vram_released": True,
+        "unload_recorded": True,
+        "stable_ladder_rung": True,
+        "imported_not_rerun": True,
+        "do_not_rerun": True,
+        "exclude_from_knee": True,
+        "exclude_from_operating_point": False,
+        "truncated_historical_run": False,
+        "planner_id": PLANNER_ID,
+        "truncate": False,
+        "shift": False,
+        "digest": PINNED_B_DIGEST,
+        "tag": "qwen3:14b-q8_0",
+        "not_a_performance_knee": True,
+        "source_artifact": (
+            "docs/test-output/i11a0-benchmark/no-truncation-diagnostic/"
+            + A2_EXECUTION_ID
+        ),
+    }
+
+
 def prove_full_prompt_v5_offline() -> dict[str, Any]:
     checks: list[str] = []
     problems: list[str] = []
@@ -260,7 +409,17 @@ def prove_full_prompt_v5_offline() -> dict[str, Any]:
         first = table["rows"][0]
         ok("v5_table_starts_at_18k_a2_packet", first["packet_sha256"] == A2_PACKET_SHA256, first)
         ok("v5_table_has_next_rung", table.get("next_proposed_live_rung") is not None, table.get("next_proposed_live_rung"))
-        ok("v5_ladder_not_executed", table.get("ladder_not_executed") is True and table.get("live_ladder_authorized") is False, None)
+        ok("v5_planning_table_does_not_execute", table.get("ladder_not_executed") is True, None)
     except I11A0Error as exc:
         ok("v5_table_built", False, str(exc))
+    ops = json.loads((REPO_ROOT / "docs" / "ops" / "i11a0_gate3.b.full-prompt-v5.json").read_text(encoding="utf-8"))
+    ok("v5_ops_live_authorized", ops.get("live_ladder_authorized") is True and ops.get("start_evidence_tokens") == 19000, ops)
+    fit = project_valid_full_prompt_vram([(28416, 20.239), (29440, 20.5)], 32000)
+    ok("valid_run_vram_fit_uses_two_points", fit.get("ok") is True and fit.get("historical_is_comparison_only") is True, fit)
+    boundary = decide_22k({"conservative_gb": 22.6, "ok": True})
+    ok("conservative_22k_is_vram_boundary_not_knee", boundary["classification"] == "predicted_vram_boundary" and boundary["not_a_performance_knee"] is True, boundary)
+    wait = decide_22k({"conservative_gb": 21.9, "ok": True})
+    ok("sub_ceiling_22k_waits_for_founder", wait["founder_authorization_required_to_run"] is True and wait["run_22k"] is False, wait)
+    imported = imported_a2_rung_row()
+    ok("a2_import_is_not_a_rerun", imported["do_not_rerun"] is True and imported["execution_id"] == A2_EXECUTION_ID, imported)
     return {"ok": not problems, "checks": checks, "problems": problems, "models_called": False, "ladder_resumed": False}

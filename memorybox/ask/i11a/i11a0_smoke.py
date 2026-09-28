@@ -322,6 +322,8 @@ def _chat(
         "stream": True,
         "think": False,
         "keep_alive": keep_alive,
+        "truncate": False,
+        "shift": False,
         "options": {
             "num_ctx": request.num_ctx,
             "num_predict": request.reserved_output_tokens,
@@ -341,6 +343,8 @@ def _chat(
         keep_alive=keep_alive,
     )
     capture["request_json"] = payload
+    capture["truncate_top_level"] = payload.get("truncate") is False
+    capture["shift_top_level"] = payload.get("shift") is False
     encoded = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     capture["request_body_sha256"] = hashlib.sha256(encoded).hexdigest()
     capture["request_body_bytes"] = len(encoded)

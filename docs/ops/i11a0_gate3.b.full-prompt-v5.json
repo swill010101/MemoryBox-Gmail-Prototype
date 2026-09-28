@@ -23,7 +23,7 @@
   "verified_max_num_ctx": 40960,
   "planner_id": "i14_cleaned_full_prompt_v5",
   "experiment_phase": "i14_cleaned_full_prompt_v5",
-  "live_ladder_authorized": false,
+  "live_ladder_authorized": true,
   "source": "accepted_i14_cleaned_household_email_export",
   "a2_first_valid_full_prompt_hardware_measurement": "292642bad1a27cb4bed1e9817ab8658640fc74adc2900a0db74976a935513cf9",
   "a2_packet_sha256": "51f891938ba3ab5910fb20ce8fe457dace74bfb5f9b5b380da28a52f24e73902",
@@ -33,6 +33,6 @@
   "production_prompt_accepted": false,
   "i11a1": false,
   "i11a2": false,
-  "do_not_run_until_founder_authorization": true,
+  "do_not_run_until_founder_authorization": false,
   "supersedes": "docs/ops/i11a0_gate3.b.full-prompt-v4.json"
 }

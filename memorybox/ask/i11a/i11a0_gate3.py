@@ -930,6 +930,12 @@ def hard_stop_reason(row: dict[str, Any], *, ceiling_gb: float = VRAM_CEILING_GB
         return LOG_UNVERIFIED
     if row.get("classification") == COMPLETE_INFRA:
         return COMPLETE_INFRA
+    if row.get("classification") == "estimator_underestimate":
+        return "estimator_underestimate"
+    if row.get("classification") == "prompt_eval_mismatch":
+        return "prompt_eval_mismatch"
+    if row.get("classification") == "context_shift_detected":
+        return "context_shift_detected"
     if row.get("classification") in {
         "retention_window_exceeded",
         "predicted_complete_prompt_exceeds_model_retention_window",
@@ -1597,7 +1603,7 @@ def _build_row(
         "cpu_spill": cpu_off,
         "timed_out": measurement.timed_out,
         "infrastructure_failure": measurement.infrastructure_failure,
-        "context_overflow": bool(actual and actual > request.num_ctx),
+        "context_overflow": bool(actual and actual > request.num_ctx) or bool(extras.get("context_overflow")),
         "unload_seconds": extras.get("unload_seconds"),
         "unload_recorded": extras.get("unload_recorded", True),
         "vram_released": extras.get("vram_released"),
@@ -1845,13 +1851,19 @@ def run_gate3(
         if v5:
             planned = plan_reserve_aware_run(evidence_bytes=int(packet.evidence_bytes))
             predicted_prompt = int(planned["predicted_complete_prompt_tokens"])
+            planned["historical_occupancy_projection"] = planned.get("vram_projection")
+            hist_only = planned.get("rejection_reason") in {
+                "predicted_vram_ceiling",
+                "adjacent_measured_peak_at_or_above_ceiling",
+                "outside_measured_curve",
+            }
+            if hist_only:
+                planned["historical_occupancy_would_reject"] = True
+                planned["predicted_vram_ceiling"] = False
+                planned["eligible"] = bool(planned.get("reserve_check") and planned.get("model_context_check"))
+                planned["rejection_reason"] = None if planned["eligible"] else planned.get("rejection_reason")
             if not planned.get("eligible"):
                 planned["exceeds_model_context"] = planned.get("rejection_reason") == "planned_ctx_exceeds_model_limit"
-                planned["predicted_vram_ceiling"] = planned.get("rejection_reason") in {
-                    "predicted_vram_ceiling",
-                    "adjacent_measured_peak_at_or_above_ceiling",
-                    "outside_measured_curve",
-                }
             elif int(planned["planned_num_ctx"]) < predicted_prompt + OUTPUT_RESERVE_TOKENS + SAFETY_MARGIN_TOKENS:
                 raise I11A0Error("planned num_ctx dropped below the 1,500-token safety margin")
         elif v2:
@@ -2153,7 +2165,14 @@ def run_gate3(
             from memorybox.ask.i11a.i11a0_full_prompt_v5 import estimator_underestimate
 
             observed = verdict.get("complete_log_tokens")
-            if observed is not None and estimator_underestimate(
+            starts = json.dumps(verdict.get("runner_starts") or [])
+            if "context-shift" in starts and "no-context-shift" not in starts:
+                row["classification"] = "context_shift_detected"
+                row["stable_ladder_rung"] = False
+            elif observed is not None and pec is not None and int(observed) != int(pec):
+                row["classification"] = "prompt_eval_mismatch"
+                row["stable_ladder_rung"] = False
+            elif observed is not None and estimator_underestimate(
                 predicted=int(planned.get("predicted_complete_prompt_tokens") or 0),
                 observed_complete=int(observed),
             ):
@@ -2252,6 +2271,124 @@ def run_gate3(
         if confirmation:
             progress.emit("Confirmation run completed", stage="confirmation")
         return row
+
+    v5_decision: dict[str, Any] | None = None
+    if v5:
+        from memorybox.ask.i11a.i11a0_full_prompt_v5 import (
+            A2_NUM_CTX,
+            A2_PEAK_VRAM_GB,
+            TWENTY_TWO_K_PLANNED_NUM_CTX,
+            V5_LIVE_RUNGS,
+            decide_22k,
+            imported_a2_rung_row,
+            project_valid_full_prompt_vram,
+        )
+
+        a2_row = imported_a2_rung_row()
+        if not any(str(row.get("execution_id") or "") == str(a2_row["execution_id"]) for row in runs):
+            runs.append(a2_row)
+            rewrite_run_tables(root, runs, dest_dir=v5_artifact_dir(root))
+        progress.emit(
+            "Imported A2 292642bad1a27cb4… as the first valid full-prompt hardware rung; not rerun",
+            stage="coarse",
+            phase="packet_build",
+            last_completed_execution_id=a2_row["execution_id"],
+        )
+        valid_points: list[tuple[int, float]] = [(A2_NUM_CTX, A2_PEAK_VRAM_GB)]
+        stop_reason = "stage_complete"
+        for spec_rung in V5_LIVE_RUNGS:
+            if int(spec_rung["nominal"]) == 21000:
+                proj21 = project_valid_full_prompt_vram(valid_points, int(spec_rung["num_ctx"]))
+                progress.emit(
+                    (
+                        "Valid-run VRAM projection for 21K "
+                        f"conservative={proj21.get('conservative_gb')} GB; "
+                        "historical occupancy is comparison only"
+                    ),
+                    stage="coarse",
+                    phase="packet_build",
+                )
+                if not proj21.get("below_ceiling"):
+                    stop_reason = "predicted_vram_ceiling"
+                    v5_decision = {
+                        "skipped_21k": True,
+                        "twenty_one_k_projection": proj21,
+                        "twenty_two_k": decide_22k(
+                            project_valid_full_prompt_vram(valid_points, TWENTY_TWO_K_PLANNED_NUM_CTX)
+                        ),
+                        "not_a_performance_knee": True,
+                    }
+                    break
+            packet = packer.packet_for_target(int(spec_rung["nominal"]))
+            if int(packet.estimated_evidence_tokens) != int(spec_rung["packed"]) or not str(
+                packet.sha256
+            ).startswith(str(spec_rung["sha_prefix"])):
+                stop_reason = "model_identity_changed"
+                progress.emit(
+                    "Authorized packet SHA/size does not match the frozen I14 nested prefix",
+                    warning="model_identity_changed",
+                    phase="packet_build",
+                )
+                break
+            prior = next(
+                (
+                    item
+                    for item in runs
+                    if item.get("packet_sha256") == packet.sha256 and item.get("actual_prompt_tokens")
+                ),
+                None,
+            )
+            if prior is not None:
+                peak_prior = prior.get("vram_peak_gb")
+                if peak_prior is not None:
+                    valid_points.append((int(prior.get("configured_num_ctx") or spec_rung["num_ctx"]), float(peak_prior)))
+                last_stable = prior
+                continue
+            row = measure(
+                packet,
+                phase="coarse",
+                target=int(spec_rung["nominal"]),
+                repetition=1,
+                confirmation=False,
+            )
+            if int(row.get("configured_num_ctx") or 0) != int(spec_rung["num_ctx"]):
+                row["model_identity_changed"] = True
+            runs.append(row)
+            hard = hard_stop_reason(row, ceiling_gb=config.maximum_vram_gb)
+            if hard:
+                stop_reason = hard
+                break
+            if row.get("classification") != COMPLETE_EVALUATED:
+                stop_reason = str(row.get("classification") or "generation_failed")
+                break
+            peak = row.get("vram_peak_gb")
+            if peak is None or row.get("placement_status") != "gpu_resident":
+                stop_reason = str(row.get("placement_status") or "placement_unknown")
+                break
+            valid_points.append((int(row["configured_num_ctx"]), float(peak)))
+            last_stable = row
+        else:
+            v5_decision = decide_22k(
+                project_valid_full_prompt_vram(valid_points, TWENTY_TWO_K_PLANNED_NUM_CTX)
+            )
+            stop_reason = str(v5_decision["stop_reason"])
+        decision_path = v5_artifact_dir(root) / "v5_22k_decision.json"
+        decision_path.write_text(
+            json.dumps(
+                {"decision": v5_decision, "stop_reason": stop_reason, "valid_vram_points": valid_points},
+                indent=2,
+                default=str,
+            )
+            + "\n",
+            encoding="utf-8",
+            newline="\n",
+        )
+        progress.emit(
+            f"v5 authorized ladder stopped: {stop_reason}",
+            stage="analysis",
+            stop_reason=stop_reason,
+            expected_next_action="founder_review",
+        )
 
     rerun_source = needs_identical_packet_rerun(runs)
     placement_source = needs_gpu_placement_validation(runs)
@@ -2396,7 +2533,7 @@ def run_gate3(
         stop_reason=stop_reason,
         expected_next_action="refinement_or_repeats",
     )
-    if last_stable and should_run_final_repeats(stop_reason) and stop_reason not in {
+    if last_stable and should_run_final_repeats(stop_reason) and not v5 and stop_reason not in {
         "host_affinity",
         "estimator_recalibration_required",
         "placement_unknown",
@@ -2494,6 +2631,16 @@ def run_gate3(
                 )
 
     analysis = analyze_gate3(runs, stop_reason=stop_reason, config=config)
+    if v5:
+        analysis["a2_imported_not_rerun"] = True
+        analysis["truncated_historical_runs_excluded"] = True
+        analysis["v5_22k_decision"] = v5_decision
+        analysis["automatically_ran_22k"] = False
+        if stop_reason in {"predicted_vram_ceiling", "founder_review_22k"}:
+            analysis["knee_observed"] = False
+            analysis["boundary_kind"] = (
+                "vram_boundary" if stop_reason == "predicted_vram_ceiling" else "awaiting_founder_authorization"
+            )
     progress.emit("Assembling review package", stage="package", phase="package")
     package = write_gate3_package(
         results_dir=root,
@@ -2651,6 +2798,25 @@ def run_gate3_live(
         sampler = HardwareSampler()
         progress.emit("Waiting for VRAM baseline", phase="baseline_wait")
         sampler.capture("baseline")
+        telemetry = None
+        if is_v5_config(config):
+            from memorybox.ask.i11a.i11a0_control_telemetry import IndependentRequestSampler
+            from memorybox.ask.i11a.i11a0_full_prompt_v5 import PLANNER_ID as V5_PLANNER
+
+            tel_dir = results / "runs" / "_in_flight"
+            tel_dir.mkdir(parents=True, exist_ok=True)
+            telemetry = IndependentRequestSampler(
+                telemetry_path=tel_dir / f"{packet.sha256[:16]}-in_request_telemetry.jsonl",
+                base_url=ollama_base_url,
+                experiment_id=V5_PLANNER,
+                run_id=str(packet.estimated_evidence_tokens),
+                execution_id=str(packet.sha256),
+                tag=spec.tag,
+                digest=spec.digest,
+                interval_seconds=1.0,
+                ram_every_n=1,
+            )
+            telemetry.start("request_active")
         progress.emit("Loading model is not asserted until Ollama streams tokens; request phase is ollama_request")
         progress.emit(
             "Submitting Ollama /api/chat request (model load, prompt evaluation, and generation share this HTTP stream)",
@@ -2663,6 +2829,8 @@ def run_gate3_live(
                     "Generation running (first streamed content token received)",
                     phase="generation",
                 )
+                if telemetry is not None:
+                    telemetry.set_phase("streaming")
 
         loaded_ps: dict[str, Any] = {}
         log_snap = snapshot_log(
@@ -2681,16 +2849,29 @@ def run_gate3_live(
                 queried_while_loaded=True,
             )
 
-        measurement, narration, events, request_capture = _chat(
-            request,
-            base_url=ollama_base_url,
-            timeout=config.timeout_seconds,
-            sampler=sampler,
-            packet_role="capacity",
-            on_stream_phase=on_stream_phase,
-            on_first_token=on_first_token,
-            keep_alive="2m",
-        )
+        try:
+            measurement, narration, events, request_capture = _chat(
+                request,
+                base_url=ollama_base_url,
+                timeout=config.timeout_seconds,
+                sampler=sampler,
+                packet_role="capacity",
+                on_stream_phase=on_stream_phase,
+                on_first_token=on_first_token,
+                keep_alive="2m",
+            )
+        finally:
+            if telemetry is not None:
+                telemetry.set_phase("streaming")
+                peaks = telemetry.vram_for_phases({"request_active", "first_token", "streaming"})
+                telemetry.stop()
+                if peaks:
+                    sampler.samples.append(
+                        {
+                            "phase": "independent_peak",
+                            "vram_used_gb": max(peaks),
+                        }
+                    )
         if "interpreted" not in loaded_ps:
             loaded_ps["payload"] = read_ollama_ps(ollama_base_url)
             loaded_ps["interpreted"] = interpret_ollama_placement(
@@ -2708,11 +2889,20 @@ def run_gate3_live(
             pre_unload_vram_gb=pre_unload,
         )
         last = events[-1] if events else {}
+        blob = json.dumps(last)
+        if "exceed_context_size" in blob or "exceeds the available context" in blob:
+            measurement.infrastructure_failure = True
+            extras_overflow = True
+        else:
+            extras_overflow = False
         if isinstance(request_capture, dict):
             log_snap["request_hash"] = request_capture.get("request_body_sha256") or log_snap.get("request_hash")
+            reqj = request_capture.get("request_json") or {}
+            if is_v5_config(config) and (reqj.get("truncate") is not False or reqj.get("shift") is not False):
+                raise I11A0Error("v5 chat request must send top-level truncate=false and shift=false")
         last_hardware.clear()
         last_hardware.update(hardware)
-        return measurement, narration, {
+        extras = {
             "hardware": hardware,
             "last_event": last,
             "raw_api": "".join(json.dumps(event) + "\n" for event in events),
@@ -2721,7 +2911,9 @@ def run_gate3_live(
             "request_capture": request_capture,
             "series_peak_vram_gb": progress.state.get("series_peak_vram_gb"),
             "log_snapshot": log_snap,
+            "context_overflow": extras_overflow,
         }
+        return measurement, narration, extras
 
     def unload(tag: str) -> tuple[float, dict[str, Any]]:
         info = verify_unload(
@@ -3902,6 +4094,8 @@ def prove_gate3_offline() -> dict[str, Any]:
     ok("v5_config_detected", is_v5_config(Gate3Config(planner_id=V5_PLANNER_ID)))
     ok("v5_reserve_equation_accepts_18k", plan_reserve_aware_run(evidence_bytes=74063)["eligible"] is True)
     ok("v5_default_not_live_authorized", Gate3Config(planner_id=V5_PLANNER_ID).live_ladder_authorized is False)
+    live_cfg = load_gate3_config(REPO_ROOT / "docs" / "ops" / "i11a0_gate3.b.full-prompt-v5.json")
+    ok("v5_ops_config_authorizes_live", live_cfg.live_ladder_authorized is True and live_cfg.start_evidence_tokens == 19000, live_cfg)
 
     return {
         "ok": not problems,
