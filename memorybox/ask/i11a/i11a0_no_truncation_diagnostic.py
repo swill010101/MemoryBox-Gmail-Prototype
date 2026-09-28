@@ -75,6 +75,33 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
+def find_installed_qwen_b(inventory: dict[str, Any]) -> dict[str, Any]:
+    """Match /api/tags via inventory_installed_models. Loaded-in-VRAM is not required."""
+    rows = list(inventory.get("approved") or [])
+    row = next(
+        (
+            item
+            for item in rows
+            if item.get("config_id") == "B" or str(item.get("tag") or "") == B_TAG
+        ),
+        None,
+    )
+    names = list(inventory.get("installed_names") or [])
+    if row is None or str(row.get("status") or "") != "installed":
+        raise I11A0Error(
+            "qwen3:14b-q8_0 is not in the Ollama tag inventory. "
+            "The model does not need to be loaded into VRAM; it must appear in /api/tags. "
+            f"installed_names={names} approved_status={(row or {}).get('status')}"
+        )
+    digest = str(row.get("digest") or "")
+    if PINNED_B_DIGEST not in digest:
+        raise I11A0Error(
+            "installed Qwen B digest does not match the pinned digest "
+            f"{PINNED_B_DIGEST}; got {digest!r}"
+        )
+    return row
+
+
 def build_chat_payload(
     *,
     user_text: str,
@@ -365,13 +392,8 @@ def run_no_truncation_diagnostic(
         (out / "diagnostic_stop.json").write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
         return payload
     inventory = inventory_installed_models(base_url=url)
-    row = next((item for item in (inventory.get("models") or []) if str(item.get("tag") or item.get("name") or "") == B_TAG), None)
-    if row is None:
-        raise I11A0Error("qwen3:14b-q8_0 is not installed")
-    digest = str(row.get("digest") or "")
-    if PINNED_B_DIGEST not in digest:
-        raise I11A0Error("installed Qwen B digest does not match the pinned digest")
-    spec_meta = {"tag": B_TAG, "digest": digest}
+    row = find_installed_qwen_b(inventory)
+    spec_meta = {"tag": B_TAG, "digest": row.get("digest"), "status": row.get("status")}
     packed = i14_18k_user_packet(i14_export)
     exec_a = new_execution_id(test_case="no-trunc-diag-a", hostname="FlightSim", started_at_utc=utc_now())
     payload_a = build_chat_payload(user_text=packed["user_text"], num_ctx=DIAGNOSTIC_A_NUM_CTX, num_predict=DIAGNOSTIC_A_NUM_PREDICT)
@@ -582,6 +604,26 @@ def prove_no_truncation_diagnostic_offline() -> dict[str, Any]:
     )
     payload = build_chat_payload(user_text="x", num_ctx=28416, num_predict=256)
     ok("truncate_shift_top_level", payload.get("truncate") is False and "truncate" not in payload["options"], payload)
+    found = find_installed_qwen_b(
+        {
+            "approved": [
+                {
+                    "config_id": "B",
+                    "tag": B_TAG,
+                    "status": "installed",
+                    "digest": PINNED_B_DIGEST,
+                }
+            ],
+            "models": [],
+            "installed_names": [B_TAG],
+        }
+    )
+    ok("finds_qwen_b_on_approved_not_models_key", found.get("tag") == B_TAG, found)
+    try:
+        find_installed_qwen_b({"models": [{"name": B_TAG, "digest": PINNED_B_DIGEST}]})
+        ok("empty_approved_is_not_installed", False, "expected I11A0Error")
+    except I11A0Error as exc:
+        ok("empty_approved_is_not_installed", "tag inventory" in str(exc), str(exc))
     import inspect
     from memorybox.ask.i11a.i11a0_host import require_flightsim_host_affinity as require_affinity
 
