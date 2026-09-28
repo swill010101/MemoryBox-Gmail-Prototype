@@ -118,12 +118,18 @@ from memorybox.ask.i11a.i11a0_full_prompt_v3 import (
 from memorybox.ask.i11a.i11a0_full_prompt_v4 import (
     LOG_UNVERIFIED,
     PLANNER_ID as I14_FULL_PROMPT_V4,
-    classify_post_generation_log,
     is_defective_v3_config,
     is_v4_config,
     plan_retention_aware_run,
     v4_artifact_dir,
 )
+from memorybox.ask.i11a.i11a0_ollama_log_cursor import (
+    COMPLETE_EVALUATED,
+    COMPLETE_INFRA,
+    classify_appended_log,
+    snapshot_log,
+)
+from memorybox.ask.i11a.i11a0_unload_verify import verify_unload
 
 GATE3_START_EVIDENCE_TOKENS = 2000
 GATE3_COARSE_INCREMENT_TOKENS = 1000
@@ -391,6 +397,7 @@ def should_run_final_repeats(stop_reason: str) -> bool:
         "predicted_vram_ceiling",
         INVALID_TRUNCATED,
         LOG_UNVERIFIED,
+        COMPLETE_INFRA,
         "retention_window_exceeded",
         "predicted_complete_prompt_exceeds_model_retention_window",
         "complete_prompt_exceeded_prediction",
@@ -913,6 +920,8 @@ def hard_stop_reason(row: dict[str, Any], *, ceiling_gb: float = VRAM_CEILING_GB
         return INVALID_TRUNCATED
     if row.get("classification") == LOG_UNVERIFIED:
         return LOG_UNVERIFIED
+    if row.get("classification") == COMPLETE_INFRA:
+        return COMPLETE_INFRA
     if row.get("classification") in {
         "retention_window_exceeded",
         "predicted_complete_prompt_exceeds_model_retention_window",
@@ -972,6 +981,8 @@ def classify_boundary_kind(stop_reason: str) -> str:
     if stop_reason == INVALID_TRUNCATED:
         return "silent_truncation"
     if stop_reason == LOG_UNVERIFIED:
+        return "infrastructure_failure"
+    if stop_reason == COMPLETE_INFRA:
         return "infrastructure_failure"
     if stop_reason == "evidence_exhausted":
         return "evidence_exhaustion"
@@ -2061,6 +2072,8 @@ def run_gate3(
         if unload_info.get("vram_final_gb") is not None:
             hardware["vram_post_unload_gb"] = unload_info.get("vram_final_gb")
             hardware["vram_final_gb"] = unload_info.get("vram_final_gb")
+        if unload_info.get("in_request_peak_vram_gb") is not None:
+            hardware["vram_peak_gb"] = unload_info.get("in_request_peak_vram_gb")
         if unload_info.get("vram_pre_unload_gb") is not None:
             hardware["vram_pre_unload_gb"] = unload_info.get("vram_pre_unload_gb")
         if unload_info.get("ram_final_gb") is not None:
@@ -2108,27 +2121,33 @@ def run_gate3(
             ):
                 row[key] = planned.get(key)
             pec = row.get("actual_prompt_tokens")
-            log_text = str(extras.get("ollama_server_log_text") or "")
-            if not log_text:
-                log_path = Path(
-                    os.environ.get("MEMORYBOX_OLLAMA_SERVER_LOG")
-                    or r"C:\Users\tomwi\AppData\Local\Ollama\server.log"
-                )
-                if log_path.is_file():
-                    log_text = log_path.read_text(encoding="utf-8", errors="replace")[-200000:]
-            verdict = classify_post_generation_log(
-                log_text,
+            snap = extras.get("log_snapshot") or snapshot_log(
+                execution_id=str(row.get("execution_id") or ""),
+                model_tag=spec.tag,
+                digest=spec.digest,
+                num_ctx=int(row.get("configured_num_ctx") or num_ctx),
+            )
+            verdict = classify_appended_log(
+                snap,
                 num_ctx=int(row.get("configured_num_ctx") or num_ctx),
                 prompt_eval_count=None if pec is None else int(pec),
                 predicted_complete=int(planned.get("predicted_complete_prompt_tokens") or 0),
             )
-            row.update({k: v for k, v in verdict.items() if k != "passed"})
-            if not verdict.get("passed"):
+            row["log_cursor"] = {k: v for k, v in snap.items() if k != "text"}
+            row.update({k: v for k, v in verdict.items() if k not in {"passed", "parsed"}})
+            if verdict.get("passed") and extras.get("vram_released") is False:
+                row["classification"] = COMPLETE_INFRA
+                row["stable_ladder_rung"] = False
+                row["exclude_from_knee"] = True
+                row["exclude_from_operating_point"] = True
+            elif not verdict.get("passed"):
                 row["classification"] = verdict.get("classification")
                 row["stable_ladder_rung"] = False
                 row["exclude_from_knee"] = True
                 row["exclude_from_operating_point"] = True
-            row["never_treat_prompt_eval_as_complete"] = True
+            else:
+                row["classification"] = COMPLETE_EVALUATED
+            row["never_treat_prompt_eval_as_complete"] = not bool(verdict.get("no_truncation_proven"))
         if phase in {"repeat_proposed", "repeat_next_larger"}:
             row["repeat_kind"] = "operating_point_repeat"
         if (
@@ -2596,6 +2615,8 @@ def run_gate3_live(
         progress.fail(str(exc), stop_reason="preflight")
         raise
 
+    last_hardware: dict[str, Any] = {}
+
     def generate(request: RunRequest, packet: Gate3Packet) -> tuple[Measurement, str, dict[str, Any]]:
         progress.begin_execution()
         sampler = HardwareSampler()
@@ -2615,6 +2636,12 @@ def run_gate3_live(
                 )
 
         loaded_ps: dict[str, Any] = {}
+        log_snap = snapshot_log(
+            execution_id=str(getattr(request, "execution_id", "") or ""),
+            model_tag=spec.tag,
+            digest=spec.digest,
+            num_ctx=int(request.num_ctx),
+        )
 
         def on_first_token() -> None:
             loaded_ps["payload"] = read_ollama_ps(ollama_base_url)
@@ -2652,6 +2679,10 @@ def run_gate3_live(
             pre_unload_vram_gb=pre_unload,
         )
         last = events[-1] if events else {}
+        if isinstance(request_capture, dict):
+            log_snap["request_hash"] = request_capture.get("request_body_sha256") or log_snap.get("request_hash")
+        last_hardware.clear()
+        last_hardware.update(hardware)
         return measurement, narration, {
             "hardware": hardware,
             "last_event": last,
@@ -2660,24 +2691,18 @@ def run_gate3_live(
             "placement_raw": loaded_ps.get("payload"),
             "request_capture": request_capture,
             "series_peak_vram_gb": progress.state.get("series_peak_vram_gb"),
+            "log_snapshot": log_snap,
         }
 
     def unload(tag: str) -> tuple[float, dict[str, Any]]:
-        sampler = HardwareSampler()
-        sampler.capture("before_unload")
-        seconds = _unload(ollama_base_url, tag)
-        time.sleep(VRAM_RELEASE_SETTLE_SECONDS)
-        sampler.capture("after_unload_settled")
-        hardware = sampler.summary()
-        return seconds, {
-            "unload_recorded": True,
-            "vram_final_gb": hardware.get("vram_final_gb"),
-            "vram_pre_unload_gb": hardware.get("vram_baseline_gb"),
-            "vram_released": _vram_released(
-                hardware.get("vram_baseline_gb"), hardware.get("vram_final_gb")
-            ),
-            "ram_final_gb": hardware.get("ram_final_gb"),
-        }
+        info = verify_unload(
+            base_url=ollama_base_url,
+            tag=tag,
+            in_request_peak_vram_gb=last_hardware.get("vram_peak_gb"),
+            pre_load_baseline_vram_gb=last_hardware.get("vram_baseline_gb"),
+            pre_unload_vram_gb=last_hardware.get("vram_pre_unload_gb") or last_hardware.get("vram_peak_gb"),
+        )
+        return float(info.get("unload_http_seconds") or 0), info
 
     try:
         return run_gate3(

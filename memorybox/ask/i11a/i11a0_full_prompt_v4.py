@@ -252,58 +252,24 @@ def classify_post_generation_log(
     predicted_complete: int,
     keep: int = KEEP_TOKENS,
 ) -> dict[str, Any]:
-    text = str(log_text or "")
-    pec = None if prompt_eval_count is None else int(prompt_eval_count)
-    limit = truncation_limit(int(num_ctx), keep=keep)
-    identity = pec is not None and pec == limit
-    if not text.strip():
+    from memorybox.ask.i11a.i11a0_ollama_log_cursor import classify_log_segment
+
+    if not str(log_text or "").strip():
         return {
             "passed": False,
             "classification": LOG_UNVERIFIED,
             "reason": "missing_ollama_log",
             "truncation_occurred": None,
+            "segment_inspected": False,
+            "no_truncation_proven": False,
         }
-    events = parse_truncation_events(text)
-    hits = [
-        ev
-        for ev in events
-        if ev.get("runner_c") in {None, int(num_ctx)}
-        and (pec is None or int(ev["new"]) == pec)
-    ]
-    if len(hits) > 1:
-        return {
-            "passed": False,
-            "classification": LOG_UNVERIFIED,
-            "reason": "ambiguous_truncation_log_match",
-            "truncation_occurred": None,
-            "match_count": len(hits),
-        }
-    if len(hits) == 1:
-        ev = hits[0]
-        full = int(ev["prompt"])
-        outcome = apply_truncation_outcome(
-            {"prompt_eval_count": pec, "actual_prompt_tokens": pec, "num_ctx": num_ctx},
-            ev,
-        )
-        if full > int(predicted_complete):
-            outcome["classification"] = PREDICTION_EXCEEDED
-            outcome["passed"] = False
-            outcome["reason"] = "complete_log_tokens_exceed_prediction"
-            return {**outcome, "passed": False}
-        return {**outcome, "passed": False, "reason": "truncating_input_prompt"}
-    if identity:
-        return {
-            "passed": False,
-            "classification": INVALID_TRUNCATED,
-            "reason": "prompt_eval_matches_truncation_identity_without_full_log_entry",
-            "truncation_occurred": True,
-        }
-    return {
-        "passed": False,
-        "classification": LOG_UNVERIFIED,
-        "reason": "no_unique_untruncated_log_correlation",
-        "truncation_occurred": False,
-    }
+    return classify_log_segment(
+        str(log_text),
+        num_ctx=int(num_ctx),
+        prompt_eval_count=prompt_eval_count,
+        predicted_complete=predicted_complete,
+        keep=keep,
+    )
 
 
 def i14_export_candidates() -> list[Path]:
@@ -497,6 +463,6 @@ def prove_full_prompt_v4_offline() -> dict[str, Any]:
     missing = classify_post_generation_log("", num_ctx=30720, prompt_eval_count=1200, predicted_complete=1200)
     ok("missing_log_cannot_pass", missing["passed"] is False and missing["classification"] == LOG_UNVERIFIED, missing)
     identity = classify_post_generation_log("unrelated\n", num_ctx=30720, prompt_eval_count=15362, predicted_complete=12000)
-    ok("identity_without_full_entry_invalid", identity["classification"] == INVALID_TRUNCATED, identity)
+    ok("identity_without_complete_log_cannot_pass", identity["passed"] is False, identity)
     ok("no_model_call", True, None)
     return {"ok": not problems, "checks": checks, "problems": problems, "models_called": False}

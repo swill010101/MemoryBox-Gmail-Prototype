@@ -798,6 +798,20 @@ def main(argv: list[str] | None = None) -> int:
         default="docs/test-output/i11a0-benchmark/i14-cleaned-export",
         help="Frozen accepted I14 cleaned export directory (email only)",
     )
+    p_no_trunc = sub.add_parser(
+        "i11a0-no-truncation-diagnostic",
+        help="Bounded Ollama truncate=false/shift=false diagnostic; not a ladder",
+    )
+    p_no_trunc.add_argument("--confirm-benchmark", action="store_true")
+    p_no_trunc.add_argument("--ollama-base-url", default="http://127.0.0.1:11434")
+    p_no_trunc.add_argument(
+        "--i14-export",
+        default="docs/test-output/i11a0-benchmark/i14-cleaned-export",
+    )
+    p_no_trunc.add_argument(
+        "--out",
+        default="docs/test-output/i11a0-benchmark/no-truncation-diagnostic",
+    )
     p_control = sub.add_parser(
         "i11a0-prompt-accounting-proof",
         help="Isolated three-run prompt_eval_count diagnostic; not a ladder",
@@ -1973,6 +1987,36 @@ def main(argv: list[str] | None = None) -> int:
                         "detail": str(exc),
                         "models_called": False,
                         "pull_executed": False,
+                    },
+                    indent=2,
+                ),
+                flush=True,
+            )
+            return 2
+        print(json.dumps(payload, indent=2, default=str), flush=True)
+        return 0 if payload.get("ok") else 1
+
+    if args.cmd == "i11a0-no-truncation-diagnostic":
+        from memorybox.ask.i11a.i11a0_benchmark import I11A0Error, InferenceNotAuthorized
+        from memorybox.ask.i11a.i11a0_host import HostAffinityError
+        from memorybox.ask.i11a.i11a0_no_truncation_diagnostic import run_no_truncation_diagnostic
+
+        try:
+            payload = run_no_truncation_diagnostic(
+                confirm_benchmark=bool(args.confirm_benchmark),
+                ollama_base_url=args.ollama_base_url,
+                i14_export=args.i14_export,
+                results_dir=args.out,
+            )
+        except (InferenceNotAuthorized, HostAffinityError, I11A0Error) as exc:
+            print(
+                json.dumps(
+                    {
+                        "ok": False,
+                        "error": type(exc).__name__,
+                        "detail": str(exc),
+                        "models_called": False,
+                        "ladder_resumed": False,
                     },
                     indent=2,
                 ),
