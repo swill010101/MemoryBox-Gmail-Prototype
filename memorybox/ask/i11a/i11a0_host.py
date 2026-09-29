@@ -121,6 +121,11 @@ def read_system_ram() -> dict[str, Any]:
         "used_gb": used / (1024 ** 3),
         "available_gb": avail / (1024 ** 3),
         "memory_load_percent": int(status.dwMemoryLoad),
+        "pagefile_total_bytes": int(status.ullTotalPageFile),
+        "pagefile_available_bytes": int(status.ullAvailPageFile),
+        "pagefile_used_bytes": int(status.ullTotalPageFile) - int(status.ullAvailPageFile),
+        "pagefile_total_gb": int(status.ullTotalPageFile) / (1024 ** 3),
+        "pagefile_used_gb": (int(status.ullTotalPageFile) - int(status.ullAvailPageFile)) / (1024 ** 3),
     }
 
 
@@ -438,6 +443,9 @@ class HardwareSampler:
             "gpu_utilization_percent": gpu.get("utilization_gpu_percent"),
             "system_ram_used_gb": ram.get("used_gb"),
             "system_ram_total_gb": ram.get("total_gb"),
+            "system_ram_available_gb": ram.get("available_gb"),
+            "pagefile_used_gb": ram.get("pagefile_used_gb"),
+            "pagefile_total_gb": ram.get("pagefile_total_gb"),
             "controller_working_set_bytes": read_working_set_bytes(os.getpid()),
             "ollama_process_memory": ollama,
         }

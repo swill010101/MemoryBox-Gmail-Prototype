@@ -410,6 +410,8 @@ class IndependentRequestSampler:
             "gpu_utilization_percent": nvidia.get("utilization_gpu_percent"),
             "system_ram_used_gb": ram.get("used_gb"),
             "system_ram_available_gb": ram.get("available_gb"),
+            "pagefile_used_gb": ram.get("pagefile_used_gb"),
+            "pagefile_total_gb": ram.get("pagefile_total_gb"),
             "ps_available": bool(ps_payload.get("available", True)),
             "ps_model_listed": match is not None and not digest_mismatch,
             "model_tag": None if match is None else (match.get("name") or match.get("model")),

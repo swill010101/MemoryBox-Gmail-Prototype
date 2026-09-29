@@ -49,10 +49,29 @@ CLASSIFICATION_TRUNCATION = "truncation_occurred"
 CLASSIFICATION_VRAM_BOUNDARY = "vram_ceiling"
 CLASSIFICATION_NARRATION_QUALITY = "narration_quality_validation_failed"
 CLASSIFICATION_PROTECTED_PREDICTION_EXCEEDED = "complete_prompt_exceeded_protected_prediction"
+CLASSIFICATION_GEMMA_VRAM_BOUNDARY = "gemma_vram_boundary_at_first_rung"
 FIRST_NOMINAL = 8000
 COARSE_INCREMENT = 1000
+AUTHORIZED_PACKET_SHA256 = "4ea883765185683d0f7aae62b6b1279e0b30e1c7538a24f0dc66cf6a0aa1faf0"
+AUTHORIZED_EVIDENCE_TOKENS = 8665
+AUTHORIZED_EVIDENCE_BYTES = 34657
+AUTHORIZED_MESSAGE_COUNT = 24
+AUTHORIZED_THREAD_COUNT = 17
+AUTHORIZED_NUM_CTX = 15872
+PROTECTED_COMPLETE_PROMPT_TOKENS = 11757
+IDLE_VRAM_MAX_GB = 3.0
+MIN_AVAILABLE_RAM_GB = 12.0
 DEFAULT_OUT = REPO_ROOT / "docs" / "test-output" / "i11a0-benchmark" / EXPERIMENT_ID
 OPS_PATH = REPO_ROOT / "docs" / "ops" / "i11a0.c.gemma-i14-full-prompt-v1.json"
+FORBIDDEN_PROCESS_NAMES = frozenset(
+    {
+        "llama-server.exe",
+        "docker desktop.exe",
+        "com.docker.backend.exe",
+        "com.docker.service",
+        "dockerd.exe",
+    }
+)
 
 
 def _sha256_text(text: str) -> str:
@@ -62,6 +81,206 @@ def _sha256_text(text: str) -> str:
 def load_ops(path: Path | str | None = None) -> dict[str, Any]:
     ops_path = Path(path) if path else OPS_PATH
     return json.loads(ops_path.read_text(encoding="utf-8"))
+
+
+def first_rung_only_enabled(ops: dict[str, Any] | None = None) -> bool:
+    payload = ops if ops is not None else load_ops()
+    return bool(payload.get("first_rung_only")) and not bool(payload.get("remaining_ladder_authorized"))
+
+
+def build_gemma_request_json(user: str, num_ctx: int) -> dict[str, Any]:
+    return {
+        "model": TAG,
+        "messages": [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": user},
+        ],
+        "stream": True,
+        "think": False,
+        "keep_alive": "2m",
+        "truncate": False,
+        "shift": False,
+        "options": {
+            "num_ctx": int(num_ctx),
+            "num_predict": OUTPUT_RESERVE_TOKENS,
+            "temperature": 0.1,
+            "seed": 42,
+        },
+    }
+
+
+def require_authorized_first_rung(plan: dict[str, Any]) -> None:
+    if int(plan.get("nominal_target_estimated_evidence") or 0) != FIRST_NOMINAL:
+        raise I11A0Error("first rung nominal is not 8000")
+    if str(plan.get("packet_sha256") or "") != AUTHORIZED_PACKET_SHA256:
+        raise I11A0Error(f"packet sha mismatch: {plan.get('packet_sha256')}")
+    if int(plan.get("estimated_evidence_tokens") or 0) != AUTHORIZED_EVIDENCE_TOKENS:
+        raise I11A0Error("packed evidence token estimate is not 8665")
+    if int(plan.get("evidence_bytes") or 0) != AUTHORIZED_EVIDENCE_BYTES:
+        raise I11A0Error("packed evidence bytes are not 34657")
+    if int(plan.get("message_count") or 0) != AUTHORIZED_MESSAGE_COUNT:
+        raise I11A0Error("message count is not 24")
+    if int(plan.get("thread_count") or 0) != AUTHORIZED_THREAD_COUNT:
+        raise I11A0Error("thread count is not 17")
+    if plan.get("partial_context") is not True:
+        raise I11A0Error("partial_context must be true")
+    if int(plan.get("planned_num_ctx") or 0) != AUTHORIZED_NUM_CTX:
+        raise I11A0Error(f"planned_num_ctx is not {AUTHORIZED_NUM_CTX}")
+    if int(plan.get("protected_complete_prompt_tokens") or 0) != PROTECTED_COMPLETE_PROMPT_TOKENS:
+        raise I11A0Error("protected complete-prompt prediction is not 11757")
+    if prompt_sha256() != EXPECTED_V03_PROMPT_SHA256:
+        raise I11A0Error("prompt v0.3 sha mismatch")
+    if plan.get("truncate") is not False or plan.get("shift") is not False:
+        raise I11A0Error("truncate/shift must be false")
+    if str(plan.get("digest") or "") != EXPECTED_DIGEST or str(plan.get("tag") or "") != TAG:
+        raise I11A0Error("Gemma tag or digest mismatch")
+    if str(plan.get("quantization") or "") != QUANT:
+        raise I11A0Error("quantization is not Q4_K_M")
+
+
+def list_tasklist_names() -> list[str]:
+    import subprocess
+
+    try:
+        completed = subprocess.run(
+            ["tasklist", "/FO", "CSV", "/NH"],
+            capture_output=True,
+            text=True,
+            timeout=8,
+            check=False,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return []
+    names: list[str] = []
+    for raw in (completed.stdout or "").splitlines():
+        parts = [item.strip().strip('"') for item in raw.split('","')]
+        if parts:
+            names.append(parts[0])
+    return names
+
+
+def python_command_lines() -> list[str]:
+    import subprocess
+
+    try:
+        completed = subprocess.run(
+            ["wmic", "process", "where", "name='python.exe' or name='pythonw.exe'", "get", "CommandLine"],
+            capture_output=True,
+            text=True,
+            timeout=12,
+            check=False,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return []
+    return [line.strip() for line in (completed.stdout or "").splitlines() if line.strip() and "CommandLine" not in line]
+
+
+def inspect_idle_host(*, ollama_base_url: str) -> dict[str, Any]:
+    from memorybox.ask.i11a.i11a0_host import read_nvidia_snapshot, read_ollama_process_memory, read_system_ram
+    from memorybox.ask.i11a.i11a0_placement import read_ollama_ps
+
+    names = list_tasklist_names()
+    lowered = [name.lower() for name in names]
+    forbidden = sorted({name for name in lowered if name in FORBIDDEN_PROCESS_NAMES})
+    llama_server = [name for name in lowered if name == "llama-server.exe"]
+    docker = [name for name in lowered if name in {"docker desktop.exe", "com.docker.backend.exe", "dockerd.exe", "com.docker.service"}]
+    commands = python_command_lines()
+    memorybox_serve = [line for line in commands if "memorybox serve" in line.lower() or "memorybox.serve" in line.lower()]
+    ps_payload = read_ollama_ps(ollama_base_url)
+    models = list(ps_payload.get("models") or [])
+    gpu = read_nvidia_snapshot()
+    ram = read_system_ram()
+    idle = gpu.get("memory_used_gb")
+    available_ram = ram.get("available_gb")
+    return {
+        "task_names": names,
+        "forbidden_processes": forbidden,
+        "llama_server_orphan": llama_server,
+        "docker_running": docker,
+        "memorybox_serve_command_lines": memorybox_serve,
+        "ps": ps_payload,
+        "loaded_models": models,
+        "idle_vram_gb": idle,
+        "available_ram_gb": available_ram,
+        "pagefile_used_gb": ram.get("pagefile_used_gb"),
+        "ollama_processes": read_ollama_process_memory(),
+        "checks": {
+            "no_model_loaded": ps_payload.get("available") is True and not models,
+            "no_llama_server_orphan": not llama_server,
+            "idle_vram_below_3gb": isinstance(idle, (int, float)) and float(idle) < IDLE_VRAM_MAX_GB,
+            "available_ram_at_least_12gb": isinstance(available_ram, (int, float)) and float(available_ram) >= MIN_AVAILABLE_RAM_GB,
+            "docker_desktop_not_running": not docker,
+            "memorybox_serve_not_running": not memorybox_serve,
+        },
+    }
+
+
+def require_gemma_first_rung_preflight(
+    *,
+    ops: dict[str, Any],
+    plan: dict[str, Any],
+    ollama_base_url: str,
+    out: Path,
+    export_dir: Path | str | None,
+) -> dict[str, Any]:
+    from memorybox.ask.i11a.i11a0_benchmark import inventory_installed_models
+    from memorybox.ask.i11a.i11a0_confirmation_runtime import refuse_if_unresolved
+    from memorybox.ask.i11a.i11a0_host import collect_host_affinity_preflight, require_flightsim_host_affinity
+
+    if not ops.get("inference_authorized"):
+        raise InferenceNotAuthorized("ops inference_authorized is false")
+    if not first_rung_only_enabled(ops):
+        raise InferenceNotAuthorized("first_rung_only is required; remaining ladder is not authorized")
+    if ops.get("pull_authorized"):
+        raise I11A0Error("Gemma pull is not authorized")
+    if ops.get("remaining_ladder_authorized"):
+        raise I11A0Error("remaining Gemma ladder is not authorized")
+    require_authorized_first_rung(plan)
+    i14 = verify_pinned_i14_export(resolve_i14_export(export_dir))
+    offline = prove_gemma_full_prompt_v1_offline(export_dir=export_dir)
+    if not offline.get("ok"):
+        raise I11A0Error(f"offline proof failed: {offline.get('problems')}")
+    host = collect_host_affinity_preflight(
+        ollama_base_url=ollama_base_url,
+        output_path=out,
+        chunks_path=REPO_ROOT / "docs" / "test-output",
+        repo=REPO_ROOT,
+    )
+    require_flightsim_host_affinity(host)
+    refuse_if_unresolved(out, recovery_authorized=False)
+    idle = inspect_idle_host(ollama_base_url=ollama_base_url)
+    failed = [name for name, ok in (idle.get("checks") or {}).items() if not ok]
+    if failed:
+        raise I11A0Error(f"first-rung preflight failed: {failed}")
+    inventory = inventory_installed_models(base_url=ollama_base_url)
+    if inventory.get("pull_executed"):
+        raise I11A0Error("inventory reported a pull")
+    by_tag = {row["tag"]: row for row in inventory.get("approved") or []}
+    row = by_tag.get(TAG) or {}
+    digest = str(row.get("digest") or "")
+    quant = str(row.get("quantization") or (row.get("metadata") or {}).get("quantization") or "")
+    if not row:
+        raise I11A0Error("gemma4:26b is not in the local Ollama inventory")
+    if digest != EXPECTED_DIGEST:
+        raise I11A0Error(f"installed Gemma digest mismatch: {digest}")
+    if quant and quant != QUANT and QUANT.replace("_", "") not in quant.replace("_", ""):
+        raise I11A0Error(f"installed Gemma quantization mismatch: {quant}")
+    payload = {
+        "ok": True,
+        "host": host,
+        "idle": idle,
+        "i14": i14,
+        "offline_ok": True,
+        "inventory_tag": TAG,
+        "inventory_digest": digest,
+        "inventory_quantization": quant or QUANT,
+        "planned_num_ctx": AUTHORIZED_NUM_CTX,
+        "inference_authorized": True,
+        "first_rung_only": True,
+    }
+    (out / "preflight").mkdir(parents=True, exist_ok=True)
+    (out / "preflight" / "live_preflight.json").write_text(json.dumps(payload, indent=2, default=str) + "\n", encoding="utf-8")
+    return payload
 
 
 def resolve_i14_export(path: Path | str | None = None) -> Path:
@@ -200,7 +419,12 @@ def build_user_message(packet: Any) -> str:
     )
 
 
-def build_ladder_plan(*, export_dir: Path | str | None = None, start: int = FIRST_NOMINAL) -> dict[str, Any]:
+def build_ladder_plan(
+    *,
+    export_dir: Path | str | None = None,
+    start: int = FIRST_NOMINAL,
+    first_rung_only: bool = True,
+) -> dict[str, Any]:
     root = resolve_i14_export(export_dir)
     packer = NestedMessagePacker(load_frozen_prompt_messages(root))
     rows: list[dict[str, Any]] = []
@@ -231,6 +455,8 @@ def build_ladder_plan(*, export_dir: Path | str | None = None, start: int = FIRS
             }
         )
         previous_ids = packet.evidence_ids
+        if first_rung_only:
+            break
         if packet.exhausted:
             break
         target = next_coarse_grid_target(int(packet.estimated_evidence_tokens), increment=COARSE_INCREMENT)
@@ -239,6 +465,8 @@ def build_ladder_plan(*, export_dir: Path | str | None = None, start: int = FIRS
         "experiment_id": EXPERIMENT_ID,
         "planner_id": PLANNER_ID,
         "export_dir": str(root),
+        "first_rung_only": bool(first_rung_only),
+        "did_not_build_9k_packet": bool(first_rung_only),
         "skipped_already_covered_nominals": skipped,
         "rows": rows,
         "first_rung": first,
@@ -261,7 +489,7 @@ def write_preflight(out: Path, ladder: dict[str, Any]) -> Path:
                 "",
                 "Separate from Qwen capacity, estimator, VRAM fit, and quality experiments.",
                 "Do not judge narration quality during the ladder.",
-                "inference_authorized defaults false. No model pull from this package.",
+                "first_rung_only: submit only the authorized 8K packet. Do not build or POST 9K.",
                 "",
             ]
         ),
@@ -280,7 +508,15 @@ def prove_gemma_full_prompt_v1_offline(*, export_dir: Path | str | None = None) 
             problems.append(f"{name}: {detail}")
 
     ops = load_ops()
-    ok("ops_inference_authorized_false", ops.get("inference_authorized") is False, ops.get("inference_authorized"))
+    ok("ops_first_rung_only", ops.get("first_rung_only") is True, ops.get("first_rung_only"))
+    ok("ops_inference_authorized_first_rung", ops.get("inference_authorized") is True, ops.get("inference_authorized"))
+    ok("ops_remaining_ladder_false", ops.get("remaining_ladder_authorized") is False, ops.get("remaining_ladder_authorized"))
+    ok("ops_pull_unauthorized", ops.get("pull_authorized") is False, ops.get("pull_authorized"))
+    ok("ops_planned_num_ctx_15872", int(ops.get("planned_num_ctx") or 0) == AUTHORIZED_NUM_CTX, ops.get("planned_num_ctx"))
+    ok("first_rung_only_helper", first_rung_only_enabled(ops) is True, None)
+    ninek = project_gemma_9k_from_first_rung(peak_vram_gb=21.0, baseline_vram_gb=2.0)
+    ok("projection_next_nominal_9000", ninek.get("next_nominal_estimated_evidence") == 9000, ninek)
+    ok("projection_does_not_pack_9k", ninek.get("did_not_pack_9k_packet") is True, ninek)
     ok("ops_tag", ops.get("tag") == TAG, ops)
     ok("ops_digest", ops.get("digest") == EXPECTED_DIGEST, ops)
     ok("ops_quant", ops.get("quantization") == QUANT, ops)
@@ -374,9 +610,19 @@ def prove_gemma_full_prompt_v1_offline(*, export_dir: Path | str | None = None) 
         ok("vram_unmeasured", first.get("vram_status") == "unmeasured", first)
         ok("packet_not_shrunk", int(first.get("estimated_evidence_tokens") or 0) >= FIRST_NOMINAL, first)
         ok("qwen_calibration_not_used", first.get("does_not_use_qwen_token_ratio") is True, first)
+        ok("first_rung_only_single_row", len(ladder.get("rows") or []) == 1, len(ladder.get("rows") or []))
+        ok("did_not_build_9k", ladder.get("did_not_build_9k_packet") is True, ladder.get("did_not_build_9k_packet"))
+        ok("no_9k_nominal", all(int(row.get("nominal_target_estimated_evidence") or 0) != 9000 for row in (ladder.get("rows") or [])), None)
+        ok("authorized_packet_sha", first.get("packet_sha256") == AUTHORIZED_PACKET_SHA256, first.get("packet_sha256"))
+        ok("authorized_evidence_8665", int(first.get("estimated_evidence_tokens") or 0) == AUTHORIZED_EVIDENCE_TOKENS, first.get("estimated_evidence_tokens"))
+        ok("authorized_evidence_bytes", int(first.get("evidence_bytes") or 0) == AUTHORIZED_EVIDENCE_BYTES, first.get("evidence_bytes"))
+        ok("authorized_message_count", int(first.get("message_count") or 0) == AUTHORIZED_MESSAGE_COUNT, first.get("message_count"))
+        ok("authorized_thread_count", int(first.get("thread_count") or 0) == AUTHORIZED_THREAD_COUNT, first.get("thread_count"))
+        ok("authorized_partial_context", first.get("partial_context") is True, first.get("partial_context"))
+        ok("first_rung_num_ctx_15872", int(first.get("planned_num_ctx") or 0) == AUTHORIZED_NUM_CTX, first.get("planned_num_ctx"))
+        ok("first_rung_protected_11757", int(first.get("protected_complete_prompt_tokens") or 0) == PROTECTED_COMPLETE_PROMPT_TOKENS, first.get("protected_complete_prompt_tokens"))
         if int(first.get("request_bytes_div4") or 0) == 10439:
-            ok("first_rung_num_ctx_15872", int(first["planned_num_ctx"]) == 15872, first)
-            ok("first_rung_protected_11757", int(first["protected_complete_prompt_tokens"]) == 11757, first)
+            ok("diagnostic_still_10439", True, None)
         ok("truncate_false", first.get("truncate") is False, first)
         ok("stable_packet_id", str(first.get("stable_packet_id") or "").startswith("i14pkt-"), first)
         ok("repeat_user_stable", True, None)
@@ -405,6 +651,405 @@ def prove_gemma_full_prompt_v1_offline(*, export_dir: Path | str | None = None) 
     }
 
 
+def ns_to_seconds(value: Any) -> float | None:
+    if value in {None, ""}:
+        return None
+    return float(value) / 1_000_000_000.0
+
+
+def project_gemma_9k_from_first_rung(
+    *,
+    peak_vram_gb: float | None,
+    baseline_vram_gb: float | None,
+    packed_evidence_tokens: int = AUTHORIZED_EVIDENCE_TOKENS,
+) -> dict[str, Any]:
+    next_nominal = next_coarse_grid_target(int(packed_evidence_tokens), increment=COARSE_INCREMENT)
+    scale = float(next_nominal) / float(max(1, packed_evidence_tokens))
+    projected = None
+    if isinstance(peak_vram_gb, (int, float)) and isinstance(baseline_vram_gb, (int, float)):
+        delta = float(peak_vram_gb) - float(baseline_vram_gb)
+        projected = float(baseline_vram_gb) + delta * scale
+    over_ceiling = isinstance(projected, float) and projected >= VRAM_CEILING_GB
+    return {
+        "next_nominal_estimated_evidence": next_nominal,
+        "did_not_pack_9k_packet": True,
+        "evidence_scale": scale,
+        "projected_peak_vram_gb": projected,
+        "projected_meets_or_exceeds_22_5gb": over_ceiling,
+        "method": "baseline + (peak-baseline) * (9000 / packed_8k_evidence)",
+        "qwen_curve_not_used": True,
+    }
+
+
+def run_gemma_first_rung_live(
+    *,
+    ops: dict[str, Any],
+    ladder: dict[str, Any],
+    out: Path,
+    ollama_base_url: str,
+    i14_export: Path | str | None,
+) -> dict[str, Any]:
+    from dataclasses import asdict
+    import socket
+    from datetime import datetime, timezone
+
+    from memorybox.ask.i11a.i11a0_benchmark import Measurement, RunRequest, new_execution_id, test_case_id
+    from memorybox.ask.i11a.i11a0_confirmation_runtime import (
+        CLASSIFICATION_INFRA_PRE_PROMPT,
+        chat_with_split_timeouts,
+        evaluate_confirmation_safety,
+        persist_failure_record,
+        persist_request_capture,
+        start_confirmation_progress,
+    )
+    from memorybox.ask.i11a.i11a0_control_telemetry import IN_REQUEST_PHASES, IndependentRequestSampler
+    from memorybox.ask.i11a.i11a0_host import HardwareSampler
+    from memorybox.ask.i11a.i11a0_ollama_log_cursor import classify_appended_log, snapshot_log
+    from memorybox.ask.i11a.i11a0_placement import interpret_ollama_placement, read_ollama_ps
+    from memorybox.ask.i11a.i11a0_prompt_accounting_audit import request_capture_payload
+    from memorybox.ask.i11a.i11a0_smoke import _unload
+
+    first = ladder.get("first_rung") or {}
+    require_gemma_first_rung_preflight(
+        ops=ops,
+        plan=first,
+        ollama_base_url=ollama_base_url,
+        out=out,
+        export_dir=i14_export,
+    )
+    root = resolve_i14_export(i14_export)
+    packer = NestedMessagePacker(load_frozen_prompt_messages(root))
+    packet = packer.packet_for_target(FIRST_NOMINAL)
+    user = build_user_message(packet)
+    plan = plan_rung(user=user, packet=packet)
+    plan["nominal_target_estimated_evidence"] = FIRST_NOMINAL
+    require_authorized_first_rung(plan)
+    started = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    request = RunRequest(
+        model_tag=TAG,
+        digest=EXPECTED_DIGEST,
+        requested_evidence_tokens=FIRST_NOMINAL,
+        evidence_sha256=packet.sha256,
+        evidence_text=packet.text,
+        repetition=1,
+        warm_or_cold="cold",
+        confirmation=True,
+        thinking_mode="off",
+        seed=42,
+        num_ctx=AUTHORIZED_NUM_CTX,
+        reserved_output_tokens=OUTPUT_RESERVE_TOKENS,
+        prompt_sha256=prompt_sha256(),
+        time_start=str(packet.time_start or ""),
+        time_end=str(packet.time_end or ""),
+        partial_context=True,
+        partial_boundary_note=str(packet.partial_boundary_note or ""),
+        evidence_ids=tuple(packet.evidence_ids),
+        model_visible_packet_id=stable_packet_id(packet.sha256),
+    )
+    execution_id = new_execution_id(
+        test_case=test_case_id(request),
+        hostname=socket.gethostname(),
+        started_at_utc=started,
+    )
+    run_dir = out / "runs" / execution_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "IN_FLIGHT").write_text(started + "\n", encoding="utf-8")
+    payload = build_gemma_request_json(user, AUTHORIZED_NUM_CTX)
+    capture = request_capture_payload(
+        system_text=SYSTEM_PROMPT,
+        user_text=user,
+        evidence_text=packet.text,
+        options=payload["options"],
+        model_tag=TAG,
+        digest=EXPECTED_DIGEST,
+        execution_id=execution_id,
+        test_case_id=test_case_id(request),
+        keep_alive=payload.get("keep_alive"),
+    )
+    capture["request_json"] = payload
+    capture["first_rung_only"] = True
+    capture["truncate_requested"] = False
+    capture["shift_requested"] = False
+    encoded = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    capture["request_body_sha256"] = hashlib.sha256(encoded).hexdigest()
+    capture["request_body_bytes"] = len(encoded)
+    persist_request_capture(run_dir, capture)
+    sampler = HardwareSampler()
+    sampler.capture("baseline")
+    loaded_ps: dict[str, Any] = {}
+
+    def on_first_token() -> None:
+        loaded_ps["payload"] = read_ollama_ps(ollama_base_url)
+        loaded_ps["interpreted"] = interpret_ollama_placement(
+            loaded_ps["payload"],
+            tag=TAG,
+            digest=EXPECTED_DIGEST,
+            queried_while_loaded=True,
+        )
+        sampler.capture("loaded")
+
+    log_before = snapshot_log(
+        execution_id="",
+        model_tag=TAG,
+        digest=EXPECTED_DIGEST,
+        num_ctx=AUTHORIZED_NUM_CTX,
+    )
+    generation_timeout = int(ops.get("timeout_seconds") or 1800)
+    runner_ready_timeout = int(ops.get("runner_ready_timeout_seconds") or 300)
+    progress = start_confirmation_progress(
+        run_dir, timeout_seconds=generation_timeout, execution_id=execution_id
+    )
+    telemetry = IndependentRequestSampler(
+        telemetry_path=run_dir / "in_request_telemetry.jsonl",
+        base_url=ollama_base_url,
+        experiment_id=EXPERIMENT_ID,
+        run_id=execution_id,
+        execution_id=execution_id,
+        tag=TAG,
+        digest=EXPECTED_DIGEST,
+        interval_seconds=1.5,
+        heartbeat_seconds=40.0,
+        progress=progress,
+        runner_ready_timeout_seconds=float(runner_ready_timeout),
+        include_runner_processes=True,
+    )
+    telemetry.start("starting_runner")
+    progress.emit("starting runner", phase="starting_runner")
+    unload_s = None
+    events: list[dict[str, Any]] = []
+    narration = ""
+    chat_result: dict[str, Any] = {
+        "measurement": None,
+        "narration": "",
+        "events": [],
+        "http_status": None,
+        "headers_received": False,
+        "stream_bytes_received": 0,
+        "runner_ready_timeout": False,
+        "failure_kind": "aborted",
+    }
+    try:
+        sampler.capture("generate_start")
+        chat_result = chat_with_split_timeouts(
+            encoded=encoded,
+            base_url=ollama_base_url,
+            runner_ready_timeout=runner_ready_timeout,
+            generation_timeout=generation_timeout,
+            progress=progress,
+            phase_setter=telemetry.set_phase,
+            on_first_token=on_first_token,
+            cancel=telemetry.cancel,
+        )
+        progress.emit("validation", phase="validation")
+        telemetry.set_phase("validation")
+        narration = chat_result.get("narration") or ""
+        events = list(chat_result.get("events") or [])
+        (run_dir / "narration.txt").write_text(narration, encoding="utf-8", newline="\n")
+        (run_dir / "raw_api.jsonl").write_text(
+            "\n".join(json.dumps(event, ensure_ascii=False) for event in events) + "\n",
+            encoding="utf-8",
+            newline="\n",
+        )
+        progress.emit("unload", phase="unload")
+        telemetry.set_phase("unload")
+        sampler.capture("pre_unload")
+        unload_s = _unload(ollama_base_url, TAG)
+        sampler.capture("after_unload")
+    finally:
+        telemetry.stop()
+        progress.stop_heartbeat()
+    measurement = chat_result.get("measurement") or Measurement(infrastructure_failure=True)
+    last = events[-1] if events else {}
+    vram_vals = sampler.vram_used_values()
+    independent_vram = telemetry.vram_for_phases(IN_REQUEST_PHASES)
+    current_run_vram = list(independent_vram)
+    peak = max(vram_vals + current_run_vram) if (vram_vals or current_run_vram) else None
+    baseline = vram_vals[0] if vram_vals else None
+    loaded_vram = None
+    for sample in sampler.samples:
+        if sample.get("phase") == "loaded" and isinstance(sample.get("vram_used_gb"), (int, float)):
+            loaded_vram = float(sample["vram_used_gb"])
+    final = vram_vals[-1] if vram_vals else None
+    ram_peaks = [float(row["system_ram_used_gb"]) for row in sampler.samples if isinstance(row.get("system_ram_used_gb"), (int, float))]
+    page_peaks = [float(row["pagefile_used_gb"]) for row in sampler.samples if isinstance(row.get("pagefile_used_gb"), (int, float))]
+    for tick in telemetry.samples:
+        if isinstance(tick.get("system_ram_used_gb"), (int, float)):
+            ram_peaks.append(float(tick["system_ram_used_gb"]))
+        if isinstance(tick.get("pagefile_used_gb"), (int, float)):
+            page_peaks.append(float(tick["pagefile_used_gb"]))
+    placed = loaded_ps.get("interpreted") or {}
+    gpu_resident = placed.get("gpu_resident") if placed else None
+    cpu_offload = placed.get("status") == "cpu_offload" if placed else None
+    vram_released = None
+    if baseline is not None and final is not None:
+        vram_released = final <= baseline + 2.0
+    pec = measurement.prompt_eval_count or last.get("prompt_eval_count")
+    actual_prompt = None if pec in (None, 0) else int(pec)
+    underestimate = bool(
+        actual_prompt is not None and protected_prediction_exceeded(protected=PROTECTED_COMPLETE_PROMPT_TOKENS, actual_complete_prompt_tokens=actual_prompt)
+    )
+    remaining_margin = None
+    reserve_ok = None
+    if actual_prompt is not None:
+        remaining_margin = AUTHORIZED_NUM_CTX - actual_prompt - OUTPUT_RESERVE_TOKENS
+        reserve_ok = actual_prompt + OUTPUT_RESERVE_TOKENS + SAFETY_MARGIN_TOKENS <= AUTHORIZED_NUM_CTX
+    log_verdict = classify_appended_log(
+        log_before,
+        num_ctx=AUTHORIZED_NUM_CTX,
+        prompt_eval_count=actual_prompt,
+        predicted_complete=PROTECTED_COMPLETE_PROMPT_TOKENS,
+    )
+    trunc_flag = True if log_verdict.get("truncation_occurred") is True else False if actual_prompt is not None else None
+    safety = evaluate_confirmation_safety(
+        request_json=payload,
+        prompt_eval_count=actual_prompt,
+        timed_out=bool(measurement.timed_out) or bool(chat_result.get("runner_ready_timeout")),
+        infrastructure_failure=bool(measurement.infrastructure_failure),
+        http_status=chat_result.get("http_status"),
+        stream_bytes_received=int(chat_result.get("stream_bytes_received") or 0),
+        truncation_occurred=trunc_flag,
+        gpu_resident=gpu_resident if isinstance(gpu_resident, bool) else None,
+        vram_peak_gb=peak,
+        vram_released=vram_released,
+        log_truncation=True if log_verdict.get("truncation_occurred") is True else None,
+    )
+    vram_boundary = isinstance(peak, (int, float)) and float(peak) >= VRAM_CEILING_GB
+    classification = safety.get("classification")
+    if vram_boundary:
+        classification = CLASSIFICATION_GEMMA_VRAM_BOUNDARY
+    elif underestimate and classification is None:
+        classification = CLASSIFICATION_PROTECTED_PREDICTION_EXCEEDED
+    elif classification is None and chat_result.get("failure_kind") is None:
+        classification = "first_rung_complete_quality_deferred"
+    projection = project_gemma_9k_from_first_rung(peak_vram_gb=peak, baseline_vram_gb=baseline)
+    nine_k_technically_eligible = (
+        not vram_boundary
+        and not underestimate
+        and reserve_ok is not False
+        and trunc_flag is not True
+        and projection.get("projected_meets_or_exceeds_22_5gb") is not True
+        and chat_result.get("failure_kind") is None
+    )
+    recommendation = "stop_at_first_rung_vram_boundary" if vram_boundary or projection.get("projected_meets_or_exceeds_22_5gb") else (
+        "founder_review_estimator_underestimate" if underestimate else (
+            "founder_authorization_required_before_9k" if nine_k_technically_eligible else "stop_for_founder_review"
+        )
+    )
+    rec = {
+        "ok": classification in {"first_rung_complete_quality_deferred", CLASSIFICATION_PROTECTED_PREDICTION_EXCEEDED} and not vram_boundary,
+        "classification": classification,
+        "execution_id": execution_id,
+        "models_called": True,
+        "inference_started": True,
+        "first_rung_only": True,
+        "did_not_build_or_submit_9k": True,
+        "remaining_ladder_started": False,
+        "quality_comparison_deferred": True,
+        "qwen_not_generated": True,
+        "words_of_life": False,
+        "peggy_scenario": False,
+        "production_narrator": False,
+        "packet_sha256": packet.sha256,
+        "prompt_sha256": prompt_sha256(),
+        "protected_complete_prompt_tokens": PROTECTED_COMPLETE_PROMPT_TOKENS,
+        "actual_complete_prompt_tokens": actual_prompt,
+        "gemma_estimator_underestimate": underestimate,
+        "safety_equation": "actual_complete_prompt + 2500 + 1500 <= 15872",
+        "remaining_context_after_prompt_and_output": remaining_margin,
+        "reserve_equation_passed": reserve_ok,
+        "num_ctx": AUTHORIZED_NUM_CTX,
+        "unload_seconds": unload_s,
+        "vram_scope": "current_run_only",
+        "hardware": {
+            "vram_baseline_gb": baseline,
+            "vram_peak_gb": peak,
+            "vram_loaded_gb": loaded_vram,
+            "vram_post_unload_gb": final,
+            "current_run_in_request_peak_gb": max(current_run_vram) if current_run_vram else peak,
+            "gpu_resident": gpu_resident,
+            "cpu_offload": cpu_offload,
+            "placement": placed,
+            "vram_released": vram_released,
+            "system_ram_peak_gb": max(ram_peaks) if ram_peaks else None,
+            "pagefile_peak_gb": max(page_peaks) if page_peaks else None,
+        },
+        "timing": {
+            "load_seconds": ns_to_seconds(last.get("load_duration")),
+            "prompt_eval_seconds": ns_to_seconds(last.get("prompt_eval_duration")),
+            "generation_seconds": ns_to_seconds(last.get("eval_duration")),
+            "elapsed_seconds": measurement.elapsed_seconds,
+            "prompt_tokens_per_second": last.get("prompt_eval_rate"),
+            "generation_tokens_per_second": last.get("eval_rate"),
+        },
+        "truncation_occurred": safety.get("truncation_occurred"),
+        "shift": safety.get("shift"),
+        "truncate": safety.get("truncate"),
+        "unload_recorded": True,
+        "narration_artifact": str(run_dir / "narration.txt"),
+        "nine_k_technically_eligible": nine_k_technically_eligible,
+        "gemma_9k_projection": projection,
+        "recommendation": recommendation,
+        "measurement": asdict(measurement),
+        "log_correlation": {k: v for k, v in log_verdict.items() if k != "segment"},
+        "safety_problems": list(safety.get("problems") or []),
+        "http_status": chat_result.get("http_status"),
+        "stopped_after_first_rung": True,
+    }
+    (run_dir / "token_accounting.json").write_text(
+        json.dumps(
+            {
+                "actual_prompt_eval_count": actual_prompt,
+                "protected_complete_prompt_tokens": PROTECTED_COMPLETE_PROMPT_TOKENS,
+                "configured_num_ctx": AUTHORIZED_NUM_CTX,
+                "output_reserve_tokens": OUTPUT_RESERVE_TOKENS,
+                "safety_margin_tokens": SAFETY_MARGIN_TOKENS,
+                "gemma_estimator_underestimate": underestimate,
+                "packet_sha256": packet.sha256,
+                "prompt_sha256": prompt_sha256(),
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (run_dir / "telemetry.jsonl").write_text(
+        "\n".join(json.dumps(sample) for sample in sampler.samples) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    (run_dir / "log_correlation.json").write_text(json.dumps(log_verdict, indent=2, default=str) + "\n", encoding="utf-8")
+    (run_dir / "safety_checks.json").write_text(json.dumps(safety, indent=2, default=str) + "\n", encoding="utf-8")
+    (run_dir / "run_record.json").write_text(json.dumps(rec, indent=2, default=str) + "\n", encoding="utf-8")
+    in_flight = run_dir / "IN_FLIGHT"
+    if in_flight.is_file():
+        in_flight.unlink()
+    if vram_boundary:
+        persist_failure_record(run_dir, kind="failure", payload=rec)
+    elif measurement.timed_out or chat_result.get("runner_ready_timeout") or chat_result.get("failure_kind"):
+        persist_failure_record(
+            run_dir,
+            kind="timeout" if measurement.timed_out or chat_result.get("runner_ready_timeout") else "failure",
+            payload=rec,
+        )
+    else:
+        (run_dir / "COMPLETE").write_text("complete\n", encoding="utf-8")
+    if underestimate:
+        (run_dir / "gemma_estimator_underestimate.json").write_text(
+            json.dumps(
+                {
+                    "protected_complete_prompt_tokens": PROTECTED_COMPLETE_PROMPT_TOKENS,
+                    "actual_complete_prompt_tokens": actual_prompt,
+                    "stopped_after_first_rung": True,
+                    "did_not_continue_to_9k": True,
+                },
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+    return rec
+
+
 def run_gemma_ladder(
     *,
     confirm_benchmark: bool,
@@ -413,10 +1058,9 @@ def run_gemma_ladder(
     results_dir: Path | str | None = None,
     ollama_base_url: str = "http://127.0.0.1:11434",
 ) -> dict[str, Any]:
-    del ollama_base_url
     ops = load_ops(config_path)
     out = Path(results_dir) if results_dir else DEFAULT_OUT
-    ladder = build_ladder_plan(export_dir=i14_export)
+    ladder = build_ladder_plan(export_dir=i14_export, first_rung_only=True)
     write_preflight(out, ladder)
     payload = {
         "ok": True,
@@ -424,14 +1068,29 @@ def run_gemma_ladder(
         "models_called": False,
         "inference_started": False,
         "stopped_before_inference": True,
+        "first_rung_only": True,
+        "did_not_build_or_submit_9k": True,
         "first_rung": ladder.get("first_rung"),
         "preflight": str(out / "preflight"),
         "ops_inference_authorized": bool(ops.get("inference_authorized")),
         "confirm_benchmark": bool(confirm_benchmark),
         "qwen_not_generated": True,
         "gemma_pull_executed": False,
+        "remaining_ladder_authorized": bool(ops.get("remaining_ladder_authorized")),
     }
-    if not confirm_benchmark or not ops.get("inference_authorized"):
+    if not confirm_benchmark:
+        payload["authorization"] = "awaiting_confirm_benchmark"
+        return payload
+    if not ops.get("inference_authorized") or not first_rung_only_enabled(ops):
         payload["authorization"] = "awaiting_founder_before_ollama"
         return payload
-    raise InferenceNotAuthorized("Gemma live ladder is implemented as preflight-only until founder authorizes inference")
+    live = run_gemma_first_rung_live(
+        ops=ops,
+        ladder=ladder,
+        out=out,
+        ollama_base_url=ollama_base_url,
+        i14_export=i14_export,
+    )
+    live["stopped_before_inference"] = False
+    live["first_rung_plan"] = ladder.get("first_rung")
+    return live

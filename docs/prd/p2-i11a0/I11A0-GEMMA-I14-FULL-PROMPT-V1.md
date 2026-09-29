@@ -74,4 +74,11 @@ Representative 8K diagnostic 10,439:
 
 ## Authorization
 
-`inference_authorized` remains false. Do not pull Gemma. Do not generate. Stop for founder authorization.
+Founder authorized **exactly one** first-rung execution (`first_rung_only`). Remaining ladder, 9K, refinement, repeats, Qwen, Words of Life, Peggy, and production narration remain unauthorized.
+
+`inference_authorized: true` applies only with `first_rung_only: true` and `remaining_ladder_authorized: false`. The live command must stop after this 8K packet even if it succeeds. It must not pack or POST a 9K request.
+
+If VRAM reaches or exceeds 22.5 GB, classify `gemma_vram_boundary_at_first_rung`. Do not shrink context or packet.
+
+If actual complete-prompt tokens exceed the protected 11,757 prediction, record a Gemma estimator underestimate and still stop after this rung.
+
