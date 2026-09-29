@@ -302,21 +302,30 @@ def _chat(
     on_stream_phase: Any = None,
     on_first_token: Any = None,
     keep_alive: Any = 0,
+    system_text: str | None = None,
+    user_text: str | None = None,
 ) -> tuple[Measurement, str, list[dict[str, Any]], dict[str, Any]]:
-    user = render_user_message(
-        packet_id=f"{request.model_tag}-{request.requested_evidence_tokens}-{request.warm_or_cold}-{request.repetition}",
-        packet_role=packet_role,
-        time_start=request.time_start,
-        time_end=request.time_end,
-        partial_context=request.partial_context,
-        partial_boundary_note=request.partial_boundary_note,
-        evidence_ids=list(request.evidence_ids),
-        evidence_text=request.evidence_text,
-    )
+    system_text = SYSTEM_PROMPT if system_text is None else system_text
+    if user_text is None:
+        packet_id = request.model_visible_packet_id or (
+            f"{request.model_tag}-{request.requested_evidence_tokens}-"
+            f"{request.warm_or_cold}-{request.repetition}"
+        )
+        user_text = render_user_message(
+            packet_id=packet_id,
+            packet_role=packet_role,
+            time_start=request.time_start,
+            time_end=request.time_end,
+            partial_context=request.partial_context,
+            partial_boundary_note=request.partial_boundary_note,
+            evidence_ids=list(request.evidence_ids),
+            evidence_text=request.evidence_text,
+        )
+    user = user_text
     payload = {
         "model": request.model_tag,
         "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": system_text},
             {"role": "user", "content": user},
         ],
         "stream": True,
@@ -332,7 +341,7 @@ def _chat(
         },
     }
     capture = request_capture_payload(
-        system_text=SYSTEM_PROMPT,
+        system_text=system_text,
         user_text=user,
         evidence_text=request.evidence_text or "",
         options=payload["options"],

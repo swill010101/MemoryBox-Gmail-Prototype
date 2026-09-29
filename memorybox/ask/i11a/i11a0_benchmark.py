@@ -1548,6 +1548,7 @@ class RunRequest:
     partial_context: bool = False
     partial_boundary_note: str = "none"
     evidence_ids: tuple[str, ...] = ()
+    model_visible_packet_id: str = ""
 
 
 @dataclass

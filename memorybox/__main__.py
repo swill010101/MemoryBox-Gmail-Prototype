@@ -798,6 +798,22 @@ def main(argv: list[str] | None = None) -> int:
         default="docs/test-output/i11a0-benchmark/i14-cleaned-export",
         help="Frozen accepted I14 cleaned export directory (email only)",
     )
+    p_nq = sub.add_parser(
+        "i11a0-narration-quality-v03-confirm",
+        help="One 27K Qwen B narration-quality confirmation with prompt v0.3; not a ladder",
+    )
+    p_nq.add_argument("--config", default="docs/ops/i11a0.b.narration-quality-v03-27k.json")
+    p_nq.add_argument("--confirm-benchmark", action="store_true")
+    p_nq.add_argument("--ollama-base-url", default="http://127.0.0.1:11434")
+    p_nq.add_argument(
+        "--source-run",
+        default="",
+        help="COMPLETE 27K capacity run directory to copy the accepted packet from (read-only)",
+    )
+    p_nq.add_argument(
+        "--out",
+        default="docs/test-output/i11a0-benchmark/gate3-b-i14-narration-quality-v03-27k-confirm",
+    )
     p_no_trunc = sub.add_parser(
         "i11a0-no-truncation-diagnostic",
         help="Bounded Ollama truncate=false/shift=false diagnostic; not a ladder",
@@ -1987,6 +2003,37 @@ def main(argv: list[str] | None = None) -> int:
                         "detail": str(exc),
                         "models_called": False,
                         "pull_executed": False,
+                    },
+                    indent=2,
+                ),
+                flush=True,
+            )
+            return 2
+        print(json.dumps(payload, indent=2, default=str), flush=True)
+        return 0 if payload.get("ok") else 1
+
+    if args.cmd == "i11a0-narration-quality-v03-confirm":
+        from memorybox.ask.i11a.i11a0_benchmark import I11A0Error, InferenceNotAuthorized
+        from memorybox.ask.i11a.i11a0_host import HostAffinityError
+        from memorybox.ask.i11a.i11a0_narration_quality_v03 import run_narration_quality_v03
+
+        try:
+            payload = run_narration_quality_v03(
+                confirm_benchmark=bool(args.confirm_benchmark),
+                config_path=args.config,
+                source_run=args.source_run or None,
+                results_dir=args.out,
+                ollama_base_url=args.ollama_base_url,
+            )
+        except (InferenceNotAuthorized, I11A0Error, HostAffinityError) as exc:
+            print(
+                json.dumps(
+                    {
+                        "ok": False,
+                        "error": type(exc).__name__,
+                        "detail": str(exc),
+                        "models_called": False,
+                        "i11a1_started": False,
                     },
                     indent=2,
                 ),

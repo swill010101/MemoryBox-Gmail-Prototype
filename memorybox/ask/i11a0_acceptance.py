@@ -1627,6 +1627,15 @@ def run_prove_i11a0_benchmark() -> dict[str, Any]:
     _check("full_prompt_v5_offline", full_prompt_v5.get("ok") is True, checks, problems, full_prompt_v5.get("problems"))
     _check("full_prompt_v5_models_not_called", full_prompt_v5.get("models_called") is False, checks, problems)
     _check("full_prompt_v5_ladder_not_resumed", full_prompt_v5.get("ladder_resumed") is False, checks, problems)
+    from memorybox.ask.i11a.i11a0_narration_quality_v03 import prove_narration_quality_v03_offline
+    from memorybox.ask.i11a.i11a0_prompt import prompt_sha256 as v02_hash
+
+    nq = prove_narration_quality_v03_offline()
+    checks.extend(nq.get("checks") or [])
+    problems.extend(nq.get("problems") or [])
+    _check("narration_quality_v03_offline", nq.get("ok") is True, checks, problems, nq.get("problems"))
+    _check("narration_quality_v03_models_not_called", nq.get("models_called") is False, checks, problems)
+    _check("v02_prompt_hash_unchanged_after_v03", v02_hash() == nq.get("prompt_v02_sha256"), checks, problems, nq.get("prompt_v02_sha256"))
     return {
         "ok": not problems,
         "checks": len(checks),
@@ -1661,5 +1670,12 @@ def run_prove_i11a0_benchmark() -> dict[str, Any]:
             "check_count": len(full_prompt_v5.get("checks") or []),
             "models_called": full_prompt_v5.get("models_called"),
             "ladder_resumed": full_prompt_v5.get("ladder_resumed"),
+        },
+        "narration_quality_v03_offline": {
+            "ok": nq.get("ok"),
+            "check_count": len(nq.get("checks") or []),
+            "models_called": nq.get("models_called"),
+            "prompt_v03_sha256": nq.get("prompt_v03_sha256"),
+            "planning_eligible": (nq.get("planning") or {}).get("eligible"),
         },
     }

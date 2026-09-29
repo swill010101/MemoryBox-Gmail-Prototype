@@ -57,6 +57,7 @@ from memorybox.ask.i11a.i11a0_prompt import (
     prompt_sha256,
     render_user_message,
 )
+from memorybox.ask.i11a.i11a0_request_identity import stable_packet_id
 from memorybox.ask.i11a.i11a0_placement import (
     FAULTY_CPU_OFFLOAD_EXPRESSION,
     PRESERVED_FALSE_OFFLOAD_EXECUTION_ID,
@@ -601,8 +602,13 @@ def packet_from_saved_row(row: dict[str, Any]) -> Gate3Packet:
         exhausted=bool(manifest.get("exhausted")),
         evidence_bytes=int(manifest.get("evidence_bytes") or len(text.encode("utf-8"))),
         evidence_characters=int(manifest.get("evidence_characters") or len(text)),
-        partial_context=False,
-        partial_boundary_note="none",
+        partial_context=bool(manifest.get("partial_context")),
+        partial_boundary_note=str(manifest.get("partial_boundary_note") or "none"),
+        message_count=int(manifest.get("message_count") or 0),
+        partial_thread_ids=tuple(manifest.get("partial_thread_ids") or ()),
+        included_boundary_evidence_ids=tuple(manifest.get("included_boundary_evidence_ids") or ()),
+        omitted_boundary_evidence_ids=tuple(manifest.get("omitted_boundary_evidence_ids") or ()),
+        packer_kind=str(manifest.get("packer_kind") or "conversation"),
     )
 
 
@@ -1896,8 +1902,9 @@ def run_gate3(
             current_repetition=repetition,
             expected_next_action="submit_prompt",
         )
+        visible_packet_id = stable_packet_id(packet.sha256)
         user = render_user_message(
-            packet_id=f"B-{target}-{phase}-{repetition}",
+            packet_id=visible_packet_id,
             packet_role="capacity",
             time_start=packet.time_start,
             time_end=packet.time_end,
@@ -1958,6 +1965,9 @@ def run_gate3(
             time_start=packet.time_start,
             time_end=packet.time_end,
             evidence_ids=packet.evidence_ids,
+            partial_context=bool(packet.partial_context),
+            partial_boundary_note=packet.partial_boundary_note,
+            model_visible_packet_id=visible_packet_id,
         )
         progress.emit(
             (
@@ -3422,6 +3432,64 @@ def prove_gate3_offline() -> dict[str, Any]:
     ok("i14_does_not_split_a_message", m_small.evidence_ids[0] == "e1", m_small.evidence_ids)
     ok("i14_partial_context_flagged_when_thread_continues", m_small.partial_context is True, m_small)
     ok("i14_records_omitted_boundary", bool(m_small.omitted_boundary_evidence_ids), m_small)
+    restored = packet_from_saved_row(
+        {
+            "requested_evidence_tokens": 200,
+            "packet_sha256": m_small.sha256,
+            "packet_manifest": {
+                "packet_sha256": m_small.sha256,
+                "estimated_evidence_tokens": m_small.estimated_evidence_tokens,
+                "evidence_ids": list(m_small.evidence_ids),
+                "conversation_ids": list(m_small.conversation_ids),
+                "time_start": m_small.time_start,
+                "time_end": m_small.time_end,
+                "overshoot": m_small.overshoot,
+                "exhausted": m_small.exhausted,
+                "evidence_bytes": m_small.evidence_bytes,
+                "evidence_characters": m_small.evidence_characters,
+                "partial_context": True,
+                "partial_boundary_note": m_small.partial_boundary_note,
+                "message_count": m_small.message_count,
+                "partial_thread_ids": list(m_small.partial_thread_ids),
+                "included_boundary_evidence_ids": list(m_small.included_boundary_evidence_ids),
+                "omitted_boundary_evidence_ids": list(m_small.omitted_boundary_evidence_ids),
+                "packer_kind": "message",
+            },
+            "evidence_text": m_small.text,
+        }
+    )
+    ok("saved_row_preserves_partial_context", restored.partial_context is True, restored)
+    ok(
+        "saved_row_preserves_boundary_note",
+        restored.partial_boundary_note == m_small.partial_boundary_note
+        and restored.omitted_boundary_evidence_ids == m_small.omitted_boundary_evidence_ids,
+        restored.partial_boundary_note,
+    )
+    from memorybox.ask.i11a.i11a0_request_identity import stable_packet_id as _stable_pid
+
+    pid = _stable_pid(m_small.sha256)
+    u1 = render_user_message(
+        packet_id=pid,
+        packet_role="capacity",
+        time_start=m_small.time_start,
+        time_end=m_small.time_end,
+        partial_context=True,
+        partial_boundary_note=m_small.partial_boundary_note,
+        evidence_ids=list(m_small.evidence_ids),
+        evidence_text=m_small.text,
+    )
+    u2 = render_user_message(
+        packet_id=pid,
+        packet_role="capacity",
+        time_start=m_small.time_start,
+        time_end=m_small.time_end,
+        partial_context=True,
+        partial_boundary_note=m_small.partial_boundary_note,
+        evidence_ids=list(m_small.evidence_ids),
+        evidence_text=m_small.text,
+    )
+    ok("repeat_user_messages_are_byte_identical", u1 == u2 and "cold-" not in u1, len(u1))
+    ok("stable_packet_id_has_no_repetition", pid.startswith("i14pkt-") and pid.endswith(m_small.sha256), pid)
     covered_msg = msg_packer.packet_for_target(m_small.estimated_evidence_tokens)
     ok(
         "i14_covered_target_is_not_exhaustion",
