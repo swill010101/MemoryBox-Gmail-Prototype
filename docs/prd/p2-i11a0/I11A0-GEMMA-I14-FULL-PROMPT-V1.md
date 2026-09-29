@@ -80,7 +80,7 @@ Founder authorized **exactly one** first-rung execution (`first_rung_only`). Rem
 
 Docker Desktop and MemoryBox data-plane containers (Postgres, Qdrant) may stay running so the ladder is production-like. Do not treat Docker as a preflight failure.
 
-Execution `a34465944adba324c6660a8c5a25f6f7a3dff067c845ce42582b9d85ee787cfc` is preserved unchanged. Classification: `full_prompt_evaluated_estimator_and_safety_margin_failed`. Not a stable rung. 9K is not authorized. `inference_authorized` and `calibrated_8k_rerun_authorized` are false until founder authorizes a 17,664 rerun.
+Execution `a34465944adba324c6660a8c5a25f6f7a3dff067c845ce42582b9d85ee787cfc` is preserved unchanged. Founder authorized **one calibrated same-packet rerun** at `num_ctx=17664` (`inference_authorized` and `calibrated_8k_rerun_authorized`). `first_rung_only` remains true. 9K is not authorized. Stop after that one run.
 
 Docker Desktop is recorded, not refused. Require RAM ≥12 GB free and page-file/commit available ≥8 GB.
 

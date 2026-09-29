@@ -63,6 +63,8 @@ OBSERVED_COMPLETE_PROMPT_TOKENS = 13465
 CALIBRATION_DIAGNOSTIC = 10439
 FAILED_PROTECTED_PREDICTION = 11757
 FAILED_NUM_CTX = 15872
+PRIOR_CALIBRATION_EXECUTION_ID = "a34465944adba324c6660a8c5a25f6f7a3dff067c845ce42582b9d85ee787cfc"
+CLASSIFICATION_PLACEMENT_UNPROVEN = "gemma_placement_not_affirmative_from_runner_logs"
 IDLE_VRAM_MAX_GB = 3.0
 MIN_AVAILABLE_RAM_GB = 12.0
 MIN_PAGEFILE_AVAILABLE_GB = 8.0
@@ -118,8 +120,8 @@ def build_gemma_request_json(user: str, num_ctx: int) -> dict[str, Any]:
 def require_authorized_first_rung(plan: dict[str, Any]) -> None:
     if int(plan.get("nominal_target_estimated_evidence") or 0) != FIRST_NOMINAL:
         raise I11A0Error("first rung nominal is not 8000")
-    if str(plan.get("packet_sha256") or "") != AUTHORIZED_PACKET_SHA256:
-        raise I11A0Error(f"packet sha mismatch: {plan.get('packet_sha256')}")
+    if str(plan.get("stable_packet_id") or "") != stable_packet_id(AUTHORIZED_PACKET_SHA256):
+        raise I11A0Error("stable packet id does not match the preserved 8K packet")
     if int(plan.get("estimated_evidence_tokens") or 0) != AUTHORIZED_EVIDENCE_TOKENS:
         raise I11A0Error("packed evidence token estimate is not 8665")
     if int(plan.get("evidence_bytes") or 0) != AUTHORIZED_EVIDENCE_BYTES:
@@ -328,6 +330,8 @@ def require_gemma_first_rung_preflight(
 
     if not ops.get("inference_authorized"):
         raise InferenceNotAuthorized("ops inference_authorized is false")
+    if not ops.get("calibrated_8k_rerun_authorized"):
+        raise InferenceNotAuthorized("calibrated 8K rerun is not authorized")
     if not first_rung_only_enabled(ops):
         raise InferenceNotAuthorized("first_rung_only is required; remaining ladder is not authorized")
     if ops.get("pull_authorized"):
@@ -375,7 +379,9 @@ def require_gemma_first_rung_preflight(
         "inventory_quantization": quant or QUANT,
         "planned_num_ctx": AUTHORIZED_NUM_CTX,
         "inference_authorized": True,
+        "calibrated_8k_rerun_authorized": True,
         "first_rung_only": True,
+        "prior_calibration_execution_id": PRIOR_CALIBRATION_EXECUTION_ID,
     }
     (out / "preflight").mkdir(parents=True, exist_ok=True)
     (out / "preflight" / "live_preflight.json").write_text(json.dumps(payload, indent=2, default=str) + "\n", encoding="utf-8")
@@ -624,7 +630,8 @@ def prove_gemma_full_prompt_v1_offline(*, export_dir: Path | str | None = None) 
 
     ops = load_ops()
     ok("ops_first_rung_only", ops.get("first_rung_only") is True, ops.get("first_rung_only"))
-    ok("ops_inference_authorized_false_until_calibrated_rerun", ops.get("inference_authorized") is False, ops.get("inference_authorized"))
+    ok("ops_inference_authorized_calibrated_rerun", ops.get("inference_authorized") is True, ops.get("inference_authorized"))
+    ok("ops_calibrated_8k_rerun_authorized", ops.get("calibrated_8k_rerun_authorized") is True, ops.get("calibrated_8k_rerun_authorized"))
     ok("ops_remaining_ladder_false", ops.get("remaining_ladder_authorized") is False, ops.get("remaining_ladder_authorized"))
     ok("ops_pull_unauthorized", ops.get("pull_authorized") is False, ops.get("pull_authorized"))
     ok("ops_planned_num_ctx_17664", int(ops.get("planned_num_ctx") or 0) == AUTHORIZED_NUM_CTX, ops.get("planned_num_ctx"))
@@ -886,7 +893,7 @@ def run_gemma_first_rung_live(
     )
     from memorybox.ask.i11a.i11a0_control_telemetry import IN_REQUEST_PHASES, IndependentRequestSampler
     from memorybox.ask.i11a.i11a0_host import HardwareSampler
-    from memorybox.ask.i11a.i11a0_ollama_log_cursor import classify_appended_log, snapshot_log
+    from memorybox.ask.i11a.i11a0_ollama_log_cursor import classify_appended_log, read_appended_segment, snapshot_log
     from memorybox.ask.i11a.i11a0_placement import interpret_ollama_placement, read_ollama_ps
     from memorybox.ask.i11a.i11a0_prompt_accounting_audit import request_capture_payload
     from memorybox.ask.i11a.i11a0_smoke import _unload
@@ -1074,7 +1081,16 @@ def run_gemma_first_rung_live(
         prompt_eval_count=actual_prompt,
         predicted_complete=OBSERVED_COMPLETE_PROMPT_TOKENS,
     )
-    from memorybox.ask.i11a.i11a0_gemma_first_rung_closeout import gemma_control_labels, gemma_safety_table, project_calibrated_8k_vram
+    from memorybox.ask.i11a.i11a0_gemma_first_rung_closeout import (
+        gemma_control_labels,
+        gemma_safety_table,
+        parse_gemma_load_placement,
+        project_calibrated_8k_vram,
+        project_gemma_ctx_vram_delta,
+    )
+    appended = read_appended_segment(log_before)
+    log_place = parse_gemma_load_placement(str(appended.get("text") or ""))
+    affirmative_gpu = log_place.get("status") == "gpu_resident"
 
     trunc_flag = True if log_verdict.get("truncation_occurred") is True else False if actual_prompt is not None else None
     underestimate = bool(
@@ -1109,25 +1125,56 @@ def run_gemma_first_rung_live(
         log_truncation=True if log_verdict.get("truncation_occurred") is True else None,
     )
     vram_boundary = isinstance(peak, (int, float)) and float(peak) >= VRAM_CEILING_GB
+    infra_fail = bool(measurement.timed_out) or bool(chat_result.get("runner_ready_timeout")) or bool(chat_result.get("failure_kind"))
     classification = safety.get("classification")
     if vram_boundary:
         classification = CLASSIFICATION_GEMMA_VRAM_BOUNDARY
-    elif actual_prompt is not None and (underestimate or reserve_ok is False):
+        recommendation = "stop_at_gemma_first_rung_vram_boundary_do_not_continue_ladder"
+    elif not affirmative_gpu:
+        classification = CLASSIFICATION_PLACEMENT_UNPROVEN
+        recommendation = "stop_placement_not_affirmative_from_runner_logs"
+    elif trunc_flag is True:
+        classification = CLASSIFICATION_TRUNCATION
+        recommendation = "stop_truncation_or_shift"
+    elif actual_prompt is not None and reserve_ok is False:
         classification = CLASSIFICATION_ESTIMATOR_SAFETY_FAILED
-    elif classification is None and chat_result.get("failure_kind") is None:
-        classification = "first_rung_complete_quality_deferred"
-    nine_k_technically_eligible = False
-    recommendation = "stop_for_founder_authorization_before_calibrated_8k_rerun"
+        recommendation = "stop_reserve_equation_failed"
+    elif infra_fail or vram_released is False:
+        classification = classification or "infrastructure_or_unload_failed"
+        recommendation = "stop_runner_stream_telemetry_or_unload_failed"
+    elif actual_prompt is not None and reserve_ok and trunc_flag is False and not infra_fail:
+        classification = "calibrated_8k_mechanical_pass_quality_deferred"
+        recommendation = "founder_review_then_separately_authorize_9k_if_vram_projection_allows"
+    else:
+        recommendation = "stop_for_founder_review"
+    first_stable = classification == "calibrated_8k_mechanical_pass_quality_deferred"
+    nine_k_note = None
+    if first_stable and isinstance(peak, (int, float)) and actual_prompt is not None:
+        next_prompt = int(math.ceil(float(actual_prompt) * (9000.0 / 8665.0)))
+        next_ctx = align_ctx(next_prompt + OUTPUT_RESERVE_TOKENS + SAFETY_MARGIN_TOKENS)
+        nine_k_note = {
+            "did_not_pack_or_submit_9k": True,
+            "prompt_growth_is_diagnostic_only": True,
+            "hypothetical_next_prompt_tokens": next_prompt,
+            "hypothetical_next_num_ctx": next_ctx,
+            "vram": project_gemma_ctx_vram_delta(peak_vram_gb=float(peak), from_ctx=AUTHORIZED_NUM_CTX, to_ctx=next_ctx),
+        }
+        if nine_k_note["vram"]["likely_below_ceiling"]:
+            recommendation = "mechanical_8k_pass_9k_requires_separate_founder_authorization"
+        else:
+            recommendation = "mechanical_8k_pass_9k_vram_projection_not_safe"
     rec = {
-        "ok": False,
+        "ok": first_stable,
         "classification": classification,
+        "first_stable_gemma_rung": first_stable,
+        "quality_comparison_deferred": True,
         "execution_id": execution_id,
+        "prior_calibration_execution_id": PRIOR_CALIBRATION_EXECUTION_ID,
         "models_called": True,
         "inference_started": True,
         "first_rung_only": True,
         "did_not_build_or_submit_9k": True,
         "remaining_ladder_started": False,
-        "quality_comparison_deferred": True,
         "qwen_not_generated": True,
         "words_of_life": False,
         "peggy_scenario": False,
@@ -1151,9 +1198,10 @@ def run_gemma_first_rung_live(
             "vram_loaded_gb": loaded_vram,
             "vram_post_unload_gb": final,
             "current_run_in_request_peak_gb": max(current_run_vram) if current_run_vram else peak,
-            "gpu_resident": placed.get("status") == "gpu_resident",
-            "cpu_offload": placed.get("status") == "cpu_offload",
-            "placement": placed,
+            "gpu_resident": affirmative_gpu,
+            "cpu_offload": log_place.get("cpu_layer_offload"),
+            "placement_from_api_ps": placed,
+            "placement_from_runner_logs": log_place,
             "vram_released": vram_released,
             "system_ram_peak_gb": max(ram_peaks) if ram_peaks else None,
             "pagefile_peak_gb": max(page_peaks) if page_peaks else None,
@@ -1170,6 +1218,7 @@ def run_gemma_first_rung_live(
         "unload_recorded": True,
         "narration_artifact": str(run_dir / "narration.txt"),
         "nine_k_technically_eligible": False,
+        "nine_k_projection_if_8k_passed": nine_k_note,
         "gemma_calibrated_vram_projection": project_calibrated_8k_vram(),
         "recommendation": recommendation,
         "measurement": asdict(measurement),
@@ -1264,7 +1313,11 @@ def run_gemma_ladder(
     if not confirm_benchmark:
         payload["authorization"] = "awaiting_confirm_benchmark"
         return payload
-    if not ops.get("inference_authorized") or not first_rung_only_enabled(ops):
+    if (
+        not ops.get("inference_authorized")
+        or not ops.get("calibrated_8k_rerun_authorized")
+        or not first_rung_only_enabled(ops)
+    ):
         payload["authorization"] = "awaiting_founder_before_ollama"
         return payload
     live = run_gemma_first_rung_live(

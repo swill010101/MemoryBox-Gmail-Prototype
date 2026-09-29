@@ -100,6 +100,10 @@ def gemma_control_labels(*, full_prompt_evaluated: bool, truncation_occurred: bo
     }
 
 
+def same_packet_calibrated_num_ctx() -> int:
+    return align_ctx(OBSERVED_COMPLETE_PROMPT + OUTPUT_RESERVE + SAFETY_MARGIN)
+
+
 def observed_ratio() -> float:
     return OBSERVED_COMPLETE_PROMPT / DIAGNOSTIC_BYTES_DIV4
 
@@ -129,8 +133,20 @@ def future_packet_protected_prompt(diagnostic: int) -> dict[str, Any]:
     }
 
 
-def same_packet_calibrated_num_ctx() -> int:
-    return align_ctx(OBSERVED_COMPLETE_PROMPT + OUTPUT_RESERVE + SAFETY_MARGIN)
+def project_gemma_ctx_vram_delta(*, peak_vram_gb: float, from_ctx: int, to_ctx: int, uncertainty_gb: float = 0.50) -> dict[str, Any]:
+    scale = float(to_ctx) / float(max(1, from_ctx))
+    kv_at_from = CUDA_KV_MIB * (float(from_ctx) / FAILED_NUM_CTX)
+    extra_gb = (kv_at_from * (scale - 1.0)) / 1024.0
+    projected = float(peak_vram_gb) + extra_gb + uncertainty_gb
+    return {
+        "from_ctx": int(from_ctx),
+        "to_ctx": int(to_ctx),
+        "does_not_use_9k_evidence_scale_for_vram": True,
+        "projected_peak_vram_gb": projected,
+        "likely_below_ceiling": projected < VRAM_CEILING_GB,
+        "headroom_gb": VRAM_CEILING_GB - projected,
+        "conservative_uncertainty_gb": uncertainty_gb,
+    }
 
 
 def project_calibrated_8k_vram() -> dict[str, Any]:
