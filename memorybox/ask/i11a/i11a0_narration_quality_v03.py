@@ -266,6 +266,9 @@ def prove_narration_quality_v03_offline(*, source_run: Path | str | None = None)
         if not condition:
             problems.append(f"{name}: {detail}")
 
+    from memorybox.ask.i11a.i11a0_smoke import _chat, _unload, require_qwen_smoke_configuration
+
+    ok("live_imports_resolve", callable(_chat) and callable(_unload) and callable(require_qwen_smoke_configuration), None)
     ok("v02_prompt_unchanged", prompt_sha256_v02() == EXPECTED_V02_PROMPT_SHA256, prompt_sha256_v02())
     ok("v03_prompt_sha_pinned", prompt_sha256() == EXPECTED_V03_PROMPT_SHA256, prompt_sha256())
     ok("v03_version_label", PROMPT_VERSION == "i11a0-narration-v0.3-candidate", PROMPT_VERSION)
@@ -656,6 +659,7 @@ def run_live_confirmation(
     from memorybox.ask.i11a.i11a0_placement import interpret_ollama_placement, read_ollama_ps
     from memorybox.ask.i11a.i11a0_ollama_log_cursor import classify_appended_log, snapshot_log
     from memorybox.ask.i11a.i11a0_benchmark import inventory_installed_models
+    from memorybox.ask.i11a.i11a0_smoke import _chat, _unload, require_qwen_smoke_configuration
 
     ops = load_ops(config_path)
     if not confirm_benchmark:
