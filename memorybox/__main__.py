@@ -816,7 +816,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     p_gemma = sub.add_parser(
         "i11a0-gemma-i14-full-prompt-v1",
-        help="Gemma 4 26B cleaned-I14 full-prompt ladder v1; offline until inference_authorized",
+        help="Gemma 4 26B cleaned-I14 full-prompt ladder; remaining rungs after accepted 8K; FlightSim --confirm-benchmark",
     )
     p_gemma.add_argument("--config", default="docs/ops/i11a0.c.gemma-i14-full-prompt-v1.json")
     p_gemma.add_argument("--confirm-benchmark", action="store_true")

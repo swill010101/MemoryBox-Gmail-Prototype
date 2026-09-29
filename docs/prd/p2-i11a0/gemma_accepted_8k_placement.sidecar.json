@@ -1,0 +1,133 @@
+{
+  "imported_as_first_stable_gemma_rung": true,
+  "original_files_rewritten": false,
+  "did_not_rerun_8k": true,
+  "execution_id": "9c0fc31034e4c6b705a17dc87ccfcc83a041de62abe9ecb777ebec77db66cac3",
+  "prior_calibration_execution_id": "a34465944adba324c6660a8c5a25f6f7a3dff067c845ce42582b9d85ee787cfc",
+  "packet_sha256": "4ea883765185683d0f7aae62b6b1279e0b30e1c7538a24f0dc66cf6a0aa1faf0",
+  "packed_estimated_evidence_tokens": 8665,
+  "evidence_bytes": 34657,
+  "message_count": 24,
+  "thread_count": 17,
+  "actual_complete_prompt_tokens": 13465,
+  "num_ctx": 17664,
+  "safety_equation": "13465 + 2500 + 1500 = 17465 <= 17664",
+  "remaining_beyond_complete_safety_equation": 199,
+  "peak_vram_gb": 21.6708984375,
+  "baseline_vram_gb": 2.546875,
+  "loaded_vram_gb": 21.666015625,
+  "post_unload_vram_gb": 2.546875,
+  "full_prompt_evaluated": true,
+  "truncation_occurred": false,
+  "shift_occurred": false,
+  "gemma_cuda_layers": "31/31",
+  "assistant_cuda_layers": "5/5",
+  "cpu_offload": false,
+  "clean_unload": true,
+  "docker_and_memorybox_containers_running": true,
+  "classification": "calibrated_8k_mechanical_pass_quality_deferred",
+  "original_contradiction": {
+    "hardware.gpu_resident": true,
+    "placement_from_runner_logs.status": "gpu_resident",
+    "safety_problems_incorrectly_contained": [
+      "not_gpu_resident"
+    ]
+  },
+  "corrected_placement": {
+    "status": "gpu_resident",
+    "gpu_resident": true,
+    "cpu_offload": false,
+    "safety_gpu_resident_argument": true,
+    "placement_from_runner_logs": {
+      "layer_offload_pairs": [
+        [
+          31,
+          31
+        ],
+        [
+          5,
+          5
+        ]
+      ],
+      "gemma_layers_offloaded": [
+        31,
+        31
+      ],
+      "assistant_layers_offloaded": [
+        5,
+        5
+      ],
+      "cuda0_model_buffer_mib": [
+        16147.43
+      ],
+      "cuda_host_model_buffer_mib": [
+        748.0
+      ],
+      "cuda_host_buffer_is_not_cpu_layer_offload": true,
+      "full_cuda_layer_placement": true,
+      "cpu_layer_offload": false,
+      "status": "gpu_resident",
+      "high_system_ram_or_docker_is_not_cpu_offload": true,
+      "api_ps_size_bytes": 1183810845,
+      "api_ps_size_implausible_for_26b_q4": true,
+      "api_ps_likely_draft_or_runner_component": true,
+      "api_ps_not_used_as_affirmative_gpu_residency": true,
+      "why_api_ps_was_about_1_1gb": "Ollama 0.34.4 /api/ps size/size_vram (~1.184e9 bytes) matches a runner/draft-assistant scale (~425 MiB CUDA assistant weights plus host/KV), not the 16147 MiB CUDA0 Gemma 26B Q4_K_M weight buffer. size==size_vram is therefore not proof of full 26B GPU residency."
+    },
+    "placement_from_api_ps": {
+      "status": "unknown",
+      "gpu_resident": false,
+      "cpu_offload": false,
+      "queried_while_loaded": true,
+      "tag": "gemma4:26b",
+      "digest": "08ae7ec1744bd7f451c4a530afb39d2673ad9d07a8369b8a33a3613b41212a68",
+      "matched_model": {
+        "name": "gemma4:26b",
+        "digest": "08ae7ec1744bd7f451c4a530afb39d2673ad9d07a8369b8a33a3613b41212a68",
+        "size": 1187480861,
+        "size_vram": 1187480861,
+        "size_gb": 1.1059277327731252,
+        "size_vram_gb": 1.1059277327731252,
+        "processor": null
+      },
+      "reason": "api_ps_size_equals_size_vram_but_size_is_implausible_for_full_model; not affirmative gpu_resident",
+      "high_system_ram_is_not_cpu_offload": true,
+      "missing_ps_is_not_cpu_offload": true,
+      "post_unload_absence_is_not_cpu_offload": true,
+      "vram_delta_heuristic_is_not_cpu_offload": true,
+      "faulty_legacy_expression": "cpu_offload = bool(peak_vram is not None and baseline_vram is not None and (peak_vram - baseline_vram) < 4.0)",
+      "raw": {
+        "available": true,
+        "models": [
+          {
+            "name": "gemma4:26b",
+            "size": 1187480861,
+            "size_vram": 1187480861,
+            "digest": "08ae7ec1744bd7f451c4a530afb39d2673ad9d07a8369b8a33a3613b41212a68"
+          }
+        ]
+      }
+    },
+    "api_ps_does_not_override_logs": true,
+    "not_gpu_resident_in_problems": false,
+    "safety_problems": [],
+    "high_ram_docker_host_staging_are_not_cpu_offload": true
+  },
+  "corrected_safety_problems": [],
+  "not_gpu_resident_must_not_appear": true,
+  "original_hashes": {
+    "COMPLETE": "5963977da4c2cb333a978aa0daa86f36234831cd8bc416443ca9087268bc8645",
+    "run_record.json": "ea2c5030e081d2ce3f842ae6aef1d96a5b6611c746601b1efe4d6d775a419c4b",
+    "safety_checks.json": "c18b3cc0581ccdd5ffb1f9b122863eae21d694250808582b780e9b854a423a45",
+    "log_correlation.json": "283933a75399e63a56f97d0697cf7eba830e3f08d6dea27b9e48410d6570e02f",
+    "token_accounting.json": "c50aa1c4ea7cd26d771c1a0816b5d3bd3ad12f9324aee800a250cbeda6b4c7d0",
+    "request_capture.json": "65e60ba0c274b06905377a0e57c739f7046e7269173bc5f4f264da6bce768834",
+    "raw_api.jsonl": "d27502129c6dce0bb024dfb6b4c999414b0b6354122a7f91a5c7862443414f68",
+    "narration.txt": "1bc033f0257c95dadec1e5396fe3cd7a90f414804e6f7b62b6deaf1cc4208dc9",
+    "telemetry.jsonl": "69bb340cbd9bc7348af7aceec84c93877830e4529da735ab572e1b978c9d9bf6",
+    "in_request_telemetry.jsonl": "94f0a0cdf6ee663ce0890f2ce5bee9fa17c5c1372dddbc538f3d285b3a5a217e",
+    "confirmation_progress.json": "7c7be297b20ace4458a1c544aacfc6dfdb2a82859ba80cd550ea993a008fd7ad",
+    "confirmation_progress.log": "647bb45ce9ccefca8569bb10311ef8c10cb7fb393e0f091afc45d74c604e45f5"
+  },
+  "narration_quality_not_accepted": true
+}

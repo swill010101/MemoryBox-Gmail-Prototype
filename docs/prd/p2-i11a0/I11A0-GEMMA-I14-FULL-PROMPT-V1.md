@@ -76,11 +76,13 @@ Representative 8K diagnostic 10,439:
 
 ## Authorization
 
-Founder authorized **exactly one** first-rung execution (`first_rung_only`). Remaining ladder, 9K, refinement, repeats, Qwen, Words of Life, Peggy, and production narration remain unauthorized.
+Founder accepted calibrated 8K execution `9c0fc31034e4c6b705a17dc87ccfcc83a041de62abe9ecb777ebec77db66cac3` as the first stable Gemma rung (`calibrated_8k_mechanical_pass_quality_deferred`). Do not rerun that execution or calibration `a34465944adba324c6660a8c5a25f6f7a3dff067c845ce42582b9d85ee787cfc`.
 
-Docker Desktop and MemoryBox data-plane containers (Postgres, Qdrant) may stay running so the ladder is production-like. Do not treat Docker as a preflight failure.
+The remaining capacity ladder is authorized beginning at nominal **9000** (strictly above packed 8665). `inference_authorized` true, `remaining_ladder_authorized` true, `first_rung_only` false, `calibrated_8k_rerun_authorized` false, `do_not_rerun_8k` true.
 
-Execution `a34465944adba324c6660a8c5a25f6f7a3dff067c845ce42582b9d85ee787cfc` is preserved unchanged. Founder authorized **one calibrated same-packet rerun** at `num_ctx=17664` (`inference_authorized` and `calibrated_8k_rerun_authorized`). `first_rung_only` remains true. 9K is not authorized. Stop after that one run.
+New packets use the guarded Gemma estimator (observed ratio plus smoke envelopes plus 0.5% and +256). Same-packet 13465 remains only for the imported 8K packet. Conservative Gemma VRAM projection must be strictly below 22.5 GB before POST. Do not shrink packets or context. Quality, Qwen, SMS, Words of Life, and Peggy narrative remain unauthorized.
 
-Docker Desktop is recorded, not refused. Require RAM ≥12 GB free and page-file/commit available ≥8 GB.
+Docker Desktop and MemoryBox data-plane containers may stay running. Do not treat Docker as a preflight failure.
+
+Require RAM ≥12 GB free and page-file/commit available ≥8 GB.
 

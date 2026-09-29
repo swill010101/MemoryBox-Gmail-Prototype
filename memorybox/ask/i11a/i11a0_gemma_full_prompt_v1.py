@@ -146,6 +146,19 @@ def require_authorized_first_rung(plan: dict[str, Any]) -> None:
         raise I11A0Error("quantization is not Q4_K_M")
 
 
+def require_authorized_rung_identity(plan: dict[str, Any]) -> None:
+    if prompt_sha256() != EXPECTED_V03_PROMPT_SHA256:
+        raise I11A0Error("prompt v0.3 sha mismatch")
+    if plan.get("truncate") is not False or plan.get("shift") is not False:
+        raise I11A0Error("truncate/shift must be false")
+    if str(plan.get("digest") or "") != EXPECTED_DIGEST or str(plan.get("tag") or "") != TAG:
+        raise I11A0Error("Gemma tag or digest mismatch")
+    if str(plan.get("quantization") or "") != QUANT:
+        raise I11A0Error("quantization is not Q4_K_M")
+    if int(plan.get("planned_num_ctx") or 0) > GEMMA_ADVERTISED_CTX:
+        raise I11A0Error("planned_num_ctx exceeds Gemma advertised context")
+
+
 def list_tasklist_names() -> list[str]:
     import subprocess
 
@@ -323,6 +336,7 @@ def require_gemma_first_rung_preflight(
     ollama_base_url: str,
     out: Path,
     export_dir: Path | str | None,
+    ladder_mode: bool = False,
 ) -> dict[str, Any]:
     from memorybox.ask.i11a.i11a0_benchmark import inventory_installed_models
     from memorybox.ask.i11a.i11a0_confirmation_runtime import refuse_if_unresolved
@@ -330,15 +344,26 @@ def require_gemma_first_rung_preflight(
 
     if not ops.get("inference_authorized"):
         raise InferenceNotAuthorized("ops inference_authorized is false")
-    if not ops.get("calibrated_8k_rerun_authorized"):
-        raise InferenceNotAuthorized("calibrated 8K rerun is not authorized")
-    if not first_rung_only_enabled(ops):
-        raise InferenceNotAuthorized("first_rung_only is required; remaining ladder is not authorized")
+    if ladder_mode:
+        if not ops.get("remaining_ladder_authorized"):
+            raise InferenceNotAuthorized("remaining Gemma ladder is not authorized")
+        if ops.get("calibrated_8k_rerun_authorized"):
+            raise I11A0Error("do not rerun either 8K execution")
+        if ops.get("first_rung_only"):
+            raise I11A0Error("first_rung_only must be false for the remaining ladder")
+        if ops.get("do_not_rerun_8k") is not True:
+            raise I11A0Error("do_not_rerun_8k is required")
+        require_authorized_rung_identity(plan)
+    else:
+        if not ops.get("calibrated_8k_rerun_authorized"):
+            raise InferenceNotAuthorized("calibrated 8K rerun is not authorized")
+        if not first_rung_only_enabled(ops):
+            raise InferenceNotAuthorized("first_rung_only is required; remaining ladder is not authorized")
+        if ops.get("remaining_ladder_authorized"):
+            raise I11A0Error("remaining Gemma ladder is not authorized")
+        require_authorized_first_rung(plan)
     if ops.get("pull_authorized"):
         raise I11A0Error("Gemma pull is not authorized")
-    if ops.get("remaining_ladder_authorized"):
-        raise I11A0Error("remaining Gemma ladder is not authorized")
-    require_authorized_first_rung(plan)
     i14 = verify_pinned_i14_export(resolve_i14_export(export_dir))
     offline = prove_gemma_full_prompt_v1_offline(export_dir=export_dir)
     if not offline.get("ok"):
@@ -379,8 +404,9 @@ def require_gemma_first_rung_preflight(
         "inventory_quantization": quant or QUANT,
         "planned_num_ctx": AUTHORIZED_NUM_CTX,
         "inference_authorized": True,
-        "calibrated_8k_rerun_authorized": True,
-        "first_rung_only": True,
+        "calibrated_8k_rerun_authorized": bool(ops.get("calibrated_8k_rerun_authorized")),
+        "first_rung_only": bool(ops.get("first_rung_only")),
+        "remaining_ladder_authorized": bool(ops.get("remaining_ladder_authorized")),
         "prior_calibration_execution_id": PRIOR_CALIBRATION_EXECUTION_ID,
     }
     (out / "preflight").mkdir(parents=True, exist_ok=True)
@@ -524,6 +550,7 @@ def plan_rung(*, user: str, packet: Any) -> dict[str, Any]:
         "tag": TAG,
         "digest": EXPECTED_DIGEST,
         "quantization": QUANT,
+        "evidence_ids": list(packet.evidence_ids),
     }
 
 
@@ -610,7 +637,7 @@ def write_preflight(out: Path, ladder: dict[str, Any]) -> Path:
                 "",
                 "Separate from Qwen capacity, estimator, VRAM fit, and quality experiments.",
                 "Do not judge narration quality during the ladder.",
-                "first_rung_only: submit only the authorized 8K packet. Do not build or POST 9K.",
+                "Import accepted 8K. Remaining ladder starts at 9K. Do not rerun either 8K execution.",
                 "",
             ]
         ),
@@ -629,13 +656,13 @@ def prove_gemma_full_prompt_v1_offline(*, export_dir: Path | str | None = None) 
             problems.append(f"{name}: {detail}")
 
     ops = load_ops()
-    ok("ops_first_rung_only", ops.get("first_rung_only") is True, ops.get("first_rung_only"))
-    ok("ops_inference_authorized_calibrated_rerun", ops.get("inference_authorized") is True, ops.get("inference_authorized"))
-    ok("ops_calibrated_8k_rerun_authorized", ops.get("calibrated_8k_rerun_authorized") is True, ops.get("calibrated_8k_rerun_authorized"))
-    ok("ops_remaining_ladder_false", ops.get("remaining_ladder_authorized") is False, ops.get("remaining_ladder_authorized"))
+    ok("ops_first_rung_only_false_for_remaining_ladder", ops.get("first_rung_only") is False, ops.get("first_rung_only"))
+    ok("ops_inference_authorized", ops.get("inference_authorized") is True, ops.get("inference_authorized"))
+    ok("ops_calibrated_8k_rerun_false", ops.get("calibrated_8k_rerun_authorized") is False, ops.get("calibrated_8k_rerun_authorized"))
+    ok("ops_remaining_ladder_true", ops.get("remaining_ladder_authorized") is True, ops.get("remaining_ladder_authorized"))
     ok("ops_pull_unauthorized", ops.get("pull_authorized") is False, ops.get("pull_authorized"))
     ok("ops_planned_num_ctx_17664", int(ops.get("planned_num_ctx") or 0) == AUTHORIZED_NUM_CTX, ops.get("planned_num_ctx"))
-    ok("first_rung_only_helper", first_rung_only_enabled(ops) is True, None)
+    ok("first_rung_only_helper_false", first_rung_only_enabled(ops) is False, None)
     from memorybox.ask.i11a.i11a0_gemma_first_rung_closeout import (
         gemma_control_labels,
         gemma_safety_table,
@@ -799,9 +826,8 @@ def prove_gemma_full_prompt_v1_offline(*, export_dir: Path | str | None = None) 
         ok("vram_unmeasured", first.get("vram_status") == "unmeasured", first)
         ok("packet_not_shrunk", int(first.get("estimated_evidence_tokens") or 0) >= FIRST_NOMINAL, first)
         ok("qwen_calibration_not_used", first.get("does_not_use_qwen_token_ratio") is True, first)
-        ok("first_rung_only_single_row", len(ladder.get("rows") or []) == 1, len(ladder.get("rows") or []))
-        ok("did_not_build_9k", ladder.get("did_not_build_9k_packet") is True, ladder.get("did_not_build_9k_packet"))
-        ok("no_9k_nominal", all(int(row.get("nominal_target_estimated_evidence") or 0) != 9000 for row in (ladder.get("rows") or [])), None)
+        ok("first_rung_only_single_row_when_requested", len(ladder.get("rows") or []) == 1, len(ladder.get("rows") or []))
+        ok("imported_8k_packet_still_planned", first.get("packet_sha256") == AUTHORIZED_PACKET_SHA256, first.get("packet_sha256"))
         ok("authorized_packet_sha", first.get("packet_sha256") == AUTHORIZED_PACKET_SHA256, first.get("packet_sha256"))
         ok("authorized_evidence_8665", int(first.get("estimated_evidence_tokens") or 0) == AUTHORIZED_EVIDENCE_TOKENS, first.get("estimated_evidence_tokens"))
         ok("authorized_evidence_bytes", int(first.get("evidence_bytes") or 0) == AUTHORIZED_EVIDENCE_BYTES, first.get("evidence_bytes"))
@@ -825,6 +851,15 @@ def prove_gemma_full_prompt_v1_offline(*, export_dir: Path | str | None = None) 
         ok("skipped_are_not_exhaustion", "evidence_exhausted" not in (ladder.get("skipped_already_covered_nominals") or []), ladder.get("skipped_already_covered_nominals"))
     except I11A0Error as exc:
         ok("i14_export_available", False, str(exc))
+    from memorybox.ask.i11a.i11a0_gemma_ladder_continuation import prove_gemma_ladder_continuation_offline
+
+    cont = prove_gemma_ladder_continuation_offline(export_dir=export_dir)
+    for name in cont.get("checks") or []:
+        checks.append(f"continuation:{name}")
+    problems.extend(cont.get("problems") or [])
+    ok("continuation_offline", cont.get("ok") is True, cont.get("problems"))
+    ok("continuation_no_models", cont.get("models_called") is False, None)
+    ok("will_not_rerun_8k", cont.get("will_not_rerun_8k") is True, None)
     return {
         "ok": not problems,
         "checks": checks,
@@ -837,6 +872,9 @@ def prove_gemma_full_prompt_v1_offline(*, export_dir: Path | str | None = None) 
         "packet_available": packet_available,
         "first_rung": first,
         "experiment_id": EXPERIMENT_ID,
+        "will_not_rerun_8k": True,
+        "nine_k_packet_plan": cont.get("nine_k_packet_plan"),
+        "continuation_check_count": len(cont.get("checks") or []),
     }
 
 
@@ -878,6 +916,19 @@ def run_gemma_first_rung_live(
     ollama_base_url: str,
     i14_export: Path | str | None,
 ) -> dict[str, Any]:
+    raise I11A0Error("do not rerun either 8K execution; remaining ladder starts after the accepted 8K rung")
+
+
+def run_gemma_rung_live(
+    *,
+    ops: dict[str, Any],
+    plan: dict[str, Any],
+    packet: Any,
+    out: Path,
+    ollama_base_url: str,
+    i14_export: Path | str | None,
+    preflight_already_done: bool = False,
+) -> dict[str, Any]:
     from dataclasses import asdict
     import socket
     from datetime import datetime, timezone
@@ -897,27 +948,30 @@ def run_gemma_first_rung_live(
     from memorybox.ask.i11a.i11a0_placement import interpret_ollama_placement, read_ollama_ps
     from memorybox.ask.i11a.i11a0_prompt_accounting_audit import request_capture_payload
     from memorybox.ask.i11a.i11a0_smoke import _unload
+    from memorybox.ask.i11a.i11a0_gemma_ladder_continuation import gemma_safety_gpu_resident
 
-    first = ladder.get("first_rung") or {}
-    require_gemma_first_rung_preflight(
-        ops=ops,
-        plan=first,
-        ollama_base_url=ollama_base_url,
-        out=out,
-        export_dir=i14_export,
-    )
-    root = resolve_i14_export(i14_export)
-    packer = NestedMessagePacker(load_frozen_prompt_messages(root))
-    packet = packer.packet_for_target(FIRST_NOMINAL)
+    if str(packet.sha256) == AUTHORIZED_PACKET_SHA256:
+        raise I11A0Error("refusing to POST the accepted 8K packet")
+    if not preflight_already_done:
+        require_gemma_first_rung_preflight(
+            ops=ops,
+            plan=plan,
+            ollama_base_url=ollama_base_url,
+            out=out,
+            export_dir=i14_export,
+            ladder_mode=True,
+        )
+    require_authorized_rung_identity(plan)
     user = build_user_message(packet)
-    plan = plan_rung(user=user, packet=packet)
-    plan["nominal_target_estimated_evidence"] = FIRST_NOMINAL
-    require_authorized_first_rung(plan)
+    plan = dict(plan)
+    num_ctx = int(plan["planned_num_ctx"])
+    protected = int(plan["protected_complete_prompt_tokens"])
+    nominal = int(plan.get("nominal_target_estimated_evidence") or packet.target_tokens)
     started = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
     request = RunRequest(
         model_tag=TAG,
         digest=EXPECTED_DIGEST,
-        requested_evidence_tokens=FIRST_NOMINAL,
+        requested_evidence_tokens=nominal,
         evidence_sha256=packet.sha256,
         evidence_text=packet.text,
         repetition=1,
@@ -925,12 +979,12 @@ def run_gemma_first_rung_live(
         confirmation=True,
         thinking_mode="off",
         seed=42,
-        num_ctx=AUTHORIZED_NUM_CTX,
+        num_ctx=num_ctx,
         reserved_output_tokens=OUTPUT_RESERVE_TOKENS,
         prompt_sha256=prompt_sha256(),
         time_start=str(packet.time_start or ""),
         time_end=str(packet.time_end or ""),
-        partial_context=True,
+        partial_context=bool(packet.partial_context),
         partial_boundary_note=str(packet.partial_boundary_note or ""),
         evidence_ids=tuple(packet.evidence_ids),
         model_visible_packet_id=stable_packet_id(packet.sha256),
@@ -943,7 +997,7 @@ def run_gemma_first_rung_live(
     run_dir = out / "runs" / execution_id
     run_dir.mkdir(parents=True, exist_ok=True)
     (run_dir / "IN_FLIGHT").write_text(started + "\n", encoding="utf-8")
-    payload = build_gemma_request_json(user, AUTHORIZED_NUM_CTX)
+    payload = build_gemma_request_json(user, num_ctx)
     capture = request_capture_payload(
         system_text=SYSTEM_PROMPT,
         user_text=user,
@@ -956,7 +1010,8 @@ def run_gemma_first_rung_live(
         keep_alive=payload.get("keep_alive"),
     )
     capture["request_json"] = payload
-    capture["first_rung_only"] = True
+    capture["first_rung_only"] = False
+    capture["remaining_ladder"] = True
     capture["truncate_requested"] = False
     capture["shift_requested"] = False
     encoded = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -982,7 +1037,7 @@ def run_gemma_first_rung_live(
         execution_id="",
         model_tag=TAG,
         digest=EXPECTED_DIGEST,
-        num_ctx=AUTHORIZED_NUM_CTX,
+        num_ctx=num_ctx,
     )
     generation_timeout = int(ops.get("timeout_seconds") or 1800)
     runner_ready_timeout = int(ops.get("runner_ready_timeout_seconds") or 300)
@@ -1077,9 +1132,9 @@ def run_gemma_first_rung_live(
     actual_prompt = None if pec in (None, 0) else int(pec)
     log_verdict = classify_appended_log(
         log_before,
-        num_ctx=AUTHORIZED_NUM_CTX,
+        num_ctx=num_ctx,
         prompt_eval_count=actual_prompt,
-        predicted_complete=OBSERVED_COMPLETE_PROMPT_TOKENS,
+        predicted_complete=protected,
     )
     from memorybox.ask.i11a.i11a0_gemma_first_rung_closeout import (
         gemma_control_labels,
@@ -1094,7 +1149,7 @@ def run_gemma_first_rung_live(
 
     trunc_flag = True if log_verdict.get("truncation_occurred") is True else False if actual_prompt is not None else None
     underestimate = bool(
-        actual_prompt is not None and protected_prediction_exceeded(protected=OBSERVED_COMPLETE_PROMPT_TOKENS, actual_complete_prompt_tokens=actual_prompt)
+        actual_prompt is not None and protected_prediction_exceeded(protected=protected, actual_complete_prompt_tokens=actual_prompt)
     )
     safety_row = None
     remaining_margin = None
@@ -1102,8 +1157,8 @@ def run_gemma_first_rung_live(
     if actual_prompt is not None:
         safety_row = gemma_safety_table(
             actual_complete_prompt_tokens=actual_prompt,
-            num_ctx=AUTHORIZED_NUM_CTX,
-            protected_prediction=OBSERVED_COMPLETE_PROMPT_TOKENS,
+            num_ctx=num_ctx,
+            protected_prediction=protected,
         )
         remaining_margin = safety_row["remaining_after_prompt_and_output"]
         reserve_ok = safety_row["safety_margin_shortfall"] == 0
@@ -1119,7 +1174,10 @@ def run_gemma_first_rung_live(
         http_status=chat_result.get("http_status"),
         stream_bytes_received=int(chat_result.get("stream_bytes_received") or 0),
         truncation_occurred=trunc_flag,
-        gpu_resident=gpu_resident if isinstance(gpu_resident, bool) else None,
+        gpu_resident=gemma_safety_gpu_resident(
+            log_status=str(log_place.get("status") or ""),
+            api_ps_gpu_resident=gpu_resident if isinstance(gpu_resident, bool) else None,
+        ),
         vram_peak_gb=peak,
         vram_released=vram_released,
         log_truncation=True if log_verdict.get("truncation_occurred") is True else None,
@@ -1128,8 +1186,8 @@ def run_gemma_first_rung_live(
     infra_fail = bool(measurement.timed_out) or bool(chat_result.get("runner_ready_timeout")) or bool(chat_result.get("failure_kind"))
     classification = safety.get("classification")
     if vram_boundary:
-        classification = CLASSIFICATION_GEMMA_VRAM_BOUNDARY
-        recommendation = "stop_at_gemma_first_rung_vram_boundary_do_not_continue_ladder"
+        classification = "measured_vram_boundary"
+        recommendation = "stop_measured_vram_boundary_do_not_shrink"
     elif not affirmative_gpu:
         classification = CLASSIFICATION_PLACEMENT_UNPROVEN
         recommendation = "stop_placement_not_affirmative_from_runner_logs"
@@ -1143,45 +1201,33 @@ def run_gemma_first_rung_live(
         classification = classification or "infrastructure_or_unload_failed"
         recommendation = "stop_runner_stream_telemetry_or_unload_failed"
     elif actual_prompt is not None and reserve_ok and trunc_flag is False and not infra_fail:
-        classification = "calibrated_8k_mechanical_pass_quality_deferred"
-        recommendation = "founder_review_then_separately_authorize_9k_if_vram_projection_allows"
+        classification = "gemma_rung_mechanical_pass_quality_deferred"
+        recommendation = "continue_coarse_ladder_until_hard_stop"
     else:
         recommendation = "stop_for_founder_review"
-    first_stable = classification == "calibrated_8k_mechanical_pass_quality_deferred"
+    rung_ok = classification == "gemma_rung_mechanical_pass_quality_deferred"
     nine_k_note = None
-    if first_stable and isinstance(peak, (int, float)) and actual_prompt is not None:
-        next_prompt = int(math.ceil(float(actual_prompt) * (9000.0 / 8665.0)))
-        next_ctx = align_ctx(next_prompt + OUTPUT_RESERVE_TOKENS + SAFETY_MARGIN_TOKENS)
-        nine_k_note = {
-            "did_not_pack_or_submit_9k": True,
-            "prompt_growth_is_diagnostic_only": True,
-            "hypothetical_next_prompt_tokens": next_prompt,
-            "hypothetical_next_num_ctx": next_ctx,
-            "vram": project_gemma_ctx_vram_delta(peak_vram_gb=float(peak), from_ctx=AUTHORIZED_NUM_CTX, to_ctx=next_ctx),
-        }
-        if nine_k_note["vram"]["likely_below_ceiling"]:
-            recommendation = "mechanical_8k_pass_9k_requires_separate_founder_authorization"
-        else:
-            recommendation = "mechanical_8k_pass_9k_vram_projection_not_safe"
     rec = {
-        "ok": first_stable,
+        "ok": rung_ok,
+        "stable": rung_ok,
         "classification": classification,
-        "first_stable_gemma_rung": first_stable,
+        "first_stable_gemma_rung": False,
         "quality_comparison_deferred": True,
         "execution_id": execution_id,
         "prior_calibration_execution_id": PRIOR_CALIBRATION_EXECUTION_ID,
+        "imported_stable_8k_execution_id": "9c0fc31034e4c6b705a17dc87ccfcc83a041de62abe9ecb777ebec77db66cac3",
         "models_called": True,
         "inference_started": True,
-        "first_rung_only": True,
-        "did_not_build_or_submit_9k": True,
-        "remaining_ladder_started": False,
+        "first_rung_only": False,
+        "did_not_build_or_submit_9k": False,
+        "remaining_ladder_started": True,
         "qwen_not_generated": True,
         "words_of_life": False,
         "peggy_scenario": False,
         "production_narrator": False,
         "packet_sha256": packet.sha256,
         "prompt_sha256": prompt_sha256(),
-        "protected_complete_prompt_tokens": OBSERVED_COMPLETE_PROMPT_TOKENS,
+        "protected_complete_prompt_tokens": protected,
         "actual_complete_prompt_tokens": actual_prompt,
         "gemma_estimator_underestimate": underestimate,
         **(safety_row or {}),
@@ -1189,7 +1235,7 @@ def run_gemma_first_rung_live(
         "safety_equation": "actual_complete_prompt + 2500 + 1500 <= num_ctx",
         "remaining_context_after_prompt_and_output": remaining_margin,
         "reserve_equation_passed": reserve_ok,
-        "num_ctx": AUTHORIZED_NUM_CTX,
+        "num_ctx": num_ctx,
         "unload_seconds": unload_s,
         "vram_scope": "current_run_only",
         "hardware": {
@@ -1225,14 +1271,14 @@ def run_gemma_first_rung_live(
         "log_correlation": {k: v for k, v in log_verdict.items() if k != "segment"},
         "safety_problems": list(safety.get("problems") or []),
         "http_status": chat_result.get("http_status"),
-        "stopped_after_first_rung": True,
+        "stopped_after_first_rung": False,
     }
     (run_dir / "token_accounting.json").write_text(
         json.dumps(
             {
                 "actual_prompt_eval_count": actual_prompt,
-                "protected_complete_prompt_tokens": OBSERVED_COMPLETE_PROMPT_TOKENS,
-                "configured_num_ctx": AUTHORIZED_NUM_CTX,
+                "protected_complete_prompt_tokens": protected,
+                "configured_num_ctx": num_ctx,
                 "output_reserve_tokens": OUTPUT_RESERVE_TOKENS,
                 "safety_margin_tokens": SAFETY_MARGIN_TOKENS,
                 "gemma_estimator_underestimate": underestimate,
@@ -1269,10 +1315,10 @@ def run_gemma_first_rung_live(
         (run_dir / "gemma_estimator_underestimate.json").write_text(
             json.dumps(
                 {
-                    "protected_complete_prompt_tokens": OBSERVED_COMPLETE_PROMPT_TOKENS,
+                    "protected_complete_prompt_tokens": protected,
                     "actual_complete_prompt_tokens": actual_prompt,
-                    "stopped_after_first_rung": True,
-                    "did_not_continue_to_9k": True,
+                    "stopped_enlargement": True,
+                    "did_not_silently_recalibrate": True,
                 },
                 indent=2,
             )
@@ -1290,43 +1336,12 @@ def run_gemma_ladder(
     results_dir: Path | str | None = None,
     ollama_base_url: str = "http://127.0.0.1:11434",
 ) -> dict[str, Any]:
-    ops = load_ops(config_path)
-    out = Path(results_dir) if results_dir else DEFAULT_OUT
-    ladder = build_ladder_plan(export_dir=i14_export, first_rung_only=True)
-    write_preflight(out, ladder)
-    payload = {
-        "ok": True,
-        "experiment_id": EXPERIMENT_ID,
-        "models_called": False,
-        "inference_started": False,
-        "stopped_before_inference": True,
-        "first_rung_only": True,
-        "did_not_build_or_submit_9k": True,
-        "first_rung": ladder.get("first_rung"),
-        "preflight": str(out / "preflight"),
-        "ops_inference_authorized": bool(ops.get("inference_authorized")),
-        "confirm_benchmark": bool(confirm_benchmark),
-        "qwen_not_generated": True,
-        "gemma_pull_executed": False,
-        "remaining_ladder_authorized": bool(ops.get("remaining_ladder_authorized")),
-    }
-    if not confirm_benchmark:
-        payload["authorization"] = "awaiting_confirm_benchmark"
-        return payload
-    if (
-        not ops.get("inference_authorized")
-        or not ops.get("calibrated_8k_rerun_authorized")
-        or not first_rung_only_enabled(ops)
-    ):
-        payload["authorization"] = "awaiting_founder_before_ollama"
-        return payload
-    live = run_gemma_first_rung_live(
-        ops=ops,
-        ladder=ladder,
-        out=out,
-        ollama_base_url=ollama_base_url,
+    from memorybox.ask.i11a.i11a0_gemma_ladder_continuation import run_remaining_gemma_ladder
+
+    return run_remaining_gemma_ladder(
+        confirm_benchmark=confirm_benchmark,
+        config_path=config_path,
         i14_export=i14_export,
+        results_dir=results_dir,
+        ollama_base_url=ollama_base_url,
     )
-    live["stopped_before_inference"] = False
-    live["first_rung_plan"] = ladder.get("first_rung")
-    return live

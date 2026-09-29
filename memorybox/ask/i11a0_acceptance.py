@@ -1690,5 +1690,6 @@ def run_prove_i11a0_benchmark() -> dict[str, Any]:
             "check_count": len(gemma.get("checks") or []),
             "models_called": gemma.get("models_called"),
             "first_rung_num_ctx": (gemma.get("first_rung") or {}).get("planned_num_ctx"),
+            "will_not_rerun_8k": gemma.get("will_not_rerun_8k"),
         },
     }
