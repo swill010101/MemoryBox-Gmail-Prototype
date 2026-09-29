@@ -38,7 +38,18 @@ PROTECTED_FIRST_A_NAMES = (
     "hardware_telemetry.json",
 )
 
-IN_REQUEST_PHASES = {"request_active", "first_token", "streaming"}
+IN_REQUEST_PHASES = {
+    "request_active",
+    "first_token",
+    "streaming",
+    "starting_runner",
+    "loading_model",
+    "waiting_for_api_stream",
+    "prompt_evaluation",
+    "generation",
+    "validation",
+    "unload",
+}
 
 NvidiaFn = Callable[[], dict[str, Any]]
 PsFn = Callable[[str], dict[str, Any]]
@@ -275,6 +286,8 @@ class IndependentRequestSampler:
         heartbeat_seconds: float = 15.0,
         progress: Gate3Progress | None = None,
         started_monotonic: float | None = None,
+        runner_ready_timeout_seconds: float | None = None,
+        include_runner_processes: bool = False,
     ) -> None:
         self.telemetry_path = Path(telemetry_path)
         self.base_url = base_url
@@ -291,6 +304,8 @@ class IndependentRequestSampler:
         self.heartbeat_seconds = heartbeat_seconds
         self.progress = progress
         self.started_monotonic = started_monotonic or time.monotonic()
+        self.runner_ready_timeout_seconds = runner_ready_timeout_seconds
+        self.include_runner_processes = include_runner_processes
         self.cancel = threading.Event()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
@@ -373,6 +388,8 @@ class IndependentRequestSampler:
                 errors.append(f"ram:{type(exc).__name__}:{exc}")
                 ram = {"available": False, "reason": str(exc)}
         match = _match_ps_model(ps_payload, self.tag, self.digest)
+        if match is not None and self.phase in {"starting_runner", "waiting_for_api_stream"}:
+            self.phase = "loading_model"
         interpreted = interpret_ollama_placement(
             ps_payload,
             tag=self.tag,
@@ -405,6 +422,13 @@ class IndependentRequestSampler:
             "sampling_error": ";".join(errors) if errors else None,
             "controller_working_set_bytes": read_working_set_bytes(__import__("os").getpid()),
         }
+        if self.include_runner_processes:
+            try:
+                from memorybox.ask.i11a.i11a0_host import read_ollama_process_memory
+
+                sample["ollama_process_memory"] = read_ollama_process_memory()
+            except Exception as exc:
+                sample["ollama_process_memory"] = {"available": False, "reason": str(exc)}
         with self._lock:
             self.samples.append(sample)
         if self._handle is not None:
@@ -421,7 +445,7 @@ class IndependentRequestSampler:
                     if self.progress is not None:
                         self.progress.emit(
                             f"/api/ps model detected ({self.tag})",
-                            phase="generation",
+                            phase=self.phase,
                             current_vram_gb=used,
                         )
             if interpreted.get("status") == "cpu_offload":
@@ -431,6 +455,13 @@ class IndependentRequestSampler:
                     self._signal("cpu_offload")
             if digest_mismatch:
                 self._signal("model_digest_mismatch")
+            if (
+                self.runner_ready_timeout_seconds is not None
+                and self.phase
+                in {"starting_runner", "loading_model", "waiting_for_api_stream"}
+                and (time.monotonic() - self.started_monotonic) >= float(self.runner_ready_timeout_seconds)
+            ):
+                self._signal("runner_not_ready")
         now = time.monotonic()
         if self.progress is not None and now - self._last_heartbeat >= self.heartbeat_seconds:
             self._last_heartbeat = now

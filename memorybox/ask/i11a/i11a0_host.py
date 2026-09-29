@@ -182,7 +182,8 @@ def read_ollama_process_memory() -> dict[str, Any]:
         return {"available": False, "reason": "tasklist_failed", "processes": []}
     processes: list[dict[str, Any]] = []
     for raw in (completed.stdout or "").splitlines():
-        if "ollama" not in raw.lower():
+        lowered = raw.lower()
+        if "ollama" not in lowered and "llama-server" not in lowered:
             continue
         parts = [item.strip().strip('"') for item in raw.split('","')]
         if len(parts) < 2:

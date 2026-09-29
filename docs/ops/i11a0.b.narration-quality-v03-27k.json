@@ -14,6 +14,8 @@
   "reserved_output_tokens": 2500,
   "safety_margin_tokens": 1500,
   "timeout_seconds": 1800,
+  "runner_ready_timeout_seconds": 300,
+  "recovery_authorized": false,
   "maximum_vram_gb": 22.5,
   "verified_max_num_ctx": 40960,
   "packet_sha256": "ae0fcbb738dd956282aef23188fd53e703adefed7ba2ee1630a0a653b6ce20d7",

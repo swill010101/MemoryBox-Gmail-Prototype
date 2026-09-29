@@ -396,8 +396,22 @@ def prove_narration_quality_v03_offline(*, source_run: Path | str | None = None)
     ok("validator_rejects_unknown_ref", any("unknown_refs" in p or "invented" in p for p in inv["problems"]), inv["problems"])
     ops = load_ops()
     ok("ops_inference_authorized_is_bool", isinstance(ops.get("inference_authorized"), bool), ops.get("inference_authorized"))
+    ok("ops_recovery_authorized_default_false", ops.get("recovery_authorized") is False, ops.get("recovery_authorized"))
+    ok("ops_runner_ready_timeout_distinct", int(ops.get("runner_ready_timeout_seconds") or 0) not in (0, int(ops.get("timeout_seconds") or 0)), ops)
     ok("ops_not_a_ladder", ops.get("capacity_ladder") is False, ops)
     ok("i11a1_false", ops.get("i11a1") is False and ops.get("peggy_scenario") is False, ops)
+    import tempfile
+
+    from memorybox.ask.i11a.i11a0_confirmation_runtime import prove_confirmation_runtime_offline
+
+    with tempfile.TemporaryDirectory() as tmp:
+        runtime = prove_confirmation_runtime_offline(Path(tmp))
+    for name in runtime.get("checks") or []:
+        checks.append(f"runtime:{name}")
+    for problem in runtime.get("problems") or []:
+        problems.append(problem)
+    ok("confirmation_runtime_offline", runtime.get("ok") is True, runtime.get("problems"))
+    ok("runtime_models_not_called", runtime.get("models_called") is False, None)
     return {
         "ok": not problems,
         "checks": checks,
@@ -658,12 +672,22 @@ def run_live_confirmation(
     ollama_base_url: str = "http://127.0.0.1:11434",
 ) -> dict[str, Any]:
     """FlightSim-only path. Requires ops inference_authorized true and --confirm-benchmark."""
-    from memorybox.ask.i11a.i11a0_benchmark import ModelSpec, RunRequest
+    from memorybox.ask.i11a.i11a0_benchmark import Measurement, ModelSpec, RunRequest, inventory_installed_models
+    from memorybox.ask.i11a.i11a0_confirmation_runtime import (
+        CLASSIFICATION_INFRA_PRE_PROMPT,
+        chat_with_split_timeouts,
+        evaluate_confirmation_safety,
+        persist_failure_record,
+        persist_request_capture,
+        refuse_if_unresolved,
+        start_confirmation_progress,
+    )
+    from memorybox.ask.i11a.i11a0_control_telemetry import IN_REQUEST_PHASES, IndependentRequestSampler
     from memorybox.ask.i11a.i11a0_host import HardwareSampler, collect_host_affinity_preflight, require_flightsim_host_affinity
-    from memorybox.ask.i11a.i11a0_placement import interpret_ollama_placement, read_ollama_ps
     from memorybox.ask.i11a.i11a0_ollama_log_cursor import classify_appended_log, snapshot_log
-    from memorybox.ask.i11a.i11a0_benchmark import inventory_installed_models
-    from memorybox.ask.i11a.i11a0_smoke import _chat, _unload, require_qwen_smoke_configuration
+    from memorybox.ask.i11a.i11a0_placement import interpret_ollama_placement, read_ollama_ps
+    from memorybox.ask.i11a.i11a0_prompt_accounting_audit import request_capture_payload
+    from memorybox.ask.i11a.i11a0_smoke import _unload, require_qwen_smoke_configuration
 
     ops = load_ops(config_path)
     if not confirm_benchmark:
@@ -693,12 +717,7 @@ def run_live_confirmation(
         repo=REPO_ROOT,
     )
     require_flightsim_host_affinity(preflight)
-    existing_complete = list((out / "runs").glob("*/COMPLETE")) if (out / "runs").is_dir() else []
-    if existing_complete:
-        raise I11A0Error(
-            "a COMPLETE confirmation already exists under this out directory; "
-            "do not start a second generate. Assemble from the existing run."
-        )
+    refuse_if_unresolved(out, recovery_authorized=bool(ops.get("recovery_authorized")))
     inventory = inventory_installed_models(base_url=ollama_base_url)
     spec = ModelSpec("B", "qwen3:14b-q8_0", "Q8_0", EXPECTED_DIGEST)
     by_tag = {row["tag"]: row for row in inventory.get("approved") or []}
@@ -735,6 +754,27 @@ def run_live_confirmation(
     run_dir = out / "runs" / execution_id
     run_dir.mkdir(parents=True, exist_ok=True)
     (run_dir / "IN_FLIGHT").write_text(started + "\n", encoding="utf-8")
+    payload = build_request_json(user, PINNED_NUM_CTX)
+    capture = request_capture_payload(
+        system_text=SYSTEM_PROMPT,
+        user_text=user,
+        evidence_text=packet["text"],
+        options=payload["options"],
+        model_tag=spec.tag,
+        digest=spec.digest,
+        execution_id=execution_id,
+        test_case_id=test_case_id(request),
+        keep_alive=payload.get("keep_alive"),
+    )
+    capture["request_json"] = payload
+    capture["truncate_requested"] = payload.get("truncate")
+    capture["shift_requested"] = payload.get("shift")
+    capture["truncate_top_level_is_false"] = payload.get("truncate") is False
+    capture["shift_top_level_is_false"] = payload.get("shift") is False
+    encoded = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    capture["request_body_sha256"] = hashlib.sha256(encoded).hexdigest()
+    capture["request_body_bytes"] = len(encoded)
+    persist_request_capture(run_dir, capture)
     sampler = HardwareSampler()
     sampler.capture("baseline")
     loaded_ps: dict[str, Any] = {}
@@ -754,33 +794,84 @@ def run_live_confirmation(
         digest=spec.digest,
         num_ctx=PINNED_NUM_CTX,
     )
-    measurement, narration, events, capture = _chat(
-        request,
+    generation_timeout = int(ops.get("timeout_seconds") or 1800)
+    runner_ready_timeout = int(ops.get("runner_ready_timeout_seconds") or 300)
+    progress = start_confirmation_progress(
+        run_dir, timeout_seconds=generation_timeout, execution_id=execution_id
+    )
+    telemetry = IndependentRequestSampler(
+        telemetry_path=run_dir / "in_request_telemetry.jsonl",
         base_url=ollama_base_url,
-        timeout=int(ops.get("timeout_seconds") or 1800),
-        sampler=sampler,
-        packet_role="narration_quality_confirmation",
-        keep_alive="2m",
-        system_text=SYSTEM_PROMPT,
-        user_text=user,
-        on_first_token=on_first_token,
+        experiment_id=EXPERIMENT_ID,
+        run_id=execution_id,
+        execution_id=execution_id,
+        tag=spec.tag,
+        digest=spec.digest,
+        interval_seconds=1.5,
+        heartbeat_seconds=35.0,
+        progress=progress,
+        runner_ready_timeout_seconds=float(runner_ready_timeout),
+        include_runner_processes=True,
     )
-    (run_dir / "narration.txt").write_text(narration, encoding="utf-8", newline="\n")
-    (run_dir / "raw_api.jsonl").write_text(
-        "\n".join(json.dumps(event, ensure_ascii=False) for event in events) + "\n",
-        encoding="utf-8",
-        newline="\n",
-    )
-    sampler.capture("pre_unload")
-    unload_s = _unload(ollama_base_url, spec.tag)
-    sampler.capture("after_unload")
+    telemetry.start("starting_runner")
+    progress.emit("starting runner", phase="starting_runner")
+    unload_s = None
+    events: list[dict[str, Any]] = []
+    narration = ""
+    measurement = None
+    chat_result: dict[str, Any] = {
+        "measurement": None,
+        "narration": "",
+        "events": [],
+        "http_status": None,
+        "headers_received": False,
+        "stream_bytes_received": 0,
+        "runner_ready_timeout": False,
+        "failure_kind": "aborted",
+    }
+    try:
+        sampler.capture("generate_start")
+        chat_result = chat_with_split_timeouts(
+            encoded=encoded,
+            base_url=ollama_base_url,
+            runner_ready_timeout=runner_ready_timeout,
+            generation_timeout=generation_timeout,
+            progress=progress,
+            phase_setter=telemetry.set_phase,
+            on_first_token=on_first_token,
+            cancel=telemetry.cancel,
+        )
+        progress.emit("validation", phase="validation")
+        telemetry.set_phase("validation")
+        measurement = chat_result["measurement"]
+        narration = chat_result["narration"]
+        events = chat_result["events"]
+        (run_dir / "narration.txt").write_text(narration or "", encoding="utf-8", newline="\n")
+        (run_dir / "raw_api.jsonl").write_text(
+            "\n".join(json.dumps(event, ensure_ascii=False) for event in events) + "\n",
+            encoding="utf-8",
+            newline="\n",
+        )
+        progress.emit("unload", phase="unload")
+        telemetry.set_phase("unload")
+        sampler.capture("pre_unload")
+        unload_s = _unload(ollama_base_url, spec.tag)
+        sampler.capture("after_unload")
+    finally:
+        telemetry.stop()
+        progress.stop_heartbeat()
+    measurement = chat_result.get("measurement") or measurement
+    if measurement is None:
+        measurement = Measurement(infrastructure_failure=True)
     last = events[-1] if events else {}
     vram_vals = sampler.vram_used_values()
+    independent_vram = telemetry.vram_for_phases(IN_REQUEST_PHASES)
+    vram_vals = vram_vals + independent_vram
     peak = max(vram_vals) if vram_vals else None
-    baseline = vram_vals[0] if vram_vals else None
-    final = vram_vals[-1] if vram_vals else None
+    baseline = sampler.vram_used_values()[0] if sampler.vram_used_values() else None
+    final = sampler.vram_used_values()[-1] if sampler.vram_used_values() else None
     placed = loaded_ps.get("interpreted") or {}
-    gpu_resident = bool(placed.get("gpu_resident")) if placed else None
+    gpu_resident = placed.get("gpu_resident") if placed else None
     vram_released = None
     if baseline is not None and final is not None:
         vram_released = final <= baseline + 2.0
@@ -791,23 +882,21 @@ def run_live_confirmation(
         prompt_eval_count=None if pec is None else int(pec),
         predicted_complete=int(plan.get("estimated_complete_prompt_tokens") or 0),
     )
-    safety_problems: list[str] = []
-    if capture.get("truncate_top_level") is not False:
-        safety_problems.append("truncate_not_false")
-    if capture.get("shift_top_level") is not False:
-        safety_problems.append("shift_not_false")
-    if pec in (None, 0):
-        safety_problems.append("full_prompt_not_evaluated")
-    elif int(pec) + OUTPUT_RESERVE_TOKENS + SAFETY_MARGIN_TOKENS > PINNED_NUM_CTX:
-        safety_problems.append("reserve_equation_failed")
-    if log_verdict.get("truncation_occurred") is True:
-        safety_problems.append("log_truncation")
-    if gpu_resident is not True:
-        safety_problems.append("not_gpu_resident")
-    if peak is not None and float(peak) >= 22.5:
-        safety_problems.append("vram_ceiling")
-    if vram_released is False:
-        safety_problems.append("vram_not_released")
+    trunc_flag = True if log_verdict.get("truncation_occurred") is True else False if pec not in (None, 0) else None
+    safety = evaluate_confirmation_safety(
+        request_json=payload,
+        prompt_eval_count=None if pec in (None, 0) else int(pec),
+        timed_out=bool(measurement.timed_out) or bool(chat_result.get("runner_ready_timeout")),
+        infrastructure_failure=bool(measurement.infrastructure_failure),
+        http_status=chat_result.get("http_status"),
+        stream_bytes_received=int(chat_result.get("stream_bytes_received") or 0),
+        truncation_occurred=trunc_flag,
+        gpu_resident=gpu_resident if isinstance(gpu_resident, bool) else None,
+        vram_peak_gb=peak,
+        vram_released=vram_released,
+        log_truncation=True if log_verdict.get("truncation_occurred") is True else None,
+    )
+    safety_problems = list(safety.get("problems") or [])
     validation = validate_narration_quality(
         narration=narration,
         packet_text=packet["text"],
@@ -823,12 +912,11 @@ def run_live_confirmation(
         prompt_eval_count=pec,
         configured_num_ctx=PINNED_NUM_CTX,
         predicted_or_actual_prompt_tokens=pec,
-        gpu_resident=gpu_resident,
+        gpu_resident=gpu_resident if isinstance(gpu_resident, bool) else None,
         vram_peak_gb=peak,
         unload_recorded=True,
         vram_released=vram_released,
     )
-    (run_dir / "request_capture.json").write_text(json.dumps(capture, indent=2) + "\n", encoding="utf-8", newline="\n")
     (run_dir / "citation_validation.json").write_text(json.dumps(validation, indent=2) + "\n", encoding="utf-8", newline="\n")
     (run_dir / "chronology_coverage.json").write_text(
         json.dumps(validation.get("coverage") or {}, indent=2) + "\n", encoding="utf-8", newline="\n"
@@ -867,17 +955,33 @@ def run_live_confirmation(
     (run_dir / "user_wrapper.txt").write_text(user.split("===== EVIDENCE =====", 1)[0], encoding="utf-8", newline="\n")
     (run_dir / "evidence_packet.txt").write_text(packet["text"], encoding="utf-8", newline="\n")
     (run_dir / "safety_checks.json").write_text(
-        json.dumps({"ok": not safety_problems, "problems": safety_problems, "retried": False}, indent=2) + "\n",
+        json.dumps(
+            {
+                "ok": not safety_problems,
+                "problems": safety_problems,
+                "retried": False,
+                "truncate": safety.get("truncate"),
+                "shift": safety.get("shift"),
+                "truncation_occurred": safety.get("truncation_occurred"),
+                "gpu_residency": safety.get("gpu_residency"),
+                "placement": safety.get("placement"),
+            },
+            indent=2,
+        )
+        + "\n",
         encoding="utf-8",
         newline="\n",
     )
-    classification = "narration_quality_validation_failed"
-    if safety_problems:
-        classification = "safety_or_identity_failed"
-    elif validation["ok"]:
-        classification = "mechanical_validation_passed"
+    classification = safety.get("classification") or "narration_quality_validation_failed"
+    if classification != CLASSIFICATION_INFRA_PRE_PROMPT:
+        if safety_problems:
+            classification = "safety_or_identity_failed"
+        elif validation["ok"]:
+            classification = "mechanical_validation_passed"
+        else:
+            classification = "narration_quality_validation_failed"
     rec = {
-        "ok": (not safety_problems) and bool(validation["ok"]),
+        "ok": classification == "mechanical_validation_passed",
         "classification": classification,
         "execution_id": execution_id,
         "models_called": True,
@@ -887,6 +991,16 @@ def run_live_confirmation(
         "i11a1_started": False,
         "capacity_ladder": False,
         "safety_problems": safety_problems,
+        "safety_tri_state": {
+            "truncate": safety.get("truncate"),
+            "shift": safety.get("shift"),
+            "truncation_occurred": safety.get("truncation_occurred"),
+            "gpu_residency": safety.get("gpu_residency"),
+            "placement": safety.get("placement"),
+        },
+        "http_status": chat_result.get("http_status"),
+        "headers_received": chat_result.get("headers_received"),
+        "stream_bytes_received": chat_result.get("stream_bytes_received"),
         "hardware": {
             "vram_peak_gb": peak,
             "gpu_resident": gpu_resident,
@@ -895,15 +1009,24 @@ def run_live_confirmation(
         },
         "log_correlation": {k: v for k, v in log_verdict.items() if k != "segment"},
         "recommendation": (
-            "founder_and_codex_review_required"
+            "founder_authorization_required_before_recovery"
+            if classification == CLASSIFICATION_INFRA_PRE_PROMPT
+            else "founder_and_codex_review_required"
             if not safety_problems
             else "stop_without_retry"
         ),
     }
     (run_dir / "run_record.json").write_text(json.dumps(rec, indent=2, default=str) + "\n", encoding="utf-8")
-    (run_dir / "COMPLETE").write_text("complete\n", encoding="utf-8")
     in_flight = run_dir / "IN_FLIGHT"
     if in_flight.is_file():
         in_flight.unlink()
-    assemble_review_package(out, run_dir, packet, user, plan, rec, validation, narration)
+    if classification == CLASSIFICATION_INFRA_PRE_PROMPT or measurement.timed_out or chat_result.get("failure_kind"):
+        persist_failure_record(
+            run_dir,
+            kind="timeout" if measurement.timed_out or chat_result.get("runner_ready_timeout") else "failure",
+            payload=rec,
+        )
+    else:
+        (run_dir / "COMPLETE").write_text("complete\n", encoding="utf-8")
+        assemble_review_package(out, run_dir, packet, user, plan, rec, validation, narration)
     return rec
