@@ -8,7 +8,9 @@ from __future__ import annotations
 import hashlib
 import json
 import shutil
+import socket
 from dataclasses import asdict
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +21,8 @@ from memorybox.ask.i11a.i11a0_benchmark import (
     SAFETY_MARGIN_TOKENS,
     VRAM_CEILING_GB,
     estimate_tokens,
+    new_execution_id,
+    test_case_id,
 )
 from memorybox.ask.i11a.i11a0_full_prompt_v4 import QWEN_B_ADVERTISED_CTX, align_ctx
 from memorybox.ask.i11a.i11a0_full_prompt_v5 import plan_reserve_aware_run
@@ -268,7 +272,7 @@ def prove_narration_quality_v03_offline(*, source_run: Path | str | None = None)
 
     from memorybox.ask.i11a.i11a0_smoke import _chat, _unload, require_qwen_smoke_configuration
 
-    ok("live_imports_resolve", callable(_chat) and callable(_unload) and callable(require_qwen_smoke_configuration), None)
+    ok("execution_id_kwargs", len(new_execution_id(test_case="nq-v03", hostname="test", started_at_utc="2026-01-01T00:00:00Z", nonce="n")) == 64, None)
     ok("v02_prompt_unchanged", prompt_sha256_v02() == EXPECTED_V02_PROMPT_SHA256, prompt_sha256_v02())
     ok("v03_prompt_sha_pinned", prompt_sha256() == EXPECTED_V03_PROMPT_SHA256, prompt_sha256())
     ok("v03_version_label", PROMPT_VERSION == "i11a0-narration-v0.3-candidate", PROMPT_VERSION)
@@ -654,7 +658,7 @@ def run_live_confirmation(
     ollama_base_url: str = "http://127.0.0.1:11434",
 ) -> dict[str, Any]:
     """FlightSim-only path. Requires ops inference_authorized true and --confirm-benchmark."""
-    from memorybox.ask.i11a.i11a0_benchmark import ModelSpec, RunRequest, new_execution_id
+    from memorybox.ask.i11a.i11a0_benchmark import ModelSpec, RunRequest
     from memorybox.ask.i11a.i11a0_host import HardwareSampler, collect_host_affinity_preflight, require_flightsim_host_affinity
     from memorybox.ask.i11a.i11a0_placement import interpret_ollama_placement, read_ollama_ps
     from memorybox.ask.i11a.i11a0_ollama_log_cursor import classify_appended_log, snapshot_log
@@ -689,6 +693,12 @@ def run_live_confirmation(
         repo=REPO_ROOT,
     )
     require_flightsim_host_affinity(preflight)
+    existing_complete = list((out / "runs").glob("*/COMPLETE")) if (out / "runs").is_dir() else []
+    if existing_complete:
+        raise I11A0Error(
+            "a COMPLETE confirmation already exists under this out directory; "
+            "do not start a second generate. Assemble from the existing run."
+        )
     inventory = inventory_installed_models(base_url=ollama_base_url)
     spec = ModelSpec("B", "qwen3:14b-q8_0", "Q8_0", EXPECTED_DIGEST)
     by_tag = {row["tag"]: row for row in inventory.get("approved") or []}
@@ -716,6 +726,15 @@ def run_live_confirmation(
         model_visible_packet_id=stable_packet_id(packet["sha256"]),
     )
     request.num_ctx = PINNED_NUM_CTX
+    started = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    execution_id = new_execution_id(
+        test_case=test_case_id(request),
+        hostname=socket.gethostname(),
+        started_at_utc=started,
+    )
+    run_dir = out / "runs" / execution_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "IN_FLIGHT").write_text(started + "\n", encoding="utf-8")
     sampler = HardwareSampler()
     sampler.capture("baseline")
     loaded_ps: dict[str, Any] = {}
@@ -745,6 +764,12 @@ def run_live_confirmation(
         system_text=SYSTEM_PROMPT,
         user_text=user,
         on_first_token=on_first_token,
+    )
+    (run_dir / "narration.txt").write_text(narration, encoding="utf-8", newline="\n")
+    (run_dir / "raw_api.jsonl").write_text(
+        "\n".join(json.dumps(event, ensure_ascii=False) for event in events) + "\n",
+        encoding="utf-8",
+        newline="\n",
     )
     sampler.capture("pre_unload")
     unload_s = _unload(ollama_base_url, spec.tag)
@@ -802,15 +827,6 @@ def run_live_confirmation(
         vram_peak_gb=peak,
         unload_recorded=True,
         vram_released=vram_released,
-    )
-    execution_id = new_execution_id()
-    run_dir = out / "runs" / execution_id
-    run_dir.mkdir(parents=True, exist_ok=True)
-    (run_dir / "narration.txt").write_text(narration, encoding="utf-8", newline="\n")
-    (run_dir / "raw_api.jsonl").write_text(
-        "\n".join(json.dumps(event, ensure_ascii=False) for event in events) + "\n",
-        encoding="utf-8",
-        newline="\n",
     )
     (run_dir / "request_capture.json").write_text(json.dumps(capture, indent=2) + "\n", encoding="utf-8", newline="\n")
     (run_dir / "citation_validation.json").write_text(json.dumps(validation, indent=2) + "\n", encoding="utf-8", newline="\n")
@@ -886,5 +902,8 @@ def run_live_confirmation(
     }
     (run_dir / "run_record.json").write_text(json.dumps(rec, indent=2, default=str) + "\n", encoding="utf-8")
     (run_dir / "COMPLETE").write_text("complete\n", encoding="utf-8")
+    in_flight = run_dir / "IN_FLIGHT"
+    if in_flight.is_file():
+        in_flight.unlink()
     assemble_review_package(out, run_dir, packet, user, plan, rec, validation, narration)
     return rec
