@@ -63,21 +63,12 @@ IDLE_VRAM_MAX_GB = 3.0
 MIN_AVAILABLE_RAM_GB = 12.0
 DEFAULT_OUT = REPO_ROOT / "docs" / "test-output" / "i11a0-benchmark" / EXPERIMENT_ID
 OPS_PATH = REPO_ROOT / "docs" / "ops" / "i11a0.c.gemma-i14-full-prompt-v1.json"
-FORBIDDEN_PROCESS_NAMES = frozenset(
-    {
-        "llama-server.exe",
-        "docker desktop.exe",
-        "com.docker.backend.exe",
-        "com.docker.service",
-        "dockerd.exe",
-    }
-)
+FORBIDDEN_PROCESS_NAMES = frozenset({"llama-server.exe"})
 PREFLIGHT_FAILURE_MESSAGES = {
     "no_model_loaded": "Ollama already has a model loaded; unload it and retry",
     "no_llama_server_orphan": "llama-server.exe is running; stop the orphan runner and retry",
     "idle_vram_below_3gb": "idle VRAM is not below 3 GB",
     "available_ram_at_least_12gb": "available system RAM is below 12 GB",
-    "docker_desktop_not_running": "Docker Desktop is running; quit Docker Desktop (and MemoryBox containers) before the Gemma first rung",
     "memorybox_serve_not_running": "memorybox serve is running; stop it before the Gemma first rung",
 }
 
@@ -205,6 +196,7 @@ def inspect_idle_host(*, ollama_base_url: str) -> dict[str, Any]:
         "forbidden_processes": forbidden,
         "llama_server_orphan": llama_server,
         "docker_running": docker,
+        "docker_allowed_for_memorybox_production_parity": True,
         "memorybox_serve_command_lines": memorybox_serve,
         "ps": ps_payload,
         "loaded_models": models,
@@ -217,7 +209,6 @@ def inspect_idle_host(*, ollama_base_url: str) -> dict[str, Any]:
             "no_llama_server_orphan": not llama_server,
             "idle_vram_below_3gb": isinstance(idle, (int, float)) and float(idle) < IDLE_VRAM_MAX_GB,
             "available_ram_at_least_12gb": isinstance(available_ram, (int, float)) and float(available_ram) >= MIN_AVAILABLE_RAM_GB,
-            "docker_desktop_not_running": not docker,
             "memorybox_serve_not_running": not memorybox_serve,
         },
     }
@@ -229,11 +220,7 @@ def format_first_rung_preflight_failures(idle: dict[str, Any]) -> list[str]:
     for name, ok in checks.items():
         if ok:
             continue
-        detail = PREFLIGHT_FAILURE_MESSAGES.get(name, name)
-        if name == "docker_desktop_not_running":
-            found = idle.get("docker_running") or idle.get("forbidden_processes") or []
-            detail = f"{detail} (detected: {found})"
-        messages.append(detail)
+        messages.append(PREFLIGHT_FAILURE_MESSAGES.get(name, name))
     return messages
 
 
@@ -539,17 +526,19 @@ def prove_gemma_full_prompt_v1_offline(*, export_dir: Path | str | None = None) 
     ninek = project_gemma_9k_from_first_rung(peak_vram_gb=21.0, baseline_vram_gb=2.0)
     ok("projection_next_nominal_9000", ninek.get("next_nominal_estimated_evidence") == 9000, ninek)
     ok("projection_does_not_pack_9k", ninek.get("did_not_pack_9k_packet") is True, ninek)
-    docker_fail = format_first_rung_preflight_failures(
+    docker_observed = format_first_rung_preflight_failures(
         {
-            "checks": {"docker_desktop_not_running": False},
+            "checks": {
+                "no_model_loaded": True,
+                "no_llama_server_orphan": True,
+                "idle_vram_below_3gb": True,
+                "available_ram_at_least_12gb": True,
+                "memorybox_serve_not_running": True,
+            },
             "docker_running": ["docker desktop.exe"],
         }
     )
-    ok(
-        "docker_preflight_message_says_running",
-        docker_fail and "Docker Desktop is running" in docker_fail[0] and "not_running" not in docker_fail[0],
-        docker_fail,
-    )
+    ok("docker_desktop_does_not_fail_preflight", docker_observed == [], docker_observed)
     ok("ops_tag", ops.get("tag") == TAG, ops)
     ok("ops_digest", ops.get("digest") == EXPECTED_DIGEST, ops)
     ok("ops_quant", ops.get("quantization") == QUANT, ops)
