@@ -21,7 +21,7 @@
   "retain_v02_unchanged": true,
   "capacity_ladder": false,
   "repeat_count": 1,
-  "inference_authorized": false,
+  "inference_authorized": true,
   "configurations_a_and_c": false,
   "peggy_scenario": false,
   "production_prompt_accepted": false,
