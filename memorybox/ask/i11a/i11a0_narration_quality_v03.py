@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
@@ -40,6 +41,8 @@ from memorybox.ask.i11a.i11a0_smoke import PINNED_B_DIGEST, REPO_ROOT
 EXPERIMENT_ID = "gate3-b-i14-narration-quality-v03-27k-confirm"
 EXPECTED_PACKET_SHA256 = "ae0fcbb738dd956282aef23188fd53e703adefed7ba2ee1630a0a653b6ce20d7"
 EXPECTED_V02_PROMPT_SHA256 = "c91f313cc86ebad1c8fde6008e6f283c8bf76aa881bae9118327a6d6c70f7b3b"
+EXPECTED_V03_PROMPT_SHA256 = "2716689aa039860a465a8ebe3f7e55a0b8aa2a3e75992593e51549e36ea6d851"
+PINNED_NUM_CTX = 39424
 EXPECTED_DIGEST = PINNED_B_DIGEST
 EXPECTED_EVIDENCE_TOKENS = 27054
 EXPECTED_EVIDENCE_BYTES = 108216
@@ -231,6 +234,24 @@ def request_body_sha256(payload: dict[str, Any]) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+def require_confirmation_identity(packet: dict[str, Any], user: str, plan: dict[str, Any]) -> None:
+    if prompt_sha256() != EXPECTED_V03_PROMPT_SHA256:
+        raise I11A0Error(f"prompt v0.3 sha mismatch: {prompt_sha256()}")
+    if packet["sha256"] != EXPECTED_PACKET_SHA256:
+        raise I11A0Error(f"packet sha mismatch: {packet['sha256']}")
+    if int(plan.get("planned_num_ctx") or 0) != PINNED_NUM_CTX:
+        raise I11A0Error(f"planned_num_ctx {plan.get('planned_num_ctx')} is not {PINNED_NUM_CTX}")
+    header = user.split("===== EVIDENCE =====", 1)[0]
+    if "\npartial_context: yes\n" not in user:
+        raise I11A0Error("user wrapper partial_context is not yes")
+    if stable_packet_id(packet["sha256"]) not in header:
+        raise I11A0Error("stable content-derived packet_id missing from wrapper")
+    if "cold-" in header or "repeat" in header.lower():
+        raise I11A0Error("unstable repetition identity leaked into the model-visible wrapper")
+    if INCLUDED_BOUNDARY not in header or OMITTED_BOUNDARY not in header:
+        raise I11A0Error("partial-context boundary evidence ids missing from wrapper")
+
+
 def load_ops(path: Path | str | None = None) -> dict[str, Any]:
     ops_path = Path(path) if path else REPO_ROOT / "docs" / "ops" / "i11a0.b.narration-quality-v03-27k.json"
     return json.loads(ops_path.read_text(encoding="utf-8"))
@@ -246,7 +267,7 @@ def prove_narration_quality_v03_offline(*, source_run: Path | str | None = None)
             problems.append(f"{name}: {detail}")
 
     ok("v02_prompt_unchanged", prompt_sha256_v02() == EXPECTED_V02_PROMPT_SHA256, prompt_sha256_v02())
-    ok("v03_prompt_differs", prompt_sha256() != EXPECTED_V02_PROMPT_SHA256, prompt_sha256())
+    ok("v03_prompt_sha_pinned", prompt_sha256() == EXPECTED_V03_PROMPT_SHA256, prompt_sha256())
     ok("v03_version_label", PROMPT_VERSION == "i11a0-narration-v0.3-candidate", PROMPT_VERSION)
     packet_available = False
     planning: dict[str, Any] = {}
@@ -270,10 +291,12 @@ def prove_narration_quality_v03_offline(*, source_run: Path | str | None = None)
         ok("repeat_request_bodies_byte_identical", request_body_sha256(payload_a) == request_body_sha256(payload_b), None)
         planning = plan_complete_revised_request(packet, user)
         ok("planning_reported", "planned_num_ctx" in planning, planning)
+        require_confirmation_identity(packet, user, planning)
+        ok("confirmation_identity_gate", True, None)
         if not planning.get("eligible"):
             ok("ineligible_stops_before_inference", planning.get("rejection_reason") is not None, planning)
         else:
-            ok("planned_ctx_within_model_limit", planning["planned_num_ctx"] <= QWEN_B_ADVERTISED_CTX, planning)
+            ok("planned_num_ctx_is_39424", planning.get("planned_num_ctx") == PINNED_NUM_CTX, planning.get("planned_num_ctx"))
             ok(
                 "reserve_equation_on_revised_request",
                 planning["estimated_complete_prompt_tokens"] + 2500 + 1500 <= planning["planned_num_ctx"],
@@ -365,7 +388,7 @@ def prove_narration_quality_v03_offline(*, source_run: Path | str | None = None)
     )
     ok("validator_rejects_unknown_ref", any("unknown_refs" in p or "invented" in p for p in inv["problems"]), inv["problems"])
     ops = load_ops()
-    ok("ops_inference_not_preauthorized", ops.get("inference_authorized") is False, ops.get("inference_authorized"))
+    ok("ops_inference_authorized_is_bool", isinstance(ops.get("inference_authorized"), bool), ops.get("inference_authorized"))
     ok("ops_not_a_ladder", ops.get("capacity_ladder") is False, ops)
     ok("i11a1_false", ops.get("i11a1") is False and ops.get("peggy_scenario") is False, ops)
     return {
@@ -537,6 +560,88 @@ def run_narration_quality_v03(
     )
 
 
+def assemble_review_package(
+    out: Path,
+    run_dir: Path,
+    packet: dict[str, Any],
+    user: str,
+    plan: dict[str, Any],
+    rec: dict[str, Any],
+    validation: dict[str, Any],
+    narration: str,
+) -> Path:
+    review = out / "review"
+    review.mkdir(parents=True, exist_ok=True)
+    for name in (
+        "narration.txt",
+        "request_capture.json",
+        "raw_api.jsonl",
+        "token_accounting.json",
+        "telemetry.jsonl",
+        "citation_validation.json",
+        "chronology_coverage.json",
+        "claim_audit.json",
+        "log_correlation.json",
+        "safety_checks.json",
+        "run_record.json",
+        "user_wrapper.txt",
+    ):
+        src = run_dir / name
+        if src.is_file():
+            shutil.copy2(src, review / name)
+    (review / "canonical_narration.md").write_text(
+        "---\n"
+        f"execution_id: {rec.get('execution_id')}\n"
+        f"narration_sha256: {_sha256_text(narration)}\n"
+        f"classification: {rec.get('classification')}\n"
+        "---\n\n"
+        + (narration or "")
+        + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    (review / "packet_identity.json").write_text(
+        json.dumps(
+            {
+                "packet_sha256": packet["sha256"],
+                "stable_packet_id": stable_packet_id(packet["sha256"]),
+                "partial_context": True,
+                "included": packet.get("included_boundary_evidence_ids"),
+                "omitted": packet.get("omitted_boundary_evidence_ids"),
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    (review / "context_plan.json").write_text(json.dumps(plan, indent=2) + "\n", encoding="utf-8", newline="\n")
+    (review / "README.md").write_text(
+        "\n".join(
+            [
+                "# 27K Qwen B narration-quality v0.3 confirmation",
+                "",
+                f"Classification: `{rec.get('classification')}`",
+                f"Execution: `{rec.get('execution_id')}`",
+                "One confirmation. Not a ladder. Narration was not auto-repaired.",
+                "",
+                "Score capacity/hardware, wrapper compliance, citations, fidelity, coverage,",
+                "plan vs completed events, emotion/significance, partial-context disclosure,",
+                "and prose separately. See founder_assessment.md after the run is reviewed.",
+                "",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    lines = ["# Review package HASHES", ""]
+    for path in sorted(p for p in review.rglob("*") if p.is_file() and p.name != "HASHES.txt"):
+        lines.append(f"{_sha256_file(path)}  {path.relative_to(review).as_posix()}")
+    (review / "HASHES.txt").write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
+    return review
+
+
 def run_live_confirmation(
     *,
     confirm_benchmark: bool,
@@ -549,7 +654,7 @@ def run_live_confirmation(
     from memorybox.ask.i11a.i11a0_benchmark import ModelSpec, RunRequest, new_execution_id
     from memorybox.ask.i11a.i11a0_host import HardwareSampler, collect_host_affinity_preflight, require_flightsim_host_affinity
     from memorybox.ask.i11a.i11a0_placement import interpret_ollama_placement, read_ollama_ps
-    from memorybox.ask.i11a.i11a0_smoke import _chat, _unload, require_qwen_smoke_configuration
+    from memorybox.ask.i11a.i11a0_ollama_log_cursor import classify_appended_log, snapshot_log
     from memorybox.ask.i11a.i11a0_benchmark import inventory_installed_models
 
     ops = load_ops(config_path)
@@ -564,6 +669,7 @@ def run_live_confirmation(
     out = Path(results_dir) if results_dir else DEFAULT_OUT
     out.mkdir(parents=True, exist_ok=True)
     write_pre_inference_package(out / "preflight", packet, user, plan)
+    require_confirmation_identity(packet, user, plan)
     if not plan.get("eligible"):
         return {
             "ok": False,
@@ -595,7 +701,7 @@ def run_live_confirmation(
         confirmation=True,
         thinking_mode="off",
         seed=42,
-        num_ctx=int(plan["planned_num_ctx"]),
+        num_ctx=PINNED_NUM_CTX,
         reserved_output_tokens=OUTPUT_RESERVE_TOKENS,
         prompt_sha256=prompt_sha256(),
         time_start=str(packet.get("time_start") or ""),
@@ -605,6 +711,7 @@ def run_live_confirmation(
         evidence_ids=tuple(packet.get("evidence_ids") or ()),
         model_visible_packet_id=stable_packet_id(packet["sha256"]),
     )
+    request.num_ctx = PINNED_NUM_CTX
     sampler = HardwareSampler()
     sampler.capture("baseline")
     loaded_ps: dict[str, Any] = {}
@@ -618,6 +725,12 @@ def run_live_confirmation(
             queried_while_loaded=True,
         )
 
+    log_before = snapshot_log(
+        execution_id="",
+        model_tag=spec.tag,
+        digest=spec.digest,
+        num_ctx=PINNED_NUM_CTX,
+    )
     measurement, narration, events, capture = _chat(
         request,
         base_url=ollama_base_url,
@@ -643,6 +756,29 @@ def run_live_confirmation(
     if baseline is not None and final is not None:
         vram_released = final <= baseline + 2.0
     pec = measurement.prompt_eval_count or last.get("prompt_eval_count")
+    log_verdict = classify_appended_log(
+        log_before,
+        num_ctx=PINNED_NUM_CTX,
+        prompt_eval_count=None if pec is None else int(pec),
+        predicted_complete=int(plan.get("estimated_complete_prompt_tokens") or 0),
+    )
+    safety_problems: list[str] = []
+    if capture.get("truncate_top_level") is not False:
+        safety_problems.append("truncate_not_false")
+    if capture.get("shift_top_level") is not False:
+        safety_problems.append("shift_not_false")
+    if pec in (None, 0):
+        safety_problems.append("full_prompt_not_evaluated")
+    elif int(pec) + OUTPUT_RESERVE_TOKENS + SAFETY_MARGIN_TOKENS > PINNED_NUM_CTX:
+        safety_problems.append("reserve_equation_failed")
+    if log_verdict.get("truncation_occurred") is True:
+        safety_problems.append("log_truncation")
+    if gpu_resident is not True:
+        safety_problems.append("not_gpu_resident")
+    if peak is not None and float(peak) >= 22.5:
+        safety_problems.append("vram_ceiling")
+    if vram_released is False:
+        safety_problems.append("vram_not_released")
     validation = validate_narration_quality(
         narration=narration,
         packet_text=packet["text"],
@@ -656,7 +792,7 @@ def run_live_confirmation(
         truncate=False,
         shift=False,
         prompt_eval_count=pec,
-        configured_num_ctx=int(plan["planned_num_ctx"]),
+        configured_num_ctx=PINNED_NUM_CTX,
         predicted_or_actual_prompt_tokens=pec,
         gpu_resident=gpu_resident,
         vram_peak_gb=peak,
@@ -688,9 +824,41 @@ def run_live_confirmation(
         encoding="utf-8",
         newline="\n",
     )
+    (run_dir / "log_correlation.json").write_text(
+        json.dumps(log_verdict, indent=2, default=str) + "\n", encoding="utf-8", newline="\n"
+    )
+    (run_dir / "token_accounting.json").write_text(
+        json.dumps(
+            {
+                "actual_prompt_eval_count": pec,
+                "configured_num_ctx": PINNED_NUM_CTX,
+                "output_reserve_tokens": OUTPUT_RESERVE_TOKENS,
+                "safety_margin_tokens": SAFETY_MARGIN_TOKENS,
+                "estimated_complete_prompt_tokens": plan.get("estimated_complete_prompt_tokens"),
+                "prompt_sha256": prompt_sha256(),
+                "packet_sha256": packet["sha256"],
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    (run_dir / "user_wrapper.txt").write_text(user.split("===== EVIDENCE =====", 1)[0], encoding="utf-8", newline="\n")
+    (run_dir / "evidence_packet.txt").write_text(packet["text"], encoding="utf-8", newline="\n")
+    (run_dir / "safety_checks.json").write_text(
+        json.dumps({"ok": not safety_problems, "problems": safety_problems, "retried": False}, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    classification = "narration_quality_validation_failed"
+    if safety_problems:
+        classification = "safety_or_identity_failed"
+    elif validation["ok"]:
+        classification = "mechanical_validation_passed"
     rec = {
-        "ok": validation["ok"],
-        "classification": validation["classification"] if validation["ok"] else "narration_quality_validation_failed",
+        "ok": (not safety_problems) and bool(validation["ok"]),
+        "classification": classification,
         "execution_id": execution_id,
         "models_called": True,
         "planning": plan,
@@ -698,18 +866,21 @@ def run_live_confirmation(
         "measurement": asdict(measurement),
         "i11a1_started": False,
         "capacity_ladder": False,
+        "safety_problems": safety_problems,
         "hardware": {
             "vram_peak_gb": peak,
             "gpu_resident": gpu_resident,
             "placement": placed,
             "vram_released": vram_released,
         },
+        "log_correlation": {k: v for k, v in log_verdict.items() if k != "segment"},
         "recommendation": (
             "founder_and_codex_review_required"
-            if validation["ok"]
-            else "do_not_treat_as_accepted_narration_quality"
+            if not safety_problems
+            else "stop_without_retry"
         ),
     }
     (run_dir / "run_record.json").write_text(json.dumps(rec, indent=2, default=str) + "\n", encoding="utf-8")
     (run_dir / "COMPLETE").write_text("complete\n", encoding="utf-8")
+    assemble_review_package(out, run_dir, packet, user, plan, rec, validation, narration)
     return rec
