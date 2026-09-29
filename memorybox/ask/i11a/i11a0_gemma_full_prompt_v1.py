@@ -72,6 +72,14 @@ FORBIDDEN_PROCESS_NAMES = frozenset(
         "dockerd.exe",
     }
 )
+PREFLIGHT_FAILURE_MESSAGES = {
+    "no_model_loaded": "Ollama already has a model loaded; unload it and retry",
+    "no_llama_server_orphan": "llama-server.exe is running; stop the orphan runner and retry",
+    "idle_vram_below_3gb": "idle VRAM is not below 3 GB",
+    "available_ram_at_least_12gb": "available system RAM is below 12 GB",
+    "docker_desktop_not_running": "Docker Desktop is running; quit Docker Desktop (and MemoryBox containers) before the Gemma first rung",
+    "memorybox_serve_not_running": "memorybox serve is running; stop it before the Gemma first rung",
+}
 
 
 def _sha256_text(text: str) -> str:
@@ -215,6 +223,20 @@ def inspect_idle_host(*, ollama_base_url: str) -> dict[str, Any]:
     }
 
 
+def format_first_rung_preflight_failures(idle: dict[str, Any]) -> list[str]:
+    checks = idle.get("checks") or {}
+    messages: list[str] = []
+    for name, ok in checks.items():
+        if ok:
+            continue
+        detail = PREFLIGHT_FAILURE_MESSAGES.get(name, name)
+        if name == "docker_desktop_not_running":
+            found = idle.get("docker_running") or idle.get("forbidden_processes") or []
+            detail = f"{detail} (detected: {found})"
+        messages.append(detail)
+    return messages
+
+
 def require_gemma_first_rung_preflight(
     *,
     ops: dict[str, Any],
@@ -249,9 +271,9 @@ def require_gemma_first_rung_preflight(
     require_flightsim_host_affinity(host)
     refuse_if_unresolved(out, recovery_authorized=False)
     idle = inspect_idle_host(ollama_base_url=ollama_base_url)
-    failed = [name for name, ok in (idle.get("checks") or {}).items() if not ok]
+    failed = format_first_rung_preflight_failures(idle)
     if failed:
-        raise I11A0Error(f"first-rung preflight failed: {failed}")
+        raise I11A0Error("first-rung preflight failed: " + "; ".join(failed))
     inventory = inventory_installed_models(base_url=ollama_base_url)
     if inventory.get("pull_executed"):
         raise I11A0Error("inventory reported a pull")
@@ -517,6 +539,17 @@ def prove_gemma_full_prompt_v1_offline(*, export_dir: Path | str | None = None) 
     ninek = project_gemma_9k_from_first_rung(peak_vram_gb=21.0, baseline_vram_gb=2.0)
     ok("projection_next_nominal_9000", ninek.get("next_nominal_estimated_evidence") == 9000, ninek)
     ok("projection_does_not_pack_9k", ninek.get("did_not_pack_9k_packet") is True, ninek)
+    docker_fail = format_first_rung_preflight_failures(
+        {
+            "checks": {"docker_desktop_not_running": False},
+            "docker_running": ["docker desktop.exe"],
+        }
+    )
+    ok(
+        "docker_preflight_message_says_running",
+        docker_fail and "Docker Desktop is running" in docker_fail[0] and "not_running" not in docker_fail[0],
+        docker_fail,
+    )
     ok("ops_tag", ops.get("tag") == TAG, ops)
     ok("ops_digest", ops.get("digest") == EXPECTED_DIGEST, ops)
     ok("ops_quant", ops.get("quantization") == QUANT, ops)
