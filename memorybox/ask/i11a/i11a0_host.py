@@ -126,6 +126,9 @@ def read_system_ram() -> dict[str, Any]:
         "pagefile_used_bytes": int(status.ullTotalPageFile) - int(status.ullAvailPageFile),
         "pagefile_total_gb": int(status.ullTotalPageFile) / (1024 ** 3),
         "pagefile_used_gb": (int(status.ullTotalPageFile) - int(status.ullAvailPageFile)) / (1024 ** 3),
+        "pagefile_available_gb": int(status.ullAvailPageFile) / (1024 ** 3),
+        "committed_bytes": int(status.ullTotalPageFile) - int(status.ullAvailPageFile),
+        "committed_gb": (int(status.ullTotalPageFile) - int(status.ullAvailPageFile)) / (1024 ** 3),
     }
 
 

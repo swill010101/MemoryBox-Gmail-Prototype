@@ -50,6 +50,7 @@ CLASSIFICATION_VRAM_BOUNDARY = "vram_ceiling"
 CLASSIFICATION_NARRATION_QUALITY = "narration_quality_validation_failed"
 CLASSIFICATION_PROTECTED_PREDICTION_EXCEEDED = "complete_prompt_exceeded_protected_prediction"
 CLASSIFICATION_GEMMA_VRAM_BOUNDARY = "gemma_vram_boundary_at_first_rung"
+CLASSIFICATION_ESTIMATOR_SAFETY_FAILED = "full_prompt_evaluated_estimator_and_safety_margin_failed"
 FIRST_NOMINAL = 8000
 COARSE_INCREMENT = 1000
 AUTHORIZED_PACKET_SHA256 = "4ea883765185683d0f7aae62b6b1279e0b30e1c7538a24f0dc66cf6a0aa1faf0"
@@ -57,10 +58,15 @@ AUTHORIZED_EVIDENCE_TOKENS = 8665
 AUTHORIZED_EVIDENCE_BYTES = 34657
 AUTHORIZED_MESSAGE_COUNT = 24
 AUTHORIZED_THREAD_COUNT = 17
-AUTHORIZED_NUM_CTX = 15872
-PROTECTED_COMPLETE_PROMPT_TOKENS = 11757
+AUTHORIZED_NUM_CTX = 17664
+OBSERVED_COMPLETE_PROMPT_TOKENS = 13465
+CALIBRATION_DIAGNOSTIC = 10439
+FAILED_PROTECTED_PREDICTION = 11757
+FAILED_NUM_CTX = 15872
 IDLE_VRAM_MAX_GB = 3.0
 MIN_AVAILABLE_RAM_GB = 12.0
+MIN_PAGEFILE_AVAILABLE_GB = 8.0
+MIN_PLAUSIBLE_GEMMA_PS_BYTES = 8 * 1024 ** 3
 DEFAULT_OUT = REPO_ROOT / "docs" / "test-output" / "i11a0-benchmark" / EXPERIMENT_ID
 OPS_PATH = REPO_ROOT / "docs" / "ops" / "i11a0.c.gemma-i14-full-prompt-v1.json"
 FORBIDDEN_PROCESS_NAMES = frozenset({"llama-server.exe"})
@@ -69,6 +75,7 @@ PREFLIGHT_FAILURE_MESSAGES = {
     "no_llama_server_orphan": "llama-server.exe is running; stop the orphan runner and retry",
     "idle_vram_below_3gb": "idle VRAM is not below 3 GB",
     "available_ram_at_least_12gb": "available system RAM is below 12 GB",
+    "pagefile_headroom": "page-file / commit available is below 8 GB",
     "memorybox_serve_not_running": "memorybox serve is running; stop it before the Gemma first rung",
 }
 
@@ -125,8 +132,8 @@ def require_authorized_first_rung(plan: dict[str, Any]) -> None:
         raise I11A0Error("partial_context must be true")
     if int(plan.get("planned_num_ctx") or 0) != AUTHORIZED_NUM_CTX:
         raise I11A0Error(f"planned_num_ctx is not {AUTHORIZED_NUM_CTX}")
-    if int(plan.get("protected_complete_prompt_tokens") or 0) != PROTECTED_COMPLETE_PROMPT_TOKENS:
-        raise I11A0Error("protected complete-prompt prediction is not 11757")
+    if int(plan.get("predicted_complete_prompt_tokens") or 0) != OBSERVED_COMPLETE_PROMPT_TOKENS:
+        raise I11A0Error("same-packet complete prompt is not the observed 13465")
     if prompt_sha256() != EXPECTED_V03_PROMPT_SHA256:
         raise I11A0Error("prompt v0.3 sha mismatch")
     if plan.get("truncate") is not False or plan.get("shift") is not False:
@@ -174,6 +181,81 @@ def python_command_lines() -> list[str]:
     return [line.strip() for line in (completed.stdout or "").splitlines() if line.strip() and "CommandLine" not in line]
 
 
+def capture_docker_wsl_state() -> dict[str, Any]:
+    import subprocess
+
+    from memorybox.ask.i11a.i11a0_host import read_working_set_bytes
+
+    names_of_interest = (
+        "docker desktop.exe",
+        "com.docker.backend.exe",
+        "com.docker.service",
+        "dockerd.exe",
+        "vmmem",
+        "vmmemwsl",
+        "wslservice.exe",
+        "wsl.exe",
+    )
+    processes: list[dict[str, Any]] = []
+    try:
+        completed = subprocess.run(
+            ["tasklist", "/FO", "CSV", "/NH"],
+            capture_output=True,
+            text=True,
+            timeout=8,
+            check=False,
+        )
+        rows = completed.stdout.splitlines() if completed.returncode == 0 else []
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        rows = []
+    for raw in rows:
+        parts = [item.strip().strip('"') for item in raw.split('","')]
+        if len(parts) < 2:
+            continue
+        name = parts[0]
+        if name.lower() not in names_of_interest:
+            continue
+        try:
+            pid = int(parts[1])
+        except ValueError:
+            continue
+        working_set = read_working_set_bytes(pid)
+        processes.append(
+            {
+                "name": name,
+                "pid": pid,
+                "working_set_bytes": working_set,
+                "working_set_gb": None if working_set is None else working_set / (1024 ** 3),
+            }
+        )
+    docker_cli = None
+    try:
+        inspect = subprocess.run(
+            ["docker", "ps", "--format", "{{.Names}} {{.Status}}"],
+            capture_output=True,
+            text=True,
+            timeout=8,
+            check=False,
+        )
+        docker_cli = {
+            "available": inspect.returncode == 0,
+            "containers": [line.strip() for line in (inspect.stdout or "").splitlines() if line.strip()],
+        }
+    except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+        docker_cli = {"available": False, "reason": type(exc).__name__}
+    memorybox_containers = [
+        row for row in (docker_cli.get("containers") or []) if "memorybox" in row.lower()
+    ]
+    return {
+        "docker_desktop_allowed": True,
+        "processes": processes,
+        "docker_cli": docker_cli,
+        "memorybox_containers": memorybox_containers,
+        "memorybox_services_running": bool(memorybox_containers),
+        "working_set_bytes_total": sum(int(row.get("working_set_bytes") or 0) for row in processes),
+    }
+
+
 def inspect_idle_host(*, ollama_base_url: str) -> dict[str, Any]:
     from memorybox.ask.i11a.i11a0_host import read_nvidia_snapshot, read_ollama_process_memory, read_system_ram
     from memorybox.ask.i11a.i11a0_placement import read_ollama_ps
@@ -191,24 +273,32 @@ def inspect_idle_host(*, ollama_base_url: str) -> dict[str, Any]:
     ram = read_system_ram()
     idle = gpu.get("memory_used_gb")
     available_ram = ram.get("available_gb")
+    pagefile_available = ram.get("pagefile_available_gb")
+    coexistence = capture_docker_wsl_state()
     return {
         "task_names": names,
         "forbidden_processes": forbidden,
         "llama_server_orphan": llama_server,
         "docker_running": docker,
         "docker_allowed_for_memorybox_production_parity": True,
+        "docker_wsl": coexistence,
         "memorybox_serve_command_lines": memorybox_serve,
         "ps": ps_payload,
         "loaded_models": models,
         "idle_vram_gb": idle,
+        "idle_gpu_vram_includes_any_docker_gpu_use": True,
         "available_ram_gb": available_ram,
+        "ram_used_gb": ram.get("used_gb"),
+        "committed_gb": ram.get("committed_gb"),
         "pagefile_used_gb": ram.get("pagefile_used_gb"),
+        "pagefile_available_gb": pagefile_available,
         "ollama_processes": read_ollama_process_memory(),
         "checks": {
             "no_model_loaded": ps_payload.get("available") is True and not models,
             "no_llama_server_orphan": not llama_server,
             "idle_vram_below_3gb": isinstance(idle, (int, float)) and float(idle) < IDLE_VRAM_MAX_GB,
             "available_ram_at_least_12gb": isinstance(available_ram, (int, float)) and float(available_ram) >= MIN_AVAILABLE_RAM_GB,
+            "pagefile_headroom": isinstance(pagefile_available, (int, float)) and float(pagefile_available) >= MIN_PAGEFILE_AVAILABLE_GB,
             "memorybox_serve_not_running": not memorybox_serve,
         },
     }
@@ -308,9 +398,13 @@ def predicted_complete_prompt_tokens_gemma(*, complete_prompt_bytes: int) -> dic
     diagnostic = max(1, (int(complete_prompt_bytes) + 3) // 4)
     additive_envelope = diagnostic + GEMMA_SMOKE_ADDITIVE_ERROR_TOKENS
     relative_envelope = int(math.ceil(float(diagnostic) * (1.0 + GEMMA_SMOKE_RELATIVE_ERROR)))
-    governing = max(diagnostic, additive_envelope, relative_envelope)
-    governing_name = "relative_smoke" if governing == relative_envelope and relative_envelope > additive_envelope else (
-        "additive_smoke" if governing == additive_envelope and additive_envelope > diagnostic else "bytes_div4"
+    ratio = OBSERVED_COMPLETE_PROMPT_TOKENS / CALIBRATION_DIAGNOSTIC
+    ratio_envelope = int(math.ceil(float(diagnostic) * ratio))
+    governing = max(diagnostic, additive_envelope, relative_envelope, ratio_envelope)
+    governing_name = "observed_ratio" if governing == ratio_envelope else (
+        "relative_smoke" if governing == relative_envelope and relative_envelope > additive_envelope else (
+            "additive_smoke" if governing == additive_envelope and additive_envelope > diagnostic else "bytes_div4"
+        )
     )
     protected = int(math.ceil(float(governing) * (1.0 + GEMMA_ADDITIONAL_RELATIVE_GUARD) + DOCUMENTED_GUARD_TOKENS))
     return {
@@ -323,13 +417,16 @@ def predicted_complete_prompt_tokens_gemma(*, complete_prompt_bytes: int) -> dic
         "additive_envelope": additive_envelope,
         "gemma_smoke_relative_error": GEMMA_SMOKE_RELATIVE_ERROR,
         "relative_envelope": relative_envelope,
+        "observed_ratio": ratio,
+        "ratio_envelope": ratio_envelope,
         "governing_envelope": governing,
         "governing_envelope_name": governing_name,
         "additional_relative_guard": GEMMA_ADDITIONAL_RELATIVE_GUARD,
         "documented_guard_tokens": DOCUMENTED_GUARD_TOKENS,
         "protected_complete_prompt_tokens": protected,
         "predicted_complete_prompt_tokens": protected,
-        "formula": "ceil(max(diag, diag+182, ceil(diag*1.096144)) * 1.005 + 256)",
+        "obsolete_11757_not_used_for_enlargement": True,
+        "formula": "ceil(max(diag, diag+182, ceil(diag*1.096144), ceil(diag*13465/10439)) * 1.005 + 256)",
         "does_not_use_qwen_v5_estimator": True,
         "does_not_use_qwen_token_ratio": True,
         "does_not_use_qwen_vram_curve": True,
@@ -367,6 +464,15 @@ def plan_rung(*, user: str, packet: Any) -> dict[str, Any]:
     predicted = int(pred["predicted_complete_prompt_tokens"])
     minimum = predicted + OUTPUT_RESERVE_TOKENS + SAFETY_MARGIN_TOKENS
     planned_num_ctx = align_ctx(minimum)
+    if str(packet.sha256) == AUTHORIZED_PACKET_SHA256:
+        predicted = OBSERVED_COMPLETE_PROMPT_TOKENS
+        minimum = predicted + OUTPUT_RESERVE_TOKENS + SAFETY_MARGIN_TOKENS
+        planned_num_ctx = align_ctx(minimum)
+        pred["protected_complete_prompt_tokens"] = predicted
+        pred["predicted_complete_prompt_tokens"] = predicted
+        pred["token_count_kind"] = "observed_complete_prompt"
+        pred["obsolete_11757_not_used_for_enlargement"] = True
+        pred["same_packet_calibrated_num_ctx"] = planned_num_ctx
     reserve_ok = predicted + OUTPUT_RESERVE_TOKENS + SAFETY_MARGIN_TOKENS <= planned_num_ctx
     model_ok = planned_num_ctx <= GEMMA_ADVERTISED_CTX
     eligible = reserve_ok and model_ok
@@ -518,14 +624,67 @@ def prove_gemma_full_prompt_v1_offline(*, export_dir: Path | str | None = None) 
 
     ops = load_ops()
     ok("ops_first_rung_only", ops.get("first_rung_only") is True, ops.get("first_rung_only"))
-    ok("ops_inference_authorized_first_rung", ops.get("inference_authorized") is True, ops.get("inference_authorized"))
+    ok("ops_inference_authorized_false_until_calibrated_rerun", ops.get("inference_authorized") is False, ops.get("inference_authorized"))
     ok("ops_remaining_ladder_false", ops.get("remaining_ladder_authorized") is False, ops.get("remaining_ladder_authorized"))
     ok("ops_pull_unauthorized", ops.get("pull_authorized") is False, ops.get("pull_authorized"))
-    ok("ops_planned_num_ctx_15872", int(ops.get("planned_num_ctx") or 0) == AUTHORIZED_NUM_CTX, ops.get("planned_num_ctx"))
+    ok("ops_planned_num_ctx_17664", int(ops.get("planned_num_ctx") or 0) == AUTHORIZED_NUM_CTX, ops.get("planned_num_ctx"))
     ok("first_rung_only_helper", first_rung_only_enabled(ops) is True, None)
-    ninek = project_gemma_9k_from_first_rung(peak_vram_gb=21.0, baseline_vram_gb=2.0)
-    ok("projection_next_nominal_9000", ninek.get("next_nominal_estimated_evidence") == 9000, ninek)
-    ok("projection_does_not_pack_9k", ninek.get("did_not_pack_9k_packet") is True, ninek)
+    from memorybox.ask.i11a.i11a0_gemma_first_rung_closeout import (
+        gemma_control_labels,
+        gemma_safety_table,
+        parse_gemma_load_placement,
+        project_calibrated_8k_vram,
+        same_packet_calibrated_num_ctx,
+        write_gemma_first_rung_sidecar,
+        OBSERVED_COMPLETE_PROMPT,
+        FAILED_PROTECTED_PREDICTION,
+        FAILED_NUM_CTX,
+        CLASSIFICATION as CLOSEOUT_CLASS,
+    )
+    from memorybox.ask.i11a.i11a0_placement import interpret_ollama_placement
+
+    safety_row = gemma_safety_table(
+        actual_complete_prompt_tokens=13465,
+        num_ctx=15872,
+        protected_prediction=11757,
+    )
+    ok("safety_remaining_after_prompt_2407", safety_row["remaining_after_prompt"] == 2407, safety_row)
+    ok("safety_remaining_after_prompt_and_output_neg93", safety_row["remaining_after_prompt_and_output"] == -93, safety_row)
+    ok("safety_required_margin_1500", safety_row["required_safety_margin"] == 1500, safety_row)
+    ok("safety_total_required_17465", safety_row["total_required_context"] == 17465, safety_row)
+    ok("safety_shortfall_1593_not_neg93", safety_row["safety_margin_shortfall"] == 1593, safety_row)
+    ok("safety_underestimate_1708", safety_row["planner_underestimate_tokens"] == 1708, safety_row)
+    ok("neg93_is_not_the_shortfall", safety_row["remaining_after_prompt_and_output_is_not_the_safety_shortfall"] is True, None)
+    labels = gemma_control_labels(full_prompt_evaluated=True, truncation_occurred=False)
+    ok("truncate_false_control_effective", labels["truncate_false_control"] == "effective", labels)
+    ok("shift_false_control_effective", labels["shift_false_control"] == "effective", labels)
+    ok("truncation_occurred_bool_false", labels["truncation_occurred"] is False, labels)
+    ok("full_prompt_evaluated_true", labels["full_prompt_evaluated"] is True, labels)
+    ok("calibrated_num_ctx_17664", same_packet_calibrated_num_ctx() == 17664, same_packet_calibrated_num_ctx())
+    implausible = interpret_ollama_placement(
+        {
+            "available": True,
+            "models": [{"name": TAG, "size": 1183810845, "size_vram": 1183810845, "digest": EXPECTED_DIGEST}],
+        },
+        tag=TAG,
+        digest=EXPECTED_DIGEST,
+        queried_while_loaded=True,
+        min_plausible_size_bytes=MIN_PLAUSIBLE_GEMMA_PS_BYTES,
+    )
+    ok("implausible_ps_is_unknown_not_gpu_resident", implausible["status"] == "unknown" and implausible["gpu_resident"] is False, implausible)
+    log_place = parse_gemma_load_placement(
+        "load_tensors: offloaded 31/31 layers to GPU\n"
+        "load_tensors:        CUDA0 model buffer size = 16147.43 MiB\n"
+        "load_tensors:    CUDA_Host model buffer size =   748.00 MiB\n"
+        "load_tensors: offloaded 5/5 layers to GPU\n"
+    )
+    ok("log_placement_gpu_resident", log_place["status"] == "gpu_resident", log_place)
+    vram_proj = project_calibrated_8k_vram()
+    ok("vram_proj_not_9k_evidence_scale", vram_proj.get("does_not_use_9k_evidence_scale") is True, vram_proj)
+    sidecar = write_gemma_first_rung_sidecar()
+    ok("sidecar_ok", sidecar.get("ok") is True and sidecar.get("originals_unchanged") is True, sidecar)
+    ok("sidecar_class", sidecar["payload"]["classification"] == CLOSEOUT_CLASS, sidecar["payload"]["classification"])
+    ok("sidecar_not_stable_rung", sidecar["payload"]["not_a_stable_ladder_rung"] is True, None)
     docker_observed = format_first_rung_preflight_failures(
         {
             "checks": {
@@ -533,6 +692,7 @@ def prove_gemma_full_prompt_v1_offline(*, export_dir: Path | str | None = None) 
                 "no_llama_server_orphan": True,
                 "idle_vram_below_3gb": True,
                 "available_ram_at_least_12gb": True,
+                "pagefile_headroom": True,
                 "memorybox_serve_not_running": True,
             },
             "docker_running": ["docker desktop.exe"],
@@ -554,24 +714,24 @@ def prove_gemma_full_prompt_v1_offline(*, export_dir: Path | str | None = None) 
     )
     ok(
         "largest_envelope_governs",
-        diagnostic_10439["governing_envelope"] == diagnostic_10439["relative_envelope"],
+        diagnostic_10439["governing_envelope"] == diagnostic_10439["ratio_envelope"],
         diagnostic_10439,
     )
     expected_protected = int(math.ceil(float(diagnostic_10439["governing_envelope"]) * (1.0 + GEMMA_ADDITIONAL_RELATIVE_GUARD) + DOCUMENTED_GUARD_TOKENS))
     ok("protected_matches_formula", diagnostic_10439["protected_complete_prompt_tokens"] == expected_protected, diagnostic_10439)
-    ok("precise_protected_11757", expected_protected == 11757, expected_protected)
+    ok("ratio_protected_13789", expected_protected == 13789, expected_protected)
     expected_ctx = align_ctx(expected_protected + 2500 + 1500)
-    ok("representative_num_ctx_15872", expected_ctx == 15872, expected_ctx)
+    ok("future_packet_num_ctx_17920", expected_ctx == 17920, expected_ctx)
     ok("alignment_rounds_up", expected_ctx >= expected_protected + 4000, expected_ctx)
     ok("alignment_is_256_multiple", expected_ctx % 256 == 0, expected_ctx)
     ok(
         "protected_exceeded_stops_enlargement",
-        protected_prediction_exceeded(protected=11757, actual_complete_prompt_tokens=11758) is True,
+        protected_prediction_exceeded(protected=FAILED_PROTECTED_PREDICTION, actual_complete_prompt_tokens=FAILED_PROTECTED_PREDICTION + 1) is True,
         None,
     )
     ok(
         "protected_equal_does_not_stop",
-        protected_prediction_exceeded(protected=11757, actual_complete_prompt_tokens=11757) is False,
+        protected_prediction_exceeded(protected=FAILED_PROTECTED_PREDICTION, actual_complete_prompt_tokens=FAILED_PROTECTED_PREDICTION) is False,
         None,
     )
     ok(
@@ -641,8 +801,8 @@ def prove_gemma_full_prompt_v1_offline(*, export_dir: Path | str | None = None) 
         ok("authorized_message_count", int(first.get("message_count") or 0) == AUTHORIZED_MESSAGE_COUNT, first.get("message_count"))
         ok("authorized_thread_count", int(first.get("thread_count") or 0) == AUTHORIZED_THREAD_COUNT, first.get("thread_count"))
         ok("authorized_partial_context", first.get("partial_context") is True, first.get("partial_context"))
-        ok("first_rung_num_ctx_15872", int(first.get("planned_num_ctx") or 0) == AUTHORIZED_NUM_CTX, first.get("planned_num_ctx"))
-        ok("first_rung_protected_11757", int(first.get("protected_complete_prompt_tokens") or 0) == PROTECTED_COMPLETE_PROMPT_TOKENS, first.get("protected_complete_prompt_tokens"))
+        ok("first_rung_num_ctx_17664", int(first.get("planned_num_ctx") or 0) == AUTHORIZED_NUM_CTX, first.get("planned_num_ctx"))
+        ok("first_rung_observed_13465", int(first.get("protected_complete_prompt_tokens") or 0) == OBSERVED_COMPLETE_PROMPT_TOKENS, first.get("protected_complete_prompt_tokens"))
         if int(first.get("request_bytes_div4") or 0) == 10439:
             ok("diagnostic_still_10439", True, None)
         ok("truncate_false", first.get("truncate") is False, first)
@@ -807,6 +967,7 @@ def run_gemma_first_rung_live(
             tag=TAG,
             digest=EXPECTED_DIGEST,
             queried_while_loaded=True,
+            min_plausible_size_bytes=MIN_PLAUSIBLE_GEMMA_PS_BYTES,
         )
         sampler.capture("loaded")
 
@@ -907,21 +1068,33 @@ def run_gemma_first_rung_live(
         vram_released = final <= baseline + 2.0
     pec = measurement.prompt_eval_count or last.get("prompt_eval_count")
     actual_prompt = None if pec in (None, 0) else int(pec)
-    underestimate = bool(
-        actual_prompt is not None and protected_prediction_exceeded(protected=PROTECTED_COMPLETE_PROMPT_TOKENS, actual_complete_prompt_tokens=actual_prompt)
-    )
-    remaining_margin = None
-    reserve_ok = None
-    if actual_prompt is not None:
-        remaining_margin = AUTHORIZED_NUM_CTX - actual_prompt - OUTPUT_RESERVE_TOKENS
-        reserve_ok = actual_prompt + OUTPUT_RESERVE_TOKENS + SAFETY_MARGIN_TOKENS <= AUTHORIZED_NUM_CTX
     log_verdict = classify_appended_log(
         log_before,
         num_ctx=AUTHORIZED_NUM_CTX,
         prompt_eval_count=actual_prompt,
-        predicted_complete=PROTECTED_COMPLETE_PROMPT_TOKENS,
+        predicted_complete=OBSERVED_COMPLETE_PROMPT_TOKENS,
     )
+    from memorybox.ask.i11a.i11a0_gemma_first_rung_closeout import gemma_control_labels, gemma_safety_table, project_calibrated_8k_vram
+
     trunc_flag = True if log_verdict.get("truncation_occurred") is True else False if actual_prompt is not None else None
+    underestimate = bool(
+        actual_prompt is not None and protected_prediction_exceeded(protected=OBSERVED_COMPLETE_PROMPT_TOKENS, actual_complete_prompt_tokens=actual_prompt)
+    )
+    safety_row = None
+    remaining_margin = None
+    reserve_ok = None
+    if actual_prompt is not None:
+        safety_row = gemma_safety_table(
+            actual_complete_prompt_tokens=actual_prompt,
+            num_ctx=AUTHORIZED_NUM_CTX,
+            protected_prediction=OBSERVED_COMPLETE_PROMPT_TOKENS,
+        )
+        remaining_margin = safety_row["remaining_after_prompt_and_output"]
+        reserve_ok = safety_row["safety_margin_shortfall"] == 0
+    controls = gemma_control_labels(
+        full_prompt_evaluated=actual_prompt is not None,
+        truncation_occurred=bool(trunc_flag),
+    )
     safety = evaluate_confirmation_safety(
         request_json=payload,
         prompt_eval_count=actual_prompt,
@@ -939,26 +1112,14 @@ def run_gemma_first_rung_live(
     classification = safety.get("classification")
     if vram_boundary:
         classification = CLASSIFICATION_GEMMA_VRAM_BOUNDARY
-    elif underestimate and classification is None:
-        classification = CLASSIFICATION_PROTECTED_PREDICTION_EXCEEDED
+    elif actual_prompt is not None and (underestimate or reserve_ok is False):
+        classification = CLASSIFICATION_ESTIMATOR_SAFETY_FAILED
     elif classification is None and chat_result.get("failure_kind") is None:
         classification = "first_rung_complete_quality_deferred"
-    projection = project_gemma_9k_from_first_rung(peak_vram_gb=peak, baseline_vram_gb=baseline)
-    nine_k_technically_eligible = (
-        not vram_boundary
-        and not underestimate
-        and reserve_ok is not False
-        and trunc_flag is not True
-        and projection.get("projected_meets_or_exceeds_22_5gb") is not True
-        and chat_result.get("failure_kind") is None
-    )
-    recommendation = "stop_at_first_rung_vram_boundary" if vram_boundary or projection.get("projected_meets_or_exceeds_22_5gb") else (
-        "founder_review_estimator_underestimate" if underestimate else (
-            "founder_authorization_required_before_9k" if nine_k_technically_eligible else "stop_for_founder_review"
-        )
-    )
+    nine_k_technically_eligible = False
+    recommendation = "stop_for_founder_authorization_before_calibrated_8k_rerun"
     rec = {
-        "ok": classification in {"first_rung_complete_quality_deferred", CLASSIFICATION_PROTECTED_PREDICTION_EXCEEDED} and not vram_boundary,
+        "ok": False,
         "classification": classification,
         "execution_id": execution_id,
         "models_called": True,
@@ -973,10 +1134,12 @@ def run_gemma_first_rung_live(
         "production_narrator": False,
         "packet_sha256": packet.sha256,
         "prompt_sha256": prompt_sha256(),
-        "protected_complete_prompt_tokens": PROTECTED_COMPLETE_PROMPT_TOKENS,
+        "protected_complete_prompt_tokens": OBSERVED_COMPLETE_PROMPT_TOKENS,
         "actual_complete_prompt_tokens": actual_prompt,
         "gemma_estimator_underestimate": underestimate,
-        "safety_equation": "actual_complete_prompt + 2500 + 1500 <= 15872",
+        **(safety_row or {}),
+        **controls,
+        "safety_equation": "actual_complete_prompt + 2500 + 1500 <= num_ctx",
         "remaining_context_after_prompt_and_output": remaining_margin,
         "reserve_equation_passed": reserve_ok,
         "num_ctx": AUTHORIZED_NUM_CTX,
@@ -988,12 +1151,13 @@ def run_gemma_first_rung_live(
             "vram_loaded_gb": loaded_vram,
             "vram_post_unload_gb": final,
             "current_run_in_request_peak_gb": max(current_run_vram) if current_run_vram else peak,
-            "gpu_resident": gpu_resident,
-            "cpu_offload": cpu_offload,
+            "gpu_resident": placed.get("status") == "gpu_resident",
+            "cpu_offload": placed.get("status") == "cpu_offload",
             "placement": placed,
             "vram_released": vram_released,
             "system_ram_peak_gb": max(ram_peaks) if ram_peaks else None,
             "pagefile_peak_gb": max(page_peaks) if page_peaks else None,
+            "docker_wsl": capture_docker_wsl_state(),
         },
         "timing": {
             "load_seconds": ns_to_seconds(last.get("load_duration")),
@@ -1003,13 +1167,10 @@ def run_gemma_first_rung_live(
             "prompt_tokens_per_second": last.get("prompt_eval_rate"),
             "generation_tokens_per_second": last.get("eval_rate"),
         },
-        "truncation_occurred": safety.get("truncation_occurred"),
-        "shift": safety.get("shift"),
-        "truncate": safety.get("truncate"),
         "unload_recorded": True,
         "narration_artifact": str(run_dir / "narration.txt"),
-        "nine_k_technically_eligible": nine_k_technically_eligible,
-        "gemma_9k_projection": projection,
+        "nine_k_technically_eligible": False,
+        "gemma_calibrated_vram_projection": project_calibrated_8k_vram(),
         "recommendation": recommendation,
         "measurement": asdict(measurement),
         "log_correlation": {k: v for k, v in log_verdict.items() if k != "segment"},
@@ -1021,7 +1182,7 @@ def run_gemma_first_rung_live(
         json.dumps(
             {
                 "actual_prompt_eval_count": actual_prompt,
-                "protected_complete_prompt_tokens": PROTECTED_COMPLETE_PROMPT_TOKENS,
+                "protected_complete_prompt_tokens": OBSERVED_COMPLETE_PROMPT_TOKENS,
                 "configured_num_ctx": AUTHORIZED_NUM_CTX,
                 "output_reserve_tokens": OUTPUT_RESERVE_TOKENS,
                 "safety_margin_tokens": SAFETY_MARGIN_TOKENS,
@@ -1059,7 +1220,7 @@ def run_gemma_first_rung_live(
         (run_dir / "gemma_estimator_underestimate.json").write_text(
             json.dumps(
                 {
-                    "protected_complete_prompt_tokens": PROTECTED_COMPLETE_PROMPT_TOKENS,
+                    "protected_complete_prompt_tokens": OBSERVED_COMPLETE_PROMPT_TOKENS,
                     "actual_complete_prompt_tokens": actual_prompt,
                     "stopped_after_first_rung": True,
                     "did_not_continue_to_9k": True,

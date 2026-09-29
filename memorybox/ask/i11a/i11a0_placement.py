@@ -51,6 +51,7 @@ def interpret_ollama_placement(
     tag: str,
     digest: str | None = None,
     queried_while_loaded: bool,
+    min_plausible_size_bytes: int | None = None,
 ) -> dict[str, Any]:
     """Normalize /api/ps. Missing post-unload models are unknown, not CPU offload."""
     raw = dict(ps_payload or {})
@@ -106,6 +107,17 @@ def interpret_ollama_placement(
             reason = (
                 f"size_vram {vram_n} < model size {size_n} while loaded "
                 "(partial GPU assignment)"
+            )
+        elif (
+            min_plausible_size_bytes is not None
+            and size_n > 0
+            and size_n < float(min_plausible_size_bytes)
+            and vram_n >= size_n * (1.0 - SIZE_MATCH_TOLERANCE)
+        ):
+            status = "unknown"
+            reason = (
+                "api_ps_size_equals_size_vram_but_size_is_implausible_for_full_model;"
+                " not affirmative gpu_resident"
             )
         elif size_n > 0 and vram_n >= size_n * (1.0 - SIZE_MATCH_TOLERANCE):
             status = "gpu_resident"

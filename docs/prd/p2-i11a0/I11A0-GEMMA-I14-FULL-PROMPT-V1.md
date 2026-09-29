@@ -64,11 +64,13 @@ Representative 8K diagnostic 10,439:
 | Relative envelope | +9.6144% → 11,443 |
 | Additional relative guard | 0.5% |
 | Fixed guard | 256 tokens |
-| Protected complete-prompt prediction | 11,757 |
-| Reserve equation | `protected + 2500 + 1500 ≤ num_ctx` |
-| Planned `num_ctx` | 15,872 |
+| Protected complete-prompt prediction | **13,465 observed** (do not enlarge from 11,757) |
+| Reserve equation | `actual + 2500 + 1500 ≤ num_ctx` → 17,465 required at the failed 15,872 ctx |
+| Safety shortfall at 15,872 | **1,593** (not the −93 remainder after prompt+output) |
+| Proposed same-packet `num_ctx` | **17,664** |
+| Future-packet planner | `ceil(max(diag, diag+182, ceil(diag×1.096144), ceil(diag×13465/10439)) × 1.005 + 256)` then +4,000 aligned |
 | Model context limit | 262,144 (advertised; not Qwen 40,960) |
-| Expected VRAM status | **unmeasured** |
+| Expected VRAM status | measured 21.615 GB peak at 15,872; 17,664 projected below 22.5 GB with thin headroom |
 | Prior Gemma smoke peak | ~21.65 GB at `num_ctx=6144` |
 | Hardware risk | 15,872 ctx is larger than the smoke window; the 8K rung may already sit near the 22.5 GB FlightSim ceiling. If it reaches 22.5 GB, that is a valid Gemma VRAM boundary, not a reason to shrink context. |
 
@@ -78,9 +80,7 @@ Founder authorized **exactly one** first-rung execution (`first_rung_only`). Rem
 
 Docker Desktop and MemoryBox data-plane containers (Postgres, Qdrant) may stay running so the ladder is production-like. Do not treat Docker as a preflight failure.
 
-`inference_authorized: true` applies only with `first_rung_only: true` and `remaining_ladder_authorized: false`. The live command must stop after this 8K packet even if it succeeds. It must not pack or POST a 9K request.
+Execution `a34465944adba324c6660a8c5a25f6f7a3dff067c845ce42582b9d85ee787cfc` is preserved unchanged. Classification: `full_prompt_evaluated_estimator_and_safety_margin_failed`. Not a stable rung. 9K is not authorized. `inference_authorized` and `calibrated_8k_rerun_authorized` are false until founder authorizes a 17,664 rerun.
 
-If VRAM reaches or exceeds 22.5 GB, classify `gemma_vram_boundary_at_first_rung`. Do not shrink context or packet.
-
-If actual complete-prompt tokens exceed the protected 11,757 prediction, record a Gemma estimator underestimate and still stop after this rung.
+Docker Desktop is recorded, not refused. Require RAM ≥12 GB free and page-file/commit available ≥8 GB.
 
