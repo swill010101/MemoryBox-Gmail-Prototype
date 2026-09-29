@@ -37,5 +37,17 @@
   "i11a2": false,
   "judge_quality_during_ladder": false,
   "inference_authorized": false,
-  "pull_authorized": false
+  "pull_authorized": false,
+  "diagnostic_complete_prompt_bytes_div4": 10439,
+  "gemma_smoke_additive_error_tokens": 182,
+  "gemma_smoke_relative_error": 0.096144,
+  "additional_relative_guard": 0.005,
+  "documented_fixed_guard_tokens": 256,
+  "protected_complete_prompt_tokens": 11757,
+  "reserve_equation": "protected_complete_prompt + 2500 + 1500 <= num_ctx",
+  "planned_num_ctx": 15872,
+  "vram_status": "unmeasured",
+  "do_not_shrink_num_ctx_for_projected_vram": true,
+  "gemma_smoke_peak_vram_gb": 21.65,
+  "gemma_smoke_num_ctx": 6144
 }
