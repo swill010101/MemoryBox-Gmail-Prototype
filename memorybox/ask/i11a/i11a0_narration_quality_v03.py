@@ -397,6 +397,7 @@ def prove_narration_quality_v03_offline(*, source_run: Path | str | None = None)
     ops = load_ops()
     ok("ops_inference_authorized_is_bool", isinstance(ops.get("inference_authorized"), bool), ops.get("inference_authorized"))
     ok("ops_recovery_authorized_is_bool", isinstance(ops.get("recovery_authorized"), bool), ops.get("recovery_authorized"))
+    ok("qwen_39424_closed", ops.get("qwen_39424_closed") is True, ops.get("qwen_39424_closed"))
     ok("ops_runner_ready_timeout_distinct", int(ops.get("runner_ready_timeout_seconds") or 0) not in (0, int(ops.get("timeout_seconds") or 0)), ops)
     ok("ops_not_a_ladder", ops.get("capacity_ladder") is False, ops)
     ok("i11a1_false", ops.get("i11a1") is False and ops.get("peggy_scenario") is False, ops)
@@ -694,6 +695,8 @@ def run_live_confirmation(
         raise InferenceNotAuthorized("pass --confirm-benchmark")
     if not ops.get("inference_authorized"):
         raise InferenceNotAuthorized("ops inference_authorized is false")
+    if ops.get("qwen_39424_closed") or ops.get("do_not_generate_qwen"):
+        raise InferenceNotAuthorized("Qwen 39424 confirmation is closed after VRAM ceiling stop")
     source = resolve_source_run(source_run)
     packet = load_accepted_27k_packet(source)
     user = build_user_message(packet)

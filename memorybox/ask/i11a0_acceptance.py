@@ -1636,6 +1636,13 @@ def run_prove_i11a0_benchmark() -> dict[str, Any]:
     _check("narration_quality_v03_offline", nq.get("ok") is True, checks, problems, nq.get("problems"))
     _check("narration_quality_v03_models_not_called", nq.get("models_called") is False, checks, problems)
     _check("v02_prompt_hash_unchanged_after_v03", v02_hash() == nq.get("prompt_v02_sha256"), checks, problems, nq.get("prompt_v02_sha256"))
+    from memorybox.ask.i11a.i11a0_gemma_full_prompt_v1 import prove_gemma_full_prompt_v1_offline
+
+    gemma = prove_gemma_full_prompt_v1_offline()
+    checks.extend(gemma.get("checks") or [])
+    problems.extend(gemma.get("problems") or [])
+    _check("gemma_full_prompt_v1_offline", gemma.get("ok") is True, checks, problems, gemma.get("problems"))
+    _check("gemma_full_prompt_v1_models_not_called", gemma.get("models_called") is False, checks, problems)
     return {
         "ok": not problems,
         "checks": len(checks),
@@ -1677,5 +1684,11 @@ def run_prove_i11a0_benchmark() -> dict[str, Any]:
             "models_called": nq.get("models_called"),
             "prompt_v03_sha256": nq.get("prompt_v03_sha256"),
             "planning_eligible": (nq.get("planning") or {}).get("eligible"),
+        },
+        "gemma_full_prompt_v1_offline": {
+            "ok": gemma.get("ok"),
+            "check_count": len(gemma.get("checks") or []),
+            "models_called": gemma.get("models_called"),
+            "first_rung_num_ctx": (gemma.get("first_rung") or {}).get("planned_num_ctx"),
         },
     }

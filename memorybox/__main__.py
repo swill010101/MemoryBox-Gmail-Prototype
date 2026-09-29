@@ -814,6 +814,21 @@ def main(argv: list[str] | None = None) -> int:
         "--out",
         default="docs/test-output/i11a0-benchmark/gate3-b-i14-narration-quality-v03-27k-confirm",
     )
+    p_gemma = sub.add_parser(
+        "i11a0-gemma-i14-full-prompt-v1",
+        help="Gemma 4 26B cleaned-I14 full-prompt ladder v1; offline until inference_authorized",
+    )
+    p_gemma.add_argument("--config", default="docs/ops/i11a0.c.gemma-i14-full-prompt-v1.json")
+    p_gemma.add_argument("--confirm-benchmark", action="store_true")
+    p_gemma.add_argument("--ollama-base-url", default="http://127.0.0.1:11434")
+    p_gemma.add_argument(
+        "--i14-export",
+        default="docs/test-output/i11a0-benchmark/i14-cleaned-export",
+    )
+    p_gemma.add_argument(
+        "--out",
+        default="docs/test-output/i11a0-benchmark/gate3-c-gemma-i14-full-prompt-v1",
+    )
     p_no_trunc = sub.add_parser(
         "i11a0-no-truncation-diagnostic",
         help="Bounded Ollama truncate=false/shift=false diagnostic; not a ladder",
@@ -2034,6 +2049,36 @@ def main(argv: list[str] | None = None) -> int:
                         "detail": str(exc),
                         "models_called": False,
                         "i11a1_started": False,
+                    },
+                    indent=2,
+                ),
+                flush=True,
+            )
+            return 2
+        print(json.dumps(payload, indent=2, default=str), flush=True)
+        return 0 if payload.get("ok") else 1
+
+    if args.cmd == "i11a0-gemma-i14-full-prompt-v1":
+        from memorybox.ask.i11a.i11a0_benchmark import I11A0Error, InferenceNotAuthorized
+        from memorybox.ask.i11a.i11a0_gemma_full_prompt_v1 import run_gemma_ladder
+
+        try:
+            payload = run_gemma_ladder(
+                confirm_benchmark=bool(args.confirm_benchmark),
+                config_path=args.config,
+                i14_export=args.i14_export or None,
+                results_dir=args.out,
+                ollama_base_url=args.ollama_base_url,
+            )
+        except (InferenceNotAuthorized, I11A0Error) as exc:
+            print(
+                json.dumps(
+                    {
+                        "ok": False,
+                        "error": type(exc).__name__,
+                        "detail": str(exc),
+                        "models_called": False,
+                        "inference_started": False,
                     },
                     indent=2,
                 ),
